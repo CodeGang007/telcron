@@ -1,0 +1,70 @@
+# Local development infrastructure for Telcron.
+#   make db-up        start Postgres (data persists in the named volume telcron_pgdata)
+#   make db-migrate   apply migrations (dbmate, runs in a container — nothing to install)
+#   make help         all targets
+name: telcron
+
+services:
+  db:
+    build: ./db
+    image: telcron-postgres:18
+    container_name: telcron-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-telcron}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-telcron_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-telcron}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"          # localhost only — never exposed on the network
+    volumes:
+      - telcron_pgdata:/var/lib/postgresql         # PG 18 images keep data under /var/lib/postgresql/18
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-telcron}:${POSTGRES_PASSWORD:-telcron_dev}@db:5432/${POSTGRES_DB:-telcron}?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+      DBMATE_WAIT: "true"
+    volumes:
+      - ./db:/db:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Throwaway database for the test suite (data lives in RAM, gone on stop).
+  db-test:
+    image: telcron-postgres:18
+    profiles: ["test"]
+    container_name: telcron-db-test
+    environment:
+      POSTGRES_PASSWORD: test
+    ports:
+      - "127.0.0.1:${DB_TEST_PORT:-55433}:5432"
+    tmpfs:
+      - /var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  adminer:
+    image: adminer:5
+    profiles: ["tools"]
+    ports:
+      - "127.0.0.1:${ADMINER_PORT:-8080}:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    depends_on:
+      - db
+
+volumes:
+  telcron_pgdata:
+    name: telcron_pgdata

@@ -1,0 +1,1519 @@
+"""
+Telcron — database design, single source of truth (v0.2).
+
+Generated from this file:
+  * docs/database/telcron-erd.drawio + table catalogue in schema-design.md   (tools/build_erd.py)
+  * db/migrations/*_schema_*.sql and db/schema-next/*.sql                     (tools/build_sql.py)
+
+Every `checks` entry, unique and index here is literal PostgreSQL. Rules that cannot be expressed
+declaratively live in hand-written SQL (db/sql/*.sql) and are listed in each table's `rules`.
+
+Target: PostgreSQL 18 · extensions citext, pg_trgm, btree_gist, postgis, vector.
+Phases: 1 = core (created now) · 2 = AI engine · 3 = engagement. FKs are emitted in the phase in
+which both endpoints exist.
+"""
+from dataclasses import dataclass, field
+
+
+# ───────────────────────────── building blocks ─────────────────────────────
+@dataclass
+class C:
+    name: str
+    type: str
+    pk: bool = False
+    fk: str | None = None            # "table.column"
+    on_delete: str = "restrict"      # restrict | cascade | set null
+    nn: bool = False
+    uk: bool = False
+    default: str | None = None
+    generated: str | None = None     # GENERATED ALWAYS AS (<expr>) STORED
+    note: str = ""
+
+
+@dataclass
+class U:                              # unique constraint / unique index
+    cols: str                         # "a, b" or expression list
+    where: str | None = None
+    nulls_not_distinct: bool = False
+
+    def is_constraint(self):
+        return self.where is None and "(" not in self.cols
+
+    def __str__(self):
+        s = f"UNIQUE {'NULLS NOT DISTINCT ' if self.nulls_not_distinct else ''}({self.cols})"
+        return s + (f" WHERE {self.where}" if self.where else "")
+
+
+@dataclass
+class I:                              # non-unique index
+    cols: str
+    using: str | None = None          # gin | gist | hnsw
+    where: str | None = None
+    note: str = ""
+
+    def __str__(self):
+        s = (f"{self.using} " if self.using else "") + f"({self.cols})"
+        return s + (f" WHERE {self.where}" if self.where else "")
+
+
+@dataclass
+class FKC:                            # composite FK
+    cols: str
+    ref: str                          # "table(col, col)"
+    on_delete: str = "restrict"
+    deferrable: bool = False
+
+
+@dataclass
+class T:
+    name: str
+    domain: str
+    purpose: str
+    cols: list
+    phase: int = 3
+    pk: list | None = None            # composite PK columns
+    uniques: list = field(default_factory=list)
+    indexes: list = field(default_factory=list)
+    checks: list = field(default_factory=list)
+    fks: list = field(default_factory=list)
+    immutable: list | None = None     # None = mutable; [] = insert-only; [cols] = only these may change
+    partition_by: str | None = None   # RANGE partition column (PK becomes (id, col))
+    rules: list = field(default_factory=list)   # enforced by triggers/functions in db/sql
+    features: str = ""
+
+    @property
+    def core(self):
+        return self.phase == 1
+
+    @property
+    def append_only(self):
+        return self.immutable is not None
+
+
+def ID():
+    return C("id", "uuid", pk=True, default="uuidv7()")
+
+
+def CREATED():
+    return C("created_at", "timestamptz", nn=True, default="now()")
+
+
+def UPDATED():
+    return C("updated_at", "timestamptz", nn=True, default="now()")
+
+
+def DELETED():
+    return C("deleted_at", "timestamptz", note="soft delete")
+
+
+def FK(name, target, nn=True, on_delete="restrict", note="", uk=False):
+    return C(name, "uuid", fk=target, nn=nn, on_delete=on_delete, note=note, uk=uk)
+
+
+def BBOX(name="bbox"):
+    return C(name, "int4[]", note="[x, y, w, h] px")
+
+
+# ───────────────────────────── enumerated types ─────────────────────────────
+ENUMS = {
+    "user_status": ["pending", "active", "suspended", "deleted"],
+    "user_role": ["user", "moderator", "admin"],
+    "auth_provider": ["google", "facebook", "apple"],
+    "token_purpose": ["email_verification", "phone_otp", "password_reset", "email_change"],
+    "auth_event_type": ["login_succeeded", "login_failed", "logout", "session_refreshed",
+                        "session_revoked", "token_reuse_detected", "password_reset_requested",
+                        "password_changed", "oauth_linked", "oauth_unlinked", "account_locked",
+                        "account_unlocked", "otp_sent", "otp_failed", "email_verified", "phone_verified"],
+    "identity_check_status": ["pending", "passed", "failed"],
+    "product_status": ["active", "discontinued", "flagged", "merged"],
+    "identification_source": ["ai_image", "ai_video", "barcode", "text", "ingestion", "manual", "admin"],
+    "traceability_status": ["pending", "traced", "untraceable"],
+    "alias_type": ["gtin", "marketplace_item", "retailer_sku", "other"],
+    "media_kind": ["image", "video"],
+    "media_role": ["primary", "gallery", "label", "nameplate", "packaging"],
+    "moderation_status": ["pending", "approved", "rejected"],
+    "visibility": ["private", "public"],
+    "capture_input": ["image", "video", "barcode", "text"],
+    "identification_status": ["pending", "identified", "needs_input", "failed"],
+    "data_source_kind": ["recall_authority", "certification_authority", "marketplace", "social",
+                         "product_reference", "user", "internal"],
+    "job_trigger": ["schedule", "admin", "system", "event"],
+    "job_status": ["queued", "running", "succeeded", "partial", "failed", "cancelled"],
+    "source_record_type": ["product_listing", "review", "social_post", "recall", "certification",
+                           "price", "other"],
+    "evidence_kind": ["recall", "certification_check", "source_record", "media_region", "review",
+                      "hazard_flag", "web_document"],
+    "evidence_purpose": ["identity", "recall", "certification", "hazard", "traceability"],
+    "recall_status": ["active", "closed"],
+    "recall_identifier_type": ["gtin", "model_number", "serial_range", "lot_code", "sku", "date_code"],
+    "cert_status": ["pending", "valid", "expired", "revoked", "not_found", "not_checked", "lookup_failed"],
+    "check_method": ["api", "manual_review"],
+    "screening_run_type": ["initial", "rescreen", "manual"],
+    "run_status": ["running", "completed", "failed"],
+    "recall_verdict": ["match", "near_match", "no_match_found", "insufficient_information"],
+    "candidate_verdict": ["match", "near_match", "rejected"],
+    "dimension_score_status": ["scored", "insufficient_data"],
+    "passport_badge": ["verified", "recalled", "certification_issue", "needs_information"],
+    "embedding_modality": ["text", "image", "multimodal"],
+    "wallet_add_method": ["media_grid", "manual", "barcode", "search", "extension"],
+    "wallet_item_status": ["pending_verification", "active", "rejected"],
+    "video_check_result": ["pending", "matched", "mismatch", "failed"],
+    "qr_label_status": ["pending", "generated", "failed"],
+    "ledger_entry_type": ["earn", "level_bonus", "spend", "clawback", "adjustment", "refund"],
+    "ledger_status": ["pending", "confirmed", "frozen", "reversed"],
+    "fulfilment_type": ["pdf_report", "rate_limit_boost", "feature_access", "watchlist_slots",
+                        "data_export", "invoice_discount"],
+    "redemption_status": ["processing", "fulfilled", "failed", "refunded"],
+    "entitlement_source": ["redemption", "level_perk", "admin"],
+    "hold_status": ["open", "released", "confirmed_fraud"],
+    "referral_status": ["pending", "qualified", "rewarded", "void"],
+    "content_status": ["published", "hidden", "removed"],
+    "content_origin": ["user", "ingested"],
+    "flag_status": ["pending", "confirmed", "rejected"],
+    "fact_report_status": ["pending", "accepted", "rejected"],
+    "reaction_type": ["like", "helpful", "concerned", "same_issue"],
+    "feed_item_type": ["user_upload", "listing", "social_post", "recall", "community_post"],
+    "feed_action": ["impression", "open", "save", "share", "hide"],
+    "price_alert_status": ["active", "triggered", "cancelled"],
+    "risk_event_type": ["recall_match", "recall_near_match", "hazard_threshold", "certification_change",
+                        "price_drop", "community_flag_confirmed"],
+    "severity": ["info", "low", "medium", "high", "critical"],
+    "risk_alert_status": ["new", "seen", "confirmed", "dismissed", "resolved"],
+    "notification_channel": ["in_app", "email", "push", "sms"],
+    "notification_status": ["queued", "sent", "delivered", "failed", "read"],
+    "actor_type": ["user", "admin", "system", "job", "model"],
+    "review_task_type": ["media_moderation", "hazard_insufficient_data", "certification_manual_review",
+                         "hazard_flag", "fact_report", "fraud_hold", "identity_verification",
+                         "content_report"],
+    "review_task_status": ["open", "in_progress", "resolved", "dismissed"],
+    "ai_purpose": ["identify", "identify_escalation", "adjudicate", "hazard_score", "annotate",
+                   "embed", "moderate", "video_verify", "ocr"],
+}
+
+EXTENSIONS = ["citext", "pg_trgm", "btree_gist", "postgis", "vector"]
+
+DOMAINS = {
+    "identity":     ("Identity & Access",               "#dae8fc", "#6c8ebf"),
+    "catalogue":    ("Product Catalogue (Registry)",    "#d5e8d4", "#82b366"),
+    "media":        ("Media & AI Recognition",          "#e1d5e7", "#9673a6"),
+    "sources":      ("Sources, Ingestion & Evidence",   "#f5f5f5", "#666666"),
+    "recalls":      ("Recalls",                         "#f8cecc", "#b85450"),
+    "certs":        ("Certifications",                  "#fff2cc", "#d6b656"),
+    "verification": ("Screening, Hazard & Passport",    "#ffe6cc", "#d79b00"),
+    "wallet":       ("Digital Wallet",                  "#d0e0e3", "#4a7c85"),
+    "rewards":      ("Rewards (TelCoins)",              "#fde9d9", "#c0504d"),
+    "community":    ("Community & Reviews",             "#e6f2d9", "#5c8a2e"),
+    "feed":         ("Commerce Feed & Personalisation", "#dfe7f5", "#3d5a99"),
+    "pricing":      ("Pricing",                         "#eaf1dd", "#76923c"),
+    "alerts":       ("Risk Events & Notifications",     "#f4cccc", "#990000"),
+    "platform":     ("Platform, Audit & Operations",    "#eeeeee", "#444444"),
+}
+
+GEOHASH_CHECK = "geohash IS NULL OR geohash ~ '^[0-9b-hjkmnp-z]{6}$'"
+
+# ───────────────────────────── tables ─────────────────────────────
+TABLES = [
+    # ════════════════ IDENTITY & ACCESS ════════════════
+    T("users", "identity", phase=1, features="TC-P1-001/002/026, FR-14",
+      purpose="One row per person. Holds account PII. Password optional (OAuth-only users). Deletion = anonymise.",
+      cols=[ID(),
+            C("email", "citext", nn=True, uk=True),
+            C("email_verified_at", "timestamptz"),
+            C("phone_e164", "text", note="E.164; unique once verified"),
+            C("phone_verified_at", "timestamptz"),
+            C("password_hash", "text", note="argon2id; NULL for OAuth-only accounts"),
+            C("password_changed_at", "timestamptz", note="sessions issued before this are invalid"),
+            C("display_name", "text", nn=True),
+            FK("avatar_media_id", "media_assets.id", nn=False, on_delete="set null"),
+            C("country_code", "char(2)", note="ISO-3166-1"),
+            C("subdivision_code", "text", note="ISO-3166-2 — regional recall applicability"),
+            C("locale", "text", nn=True, default="'en'"),
+            C("time_zone", "text", nn=True, default="'UTC'", note="IANA; risk-timeline day grouping"),
+            C("status", "user_status", nn=True, default="'pending'"),
+            C("role", "user_role", nn=True, default="'user'"),
+            C("verification_level", "smallint", nn=True, default="0", note="0 pending · 1 basic · 2 full · 3 business"),
+            C("trust_score", "numeric(5,2)", nn=True, default="0", note="= latest trust_score_events.score_after"),
+            C("referral_code", "text", nn=True, uk=True),
+            C("failed_login_count", "smallint", nn=True, default="0"),
+            C("locked_until", "timestamptz"),
+            C("last_login_at", "timestamptz"),
+            CREATED(), UPDATED(), DELETED()],
+      uniques=[U("phone_e164", where="phone_verified_at IS NOT NULL")],
+      checks=["verification_level BETWEEN 0 AND 3",
+              "trust_score BETWEEN 0 AND 100",
+              "verification_level = 0 OR (email_verified_at IS NOT NULL AND phone_verified_at IS NOT NULL)",
+              "phone_verified_at IS NULL OR phone_e164 IS NOT NULL",
+              "phone_e164 IS NULL OR phone_e164 ~ '^\\+[1-9][0-9]{6,14}$'",
+              "(status = 'deleted') = (deleted_at IS NOT NULL)"],
+      indexes=[I("status", where="deleted_at IS NULL")]),
+
+    T("user_identities", "identity", phase=1, features="TC-P1-001/002",
+      purpose="OAuth identities linked to a user, keyed on the IdP's stable subject (never the email).",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("provider", "auth_provider", nn=True),
+            C("provider_subject", "text", nn=True),
+            C("provider_email", "citext"),
+            C("provider_email_verified", "boolean", nn=True, default="false"),
+            C("last_used_at", "timestamptz"),
+            CREATED()],
+      uniques=[U("provider, provider_subject"), U("user_id, provider")],
+      rules=["Link to an existing email account only when provider_email_verified (app)."]),
+
+    T("sessions", "identity", phase=1, features="TC-P1-002",
+      purpose="Refresh-token sessions with rotation. family_expires_at = 90-min absolute cap (never slides); last_active_at = 20-min idle.",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("family_id", "uuid", nn=True, note="all rotations of one login"),
+            C("refresh_token_hash", "bytea", nn=True, uk=True, note="SHA-256 of a 256-bit random token"),
+            C("family_expires_at", "timestamptz", nn=True, note="copied unchanged on rotation"),
+            C("expires_at", "timestamptz", nn=True),
+            C("last_active_at", "timestamptz", nn=True, default="now()", note="write-throttled (≥1 min)"),
+            C("rotated_at", "timestamptz"),
+            FK("replaced_by_session_id", "sessions.id", nn=False, on_delete="set null"),
+            C("ip_address", "inet"),
+            C("user_agent", "text"),
+            C("revoked_at", "timestamptz"),
+            C("revoke_reason", "text"),
+            CREATED()],
+      checks=["expires_at <= family_expires_at", "(rotated_at IS NULL) = (replaced_by_session_id IS NULL)"],
+      indexes=[I("user_id", where="revoked_at IS NULL"), I("family_id")],
+      rules=["Presenting a rotated token ⇒ revoke whole family + auth_event token_reuse_detected (app)."]),
+
+    T("verification_tokens", "identity", phase=1, features="TC-P1-001/002",
+      purpose="Single-use email links, phone OTPs, password-reset tokens: hashed (OTPs HMAC-peppered), expiring, attempt-limited.",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("purpose", "token_purpose", nn=True),
+            C("target", "text", nn=True, note="email or phone being verified"),
+            C("token_hash", "bytea", nn=True, uk=True, note="HMAC-SHA256(server pepper, token)"),
+            C("attempt_count", "smallint", nn=True, default="0"),
+            C("expires_at", "timestamptz", nn=True),
+            C("consumed_at", "timestamptz"),
+            CREATED()],
+      checks=["attempt_count BETWEEN 0 AND 10", "expires_at > created_at"],
+      indexes=[I("user_id, purpose", where="consumed_at IS NULL")]),
+
+    T("auth_events", "identity", phase=1, immutable=[], partition_by="created_at", features="TC-P1-002",
+      purpose="Every authentication attempt/event, success or failure. Drives lockout and rate limiting. Monthly partitions.",
+      cols=[ID(),
+            C("user_id", "uuid", note="no FK — log survives account deletion (anonymised)"),
+            C("event_type", "auth_event_type", nn=True),
+            C("email_attempted", "citext"),
+            C("provider", "auth_provider"),
+            C("failure_reason", "text"),
+            C("ip_address", "inet"),
+            C("user_agent", "text"),
+            CREATED()],
+      indexes=[I("user_id, created_at DESC"), I("ip_address, created_at DESC"), I("email_attempted, created_at DESC")]),
+
+    T("identity_verifications", "identity", phase=3, features="TC-P1-001 (Level 2)",
+      purpose="Outcome of ID-document OCR + selfie face-match. Result only — images are deleted after the check.",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("document_type", "text"),
+            C("document_country", "char(2)"),
+            C("status", "identity_check_status", nn=True, default="'pending'"),
+            C("ocr_succeeded", "boolean"),
+            C("face_match_score", "numeric(5,4)"),
+            C("failure_reason", "text"),
+            C("provider", "text"),
+            CREATED(),
+            C("completed_at", "timestamptz")],
+      checks=["status = 'pending' OR completed_at IS NOT NULL",
+              "status <> 'passed' OR (ocr_succeeded AND face_match_score IS NOT NULL)"],
+      indexes=[I("user_id, created_at DESC")]),
+
+    T("trust_score_events", "identity", phase=3, immutable=[], features="Arch v2 §5.4",
+      purpose="Every trust-score change with reason and resulting score (score is clamped and can be set, so the result is stored).",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("delta", "numeric(5,2)", nn=True),
+            C("score_after", "numeric(5,2)", nn=True),
+            C("reason_code", "text", nn=True, note="review_helpful, spam_report, flag_confirmed, level2_baseline…"),
+            C("reference_type", "text"),
+            C("reference_id", "uuid"),
+            CREATED()],
+      checks=["score_after BETWEEN 0 AND 100"],
+      indexes=[I("user_id, created_at DESC")]),
+
+    # ════════════════ PRODUCT CATALOGUE ════════════════
+    T("categories", "catalogue", phase=1, features="TC-P1-005, NFR-10",
+      purpose="Hierarchical categories; new categories onboard by configuration.",
+      cols=[ID(),
+            FK("parent_id", "categories.id", nn=False),
+            C("code", "text", nn=True, uk=True),
+            C("name", "text", nn=True),
+            C("is_active", "boolean", nn=True, default="true"),
+            C("config", "jsonb", nn=True, default="'{}'", note="ingestion queries, image counts, visual hazard signals"),
+            CREATED(), UPDATED()],
+      checks=["parent_id IS NULL OR parent_id <> id", "code ~ '^[a-z0-9_]+$'"]),
+
+    T("manufacturers", "catalogue", phase=1, features="TC-P1-008",
+      purpose="Legal manufacturer resolved by traceability (may differ from the consumer brand).",
+      cols=[ID(),
+            C("name", "text", nn=True),
+            C("normalized_name", "text", nn=True, uk=True),
+            C("country_code", "char(2)"),
+            C("website_url", "text"),
+            CREATED(), UPDATED()],
+      indexes=[I("normalized_name gin_trgm_ops", using="gin")]),
+
+    T("brands", "catalogue", phase=1,
+      purpose="Consumer-facing brand marks; optionally owned by a manufacturer.",
+      cols=[ID(),
+            C("name", "text", nn=True),
+            C("normalized_name", "text", nn=True, uk=True),
+            FK("manufacturer_id", "manufacturers.id", nn=False, on_delete="set null"),
+            CREATED(), UPDATED()],
+      indexes=[I("normalized_name gin_trgm_ops", using="gin")]),
+
+    T("products", "catalogue", phase=1, features="FR-04/05, TC-P1-005/008, Arch v2 §4",
+      purpose="Canonical Product Identity Registry record. Never hard-deleted; duplicates are merged.",
+      cols=[ID(),
+            FK("category_id", "categories.id"),
+            FK("brand_id", "brands.id", nn=False),
+            FK("manufacturer_id", "manufacturers.id", nn=False),
+            C("canonical_name", "text", nn=True),
+            C("model_number", "text"),
+            C("model_number_normalized", "text", note="upper-case alphanumerics"),
+            C("description", "text"),
+            C("specifications", "jsonb", nn=True, default="'{}'", note="current values; provenance in product_traceability"),
+            C("status", "product_status", nn=True, default="'active'"),
+            FK("merged_into_product_id", "products.id", nn=False),
+            C("identification_source", "identification_source", nn=True),
+            C("identity_confidence", "numeric(4,3)"),
+            C("traceability_status", "traceability_status", nn=True, default="'pending'"),
+            C("traceability_checked_at", "timestamptz"),
+            FK("primary_media_id", "media_assets.id", nn=False, on_delete="set null"),
+            FK("current_passport_id", "passports.id", nn=False, note="composite FK ⇒ must be THIS product's passport"),
+            C("public_slug", "text", nn=True, uk=True),
+            FK("created_by_user_id", "users.id", nn=False, on_delete="set null"),
+            CREATED(), UPDATED()],
+      uniques=[U("brand_id, model_number_normalized",
+                 where="model_number_normalized IS NOT NULL AND brand_id IS NOT NULL AND status <> 'merged'")],
+      fks=[FKC("current_passport_id, id", "passports(id, product_id)", deferrable=True)],
+      checks=["(status = 'merged') = (merged_into_product_id IS NOT NULL)",
+              "merged_into_product_id IS NULL OR merged_into_product_id <> id",
+              "identity_confidence BETWEEN 0 AND 1",
+              "public_slug ~ '^[a-z0-9-]{6,80}$'",
+              "model_number_normalized IS NULL OR model_number_normalized ~ '^[A-Z0-9]+$'"],
+      indexes=[I("canonical_name gist_trgm_ops(siglen=64)", using="gist", note="KNN: ORDER BY canonical_name <-> $q LIMIT n"),
+               I("model_number_normalized"),
+               I("category_id, status")],
+      rules=["Merge target may not itself be merged (trigger).",
+             "merge_products(src, dst) moves aliases, media, wallet items, reviews (function)."]),
+
+    T("product_variants", "catalogue", phase=3, features="Arch v2 §4.2",
+      purpose="Colour / size / pack variants of one canonical product.",
+      cols=[ID(),
+            FK("product_id", "products.id", on_delete="cascade"),
+            C("name", "text", nn=True),
+            C("attributes", "jsonb", nn=True, default="'{}'"),
+            CREATED()],
+      uniques=[U("product_id, name")]),
+
+    T("product_aliases", "catalogue", phase=1, features="FR-04, TC-P1-008",
+      purpose="External identifiers resolving to ONE canonical product — the dedupe backbone. GTINs are global; marketplace IDs are namespaced (amazon.us, ebay.us, bestbuy…).",
+      cols=[ID(),
+            FK("product_id", "products.id", on_delete="cascade"),
+            FK("variant_id", "product_variants.id", nn=False, on_delete="set null"),
+            C("alias_type", "alias_type", nn=True),
+            C("namespace", "text", nn=True, default="''"),
+            C("alias_value", "text", nn=True, note="GTIN normalised to 14 digits"),
+            C("data_source_code", "text", fk="data_sources.code"),
+            C("confidence", "numeric(4,3)"),
+            CREATED()],
+      uniques=[U("alias_type, namespace, alias_value")],
+      checks=["(alias_type = 'gtin') = (namespace = '')",
+              "alias_type <> 'gtin' OR alias_value ~ '^[0-9]{14}$'",
+              "confidence BETWEEN 0 AND 1"]),
+
+    T("product_media", "catalogue", phase=1, pk=["product_id", "media_asset_id"], features="TC-P1-006",
+      purpose="Which media assets illustrate a product, and in what role.",
+      cols=[FK("product_id", "products.id", on_delete="cascade"),
+            FK("media_asset_id", "media_assets.id", on_delete="cascade"),
+            C("role", "media_role", nn=True, default="'gallery'"),
+            C("sort_order", "smallint", nn=True, default="0"),
+            CREATED()]),
+
+    # ════════════════ MEDIA & AI RECOGNITION ════════════════
+    T("media_blobs", "media", phase=1, features="TC-P1-006, NFR-04",
+      purpose="Content-addressed file (one per distinct bytes): storage keys, hashes, dimensions, moderation. Shared by every asset with the same content.",
+      cols=[ID(),
+            C("sha256", "bytea", nn=True, uk=True),
+            C("kind", "media_kind", nn=True),
+            C("mime_type", "text", nn=True),
+            C("byte_size", "bigint", nn=True),
+            C("width", "integer"),
+            C("height", "integer"),
+            C("duration_ms", "integer"),
+            C("storage_key_original", "text", nn=True),
+            C("storage_key_normalized", "text", note="≤1024px JPEG, EXIF stripped"),
+            C("perceptual_hash", "bigint", note="64-bit pHash"),
+            C("phash_band0", "integer", generated="((perceptual_hash >> 48) & 65535)::integer"),
+            C("phash_band1", "integer", generated="((perceptual_hash >> 32) & 65535)::integer"),
+            C("phash_band2", "integer", generated="((perceptual_hash >> 16) & 65535)::integer"),
+            C("phash_band3", "integer", generated="(perceptual_hash & 65535)::integer"),
+            C("moderation_status", "moderation_status", nn=True, default="'pending'"),
+            C("moderation_labels", "jsonb"),
+            CREATED()],
+      checks=["byte_size > 0", "(kind = 'video') = (duration_ms IS NOT NULL)",
+              "octet_length(sha256) = 32"],
+      indexes=[I("phash_band0"), I("phash_band1"), I("phash_band2"), I("phash_band3")],
+      rules=["Near-duplicate = any band equal, then bit_count((a # b)::bit(64)) <= threshold."]),
+
+    T("media_assets", "media", phase=1, features="TC-P1-003/006",
+      purpose="A use of a blob by an owner (user upload) or source (ingested): ownership and visibility live here, not on the file.",
+      cols=[ID(),
+            FK("blob_id", "media_blobs.id"),
+            FK("owner_user_id", "users.id", nn=False, on_delete="set null"),
+            C("data_source_code", "text", fk="data_sources.code"),
+            C("visibility", "visibility", nn=True, default="'private'"),
+            C("caption", "text"),
+            CREATED(), DELETED()],
+      uniques=[U("owner_user_id, blob_id", where="owner_user_id IS NOT NULL AND deleted_at IS NULL")],
+      checks=["num_nonnulls(owner_user_id, data_source_code) >= 1"],
+      indexes=[I("owner_user_id, created_at DESC")]),
+
+    T("media_annotations", "media", phase=2, features="TC-P1-019",
+      purpose="AI labels on a file (label, confidence, bbox, video frame), optionally resolved to a product.",
+      cols=[ID(),
+            FK("blob_id", "media_blobs.id", on_delete="cascade"),
+            C("label", "text", nn=True),
+            C("confidence", "numeric(4,3)", nn=True),
+            BBOX(),
+            C("frame_ms", "integer"),
+            FK("product_id", "products.id", nn=False, on_delete="set null"),
+            C("model_code", "text", nn=True),
+            CREATED()],
+      checks=["bbox IS NULL OR cardinality(bbox) = 4", "confidence BETWEEN 0 AND 1"]),
+
+    T("embedding_models", "media", phase=2, features="TC-P1-006, D-05",
+      purpose="Registry of embedding models and their dimensions (CLIP ViT-L/14 = 768, Titan v2 = 1024…).",
+      cols=[C("code", "text", pk=True),
+            C("modality", "embedding_modality", nn=True),
+            C("dimensions", "integer", nn=True),
+            C("is_active", "boolean", nn=True, default="false"),
+            CREATED()],
+      checks=["dimensions BETWEEN 1 AND 16000"]),
+
+    T("media_embeddings", "media", phase=2, pk=["blob_id", "model_code"], features="TC-P1-006",
+      purpose="Image embeddings per model for visual similarity search.",
+      cols=[FK("blob_id", "media_blobs.id", on_delete="cascade"),
+            C("model_code", "text", fk="embedding_models.code", nn=True),
+            C("embedding", "vector", nn=True, note="dims checked against embedding_models (trigger)"),
+            CREATED()],
+      rules=["HNSW index per active model: ((embedding::vector(N)) vector_cosine_ops) WHERE model_code = '…' — created when a model is activated."]),
+
+    T("identification_requests", "media", phase=1, features="FR-01/02/03/05, TC-P1-003",
+      purpose="Each capture → identify attempt (Tier 0/1): input, model output, confidence, escalation, fallback answers.",
+      cols=[ID(),
+            FK("user_id", "users.id", nn=False, on_delete="set null"),
+            C("input_type", "capture_input", nn=True),
+            FK("media_asset_id", "media_assets.id", nn=False),
+            C("barcode_value", "text"),
+            C("text_query", "text"),
+            C("status", "identification_status", nn=True, default="'pending'"),
+            C("extracted", "jsonb", note="{product_type, brand, model, evidence_snippets}"),
+            C("confidence", "numeric(4,3)"),
+            C("escalated", "boolean", nn=True, default="false"),
+            C("fallback_manufacturer", "text"),
+            C("fallback_model", "text"),
+            FK("resolved_product_id", "products.id", nn=False),
+            C("cache_hit", "boolean", nn=True, default="false"),
+            CREATED(),
+            C("completed_at", "timestamptz")],
+      checks=["num_nonnulls(media_asset_id, barcode_value, text_query) >= 1",
+              "input_type NOT IN ('image','video') OR media_asset_id IS NOT NULL",
+              "input_type <> 'barcode' OR barcode_value IS NOT NULL",
+              "input_type <> 'text' OR text_query IS NOT NULL",
+              "status <> 'identified' OR resolved_product_id IS NOT NULL",
+              "confidence BETWEEN 0 AND 1"],
+      indexes=[I("user_id, created_at DESC", note="daily identification quota")]),
+
+    # ════════════════ SOURCES, INGESTION & EVIDENCE ════════════════
+    T("data_sources", "sources", phase=1, features="TC-P1-004/005, D-01",
+      purpose="Registry of every source (CPSC, openFDA, FCC, Energy Star, Amazon, eBay, Best Buy, user uploads…).",
+      cols=[C("code", "text", pk=True),
+            C("name", "text", nn=True),
+            C("kind", "data_source_kind", nn=True),
+            C("base_url", "text"),
+            C("country_codes", "char(2)[]", nn=True, default="'{}'"),
+            C("is_enabled", "boolean", nn=True, default="true"),
+            C("config", "jsonb", nn=True, default="'{}'", note="rate limits, schedule — never secrets"),
+            CREATED(), UPDATED()],
+      checks=["code ~ '^[a-z0-9_.]+$'"]),
+
+    T("ingestion_jobs", "sources", phase=1, features="TC-P1-005, RCL-01",
+      purpose="One run of a sync/ingestion pipeline with stats and errors.",
+      cols=[ID(),
+            C("data_source_code", "text", fk="data_sources.code", nn=True),
+            FK("category_id", "categories.id", nn=False),
+            C("trigger", "job_trigger", nn=True),
+            C("status", "job_status", nn=True, default="'queued'"),
+            C("params", "jsonb", nn=True, default="'{}'"),
+            C("stats", "jsonb", nn=True, default="'{}'"),
+            C("error", "text"),
+            FK("triggered_by_user_id", "users.id", nn=False, on_delete="set null"),
+            C("started_at", "timestamptz"),
+            C("finished_at", "timestamptz"),
+            CREATED()],
+      checks=["finished_at IS NULL OR started_at IS NOT NULL"],
+      indexes=[I("data_source_code, created_at DESC")]),
+
+    T("source_records", "sources", phase=1, immutable=[], features="Arch v2 §10, TC-P1-008",
+      purpose="Raw payload of every fetched external record, versioned by content hash — reprocess without re-fetching.",
+      cols=[ID(),
+            C("data_source_code", "text", fk="data_sources.code", nn=True),
+            C("record_type", "source_record_type", nn=True),
+            C("external_id", "text", nn=True),
+            C("payload", "jsonb"),
+            C("payload_storage_key", "text"),
+            C("payload_sha256", "bytea", nn=True),
+            FK("ingestion_job_id", "ingestion_jobs.id", nn=False),
+            C("fetched_at", "timestamptz", nn=True, default="now()")],
+      uniques=[U("data_source_code, record_type, external_id, payload_sha256")],
+      checks=["num_nonnulls(payload, payload_storage_key) = 1"],
+      indexes=[I("data_source_code, record_type, external_id, fetched_at DESC")]),
+
+    T("evidence_items", "sources", phase=1, immutable=[], features="P3 zero-unvetted-data, TC-P1-008/011",
+      purpose="One citable piece of evidence with exactly one typed subject; recall citations also pin the source-record version.",
+      cols=[ID(),
+            C("kind", "evidence_kind", nn=True),
+            FK("recall_id", "recalls.id", nn=False),
+            FK("certification_check_id", "certification_checks.id", nn=False),
+            FK("source_record_id", "source_records.id", nn=False, note="pinned version (also allowed with recall)"),
+            FK("media_asset_id", "media_assets.id", nn=False),
+            FK("review_id", "reviews.id", nn=False),
+            FK("hazard_flag_id", "hazard_flags.id", nn=False),
+            BBOX(),
+            C("url", "text", note="display/link attribute, not a subject"),
+            C("excerpt", "text", note="quoted chunk cited by the model"),
+            CREATED()],
+      checks=["bbox IS NULL OR (kind = 'media_region' AND cardinality(bbox) = 4)",
+              "CASE kind"
+              " WHEN 'recall' THEN recall_id IS NOT NULL AND num_nonnulls(certification_check_id, media_asset_id, review_id, hazard_flag_id) = 0"
+              " WHEN 'certification_check' THEN certification_check_id IS NOT NULL AND num_nonnulls(recall_id, media_asset_id, review_id, hazard_flag_id) = 0"
+              " WHEN 'source_record' THEN source_record_id IS NOT NULL AND num_nonnulls(recall_id, certification_check_id, media_asset_id, review_id, hazard_flag_id) = 0"
+              " WHEN 'media_region' THEN media_asset_id IS NOT NULL AND num_nonnulls(recall_id, certification_check_id, source_record_id, review_id, hazard_flag_id) = 0"
+              " WHEN 'review' THEN review_id IS NOT NULL AND num_nonnulls(recall_id, certification_check_id, source_record_id, media_asset_id, hazard_flag_id) = 0"
+              " WHEN 'hazard_flag' THEN hazard_flag_id IS NOT NULL AND num_nonnulls(recall_id, certification_check_id, source_record_id, media_asset_id, review_id) = 0"
+              " WHEN 'web_document' THEN url IS NOT NULL AND num_nonnulls(recall_id, certification_check_id, source_record_id, media_asset_id, review_id, hazard_flag_id) = 0"
+              " END"]),
+
+    T("product_traceability", "sources", phase=2, features="TC-P1-008",
+      purpose="Resolved product facts (manufacturer, model, specs) with evidence and method — the permanent 'why we believe this'.",
+      cols=[ID(),
+            FK("product_id", "products.id", on_delete="cascade"),
+            C("attribute", "text", nn=True, note="manufacturer | model | spec:<key>"),
+            C("value", "text", nn=True),
+            FK("evidence_id", "evidence_items.id"),
+            C("match_method", "text", nn=True, note="gtin_exact | brand_model | ai_assisted"),
+            C("confidence", "numeric(4,3)"),
+            CREATED()],
+      indexes=[I("product_id, attribute")]),
+
+    # ════════════════ RECALLS ════════════════
+    T("recalls", "recalls", phase=1, features="FR-06, TC-P1-010",
+      purpose="Official recall notices (CPSC, openFDA; later NHTSA, EU Safety Gate…). Reference data.",
+      cols=[ID(),
+            C("data_source_code", "text", fk="data_sources.code", nn=True),
+            C("external_id", "text", nn=True),
+            C("recall_number", "text"),
+            C("title", "text", nn=True),
+            C("description", "text"),
+            C("hazard", "text"),
+            C("remedy", "text"),
+            C("classification", "text", note="FDA class I/II/III"),
+            C("units_affected", "text"),
+            C("recall_date", "date"),
+            C("status", "recall_status", nn=True, default="'active'"),
+            C("url", "text"),
+            FK("source_record_id", "source_records.id", nn=False, note="latest synced version"),
+            C("search_tsv", "tsvector",
+              generated="to_tsvector('english'::regconfig, coalesce(title,'') || ' ' || coalesce(description,'') || ' ' || coalesce(hazard,''))"),
+            C("synced_at", "timestamptz", nn=True),
+            CREATED(), UPDATED()],
+      uniques=[U("data_source_code, external_id")],
+      indexes=[I("search_tsv", using="gin"), I("recall_date DESC")]),
+
+    T("recall_regions", "recalls", phase=1, pk=["recall_id", "country_code", "subdivision_code"],
+      features="TC-P1-010 (geographic applicability)",
+      purpose="Where a recall applies. No rows = applies everywhere its source covers.",
+      cols=[FK("recall_id", "recalls.id", on_delete="cascade"),
+            C("country_code", "char(2)", nn=True),
+            C("subdivision_code", "text", nn=True, default="''", note="'' = whole country")],
+      indexes=[I("country_code, subdivision_code")]),
+
+    T("recall_products", "recalls", phase=1, features="FR-07",
+      purpose="Each product described inside a recall notice.",
+      cols=[ID(),
+            FK("recall_id", "recalls.id", on_delete="cascade"),
+            C("product_name", "text", nn=True),
+            C("brand_name", "text"),
+            C("manufacturer_name", "text"),
+            C("description", "text"),
+            C("sold_from", "date"),
+            C("sold_to", "date"),
+            C("image_urls", "text[]", nn=True, default="'{}'")],
+      checks=["sold_to IS NULL OR sold_from IS NULL OR sold_from <= sold_to"],
+      indexes=[I("brand_name gin_trgm_ops", using="gin"),
+               I("product_name gist_trgm_ops(siglen=64)", using="gist", note="KNN candidate retrieval")]),
+
+    T("recall_product_identifiers", "recalls", phase=1, features="FR-07",
+      purpose="Exact identifiers listed in recalls for deterministic matching before AI.",
+      cols=[ID(),
+            FK("recall_product_id", "recall_products.id", on_delete="cascade"),
+            C("identifier_type", "recall_identifier_type", nn=True),
+            C("value", "text", nn=True),
+            C("value_normalized", "text", nn=True)],
+      uniques=[U("recall_product_id, identifier_type, value_normalized")],
+      indexes=[I("identifier_type, value_normalized")]),
+
+    T("recall_embeddings", "recalls", phase=2, pk=["recall_id", "model_code"], features="FR-07, RCL-02",
+      purpose="Semantic vectors of recall text per model (hybrid BM25 + kNN retrieval).",
+      cols=[FK("recall_id", "recalls.id", on_delete="cascade"),
+            C("model_code", "text", fk="embedding_models.code", nn=True),
+            C("content_sha256", "bytea", nn=True, note="re-embed only when text changes"),
+            C("embedding", "vector", nn=True),
+            CREATED()]),
+
+    # ════════════════ CERTIFICATIONS ════════════════
+    T("certification_schemes", "certs", phase=1, features="FR-09, TC-P1-009",
+      purpose="Certification schemes (fcc, energy_star, ul, etl) and their authority source.",
+      cols=[C("code", "text", pk=True),
+            C("name", "text", nn=True),
+            C("data_source_code", "text", fk="data_sources.code"),
+            C("is_checkable", "boolean", nn=True, default="false", note="false ⇒ always 'not_checked'")]),
+
+    T("product_certifications", "certs", phase=1, features="FR-09, TC-P1-009",
+      purpose="A certificate claimed/found for a product. current_status caches the latest check (composite FK guarantees it is this certificate's check).",
+      cols=[ID(),
+            FK("product_id", "products.id", on_delete="cascade"),
+            C("scheme_code", "text", fk="certification_schemes.code", nn=True),
+            C("certificate_identifier", "text", nn=True, default="''", note="FCC ID, ES ID, UL file no."),
+            C("holder_name", "text"),
+            C("current_status", "cert_status", nn=True, default="'pending'"),
+            C("valid_from", "date"),
+            C("valid_until", "date"),
+            FK("last_check_id", "certification_checks.id", nn=False),
+            CREATED(), UPDATED()],
+      uniques=[U("product_id, scheme_code, certificate_identifier")],
+      fks=[FKC("last_check_id, id", "certification_checks(id, product_certification_id)", deferrable=True)],
+      checks=["valid_until IS NULL OR valid_from IS NULL OR valid_from <= valid_until"]),
+
+    T("certification_checks", "certs", phase=1, immutable=[], features="TC-P1-009 (history)",
+      purpose="Every lookup/manual review of a certificate — the status history.",
+      cols=[ID(),
+            FK("product_certification_id", "product_certifications.id", on_delete="cascade"),
+            C("status", "cert_status", nn=True),
+            C("method", "check_method", nn=True),
+            FK("source_record_id", "source_records.id", nn=False),
+            FK("reviewed_by_user_id", "users.id", nn=False),
+            C("notes", "text"),
+            C("checked_at", "timestamptz", nn=True, default="now()")],
+      uniques=[U("id, product_certification_id")],
+      checks=["method <> 'manual_review' OR reviewed_by_user_id IS NOT NULL",
+              "status <> 'pending'"],
+      indexes=[I("product_certification_id, checked_at DESC")]),
+
+    # ════════════════ SCREENING, HAZARD & PASSPORT ════════════════
+    T("screenings", "verification", phase=1,
+      immutable=["status", "verdict", "rationale", "candidates_considered", "completed_at"],
+      features="FR-08/13, PAS-03",
+      purpose="One recall-screening run for a product, as of a corpus snapshot. Only the completion fields may change, once.",
+      cols=[ID(),
+            FK("product_id", "products.id"),
+            C("run_type", "screening_run_type", nn=True),
+            C("status", "run_status", nn=True, default="'running'"),
+            C("verdict", "recall_verdict"),
+            C("rationale", "text"),
+            C("candidates_considered", "smallint"),
+            C("corpus_synced_at", "timestamptz", nn=True, note="'no match' is only true as of this time"),
+            C("model_code", "text"),
+            C("prompt_version", "text"),
+            C("started_at", "timestamptz", nn=True, default="now()"),
+            C("completed_at", "timestamptz")],
+      uniques=[U("id, product_id")],
+      checks=["(status = 'completed') = (verdict IS NOT NULL)",
+              "(status = 'running') = (completed_at IS NULL)"],
+      indexes=[I("product_id, started_at DESC")],
+      rules=["Status only running→completed|failed (trigger).",
+             "Deferred: verdict match/near_match ⇒ ≥1 screening_matches row with that verdict.",
+             "Re-screens persist only when verdict or candidate set changes (app) — bounds growth."]),
+
+    T("screening_matches", "verification", phase=1, immutable=[], pk=["screening_id", "recall_id"], features="FR-07/08",
+      purpose="Candidate recalls retrieved for a screening and the model's per-candidate verdict.",
+      cols=[FK("screening_id", "screenings.id", on_delete="cascade"),
+            FK("recall_id", "recalls.id"),
+            C("rank", "smallint", nn=True),
+            C("retrieval_score", "real"),
+            C("verdict", "candidate_verdict", nn=True),
+            C("confidence", "numeric(4,3)"),
+            C("rationale", "text")],
+      indexes=[I("recall_id")]),
+
+    T("scoring_contexts", "verification", phase=2, features="TC-P1-011",
+      purpose="Scoring frameworks (safety now; sustainability/circularity later) and their alert threshold.",
+      cols=[C("code", "text", pk=True),
+            C("name", "text", nn=True),
+            C("alert_threshold", "numeric(5,2)", nn=True),
+            C("is_active", "boolean", nn=True, default="true")],
+      checks=["alert_threshold BETWEEN 0 AND 100"]),
+
+    T("scoring_bands", "verification", phase=2, pk=["context_code", "label"], features="Arch v2 §9.3",
+      purpose="Score → label → action bands per context; ranges may not overlap.",
+      cols=[C("context_code", "text", fk="scoring_contexts.code", nn=True),
+            C("label", "text", nn=True),
+            C("score_range", "numrange", nn=True, note="e.g. [0,30)"),
+            C("action", "text", nn=True, note="approve | manual_review | block")],
+      checks=["NOT isempty(score_range)", "score_range <@ numrange(0, 100, '[]')"],
+      uniques=[],
+      rules=["EXCLUDE USING gist (context_code WITH =, score_range WITH &&) (needs btree_gist)."]),
+
+    T("hazard_dimensions", "verification", phase=2, features="TC-P1-011",
+      purpose="Configurable scoring dimensions and weights. Codes are namespaced by context (safety.regulatory…).",
+      cols=[C("code", "text", pk=True),
+            C("context_code", "text", fk="scoring_contexts.code", nn=True),
+            C("name", "text", nn=True),
+            C("description", "text"),
+            C("weight", "numeric(4,2)", nn=True),
+            C("sort_order", "smallint", nn=True, default="0"),
+            C("is_active", "boolean", nn=True, default="true")],
+      uniques=[U("code, context_code")],
+      checks=["weight > 0", "code LIKE context_code || '.%'"]),
+
+    T("hazard_assessments", "verification", phase=2, immutable=[], features="TC-P1-011/012",
+      purpose="One multimodal hazard scoring run (weighted total, label, model).",
+      cols=[ID(),
+            FK("product_id", "products.id"),
+            C("context_code", "text", fk="scoring_contexts.code", nn=True),
+            C("total_score", "numeric(5,2)"),
+            C("label", "text"),
+            C("input_modalities", "text[]", nn=True),
+            C("has_insufficient_data", "boolean", nn=True, default="false"),
+            C("model_code", "text", nn=True),
+            C("prompt_version", "text"),
+            CREATED()],
+      uniques=[U("id, product_id"), U("id, context_code")],
+      checks=["total_score BETWEEN 0 AND 100",
+              "input_modalities <@ ARRAY['text','image','video']::text[] AND cardinality(input_modalities) > 0"],
+      indexes=[I("product_id, context_code, created_at DESC"), I("context_code, total_score DESC")]),
+
+    T("hazard_dimension_scores", "verification", phase=2, immutable=[], pk=["assessment_id", "dimension_code"],
+      features="TC-P1-011 (hallucination guard)",
+      purpose="Per-dimension score + justification. Scored ⇒ ≥1 citation (deferred trigger); uncited ⇒ insufficient_data with NULL score.",
+      cols=[FK("assessment_id", "hazard_assessments.id", on_delete="cascade"),
+            C("context_code", "text", nn=True, note="must equal the assessment's and the dimension's context"),
+            C("dimension_code", "text", fk="hazard_dimensions.code", nn=True),
+            C("status", "dimension_score_status", nn=True),
+            C("score", "numeric(5,2)"),
+            C("weight_applied", "numeric(4,2)", nn=True),
+            C("justification", "text")],
+      fks=[FKC("assessment_id, context_code", "hazard_assessments(id, context_code)", on_delete="cascade"),
+           FKC("dimension_code, context_code", "hazard_dimensions(code, context_code)")],
+      checks=["(status = 'scored') = (score IS NOT NULL)", "score BETWEEN 0 AND 100", "weight_applied > 0"],
+      rules=["Deferred: status = 'scored' ⇒ ≥1 hazard_score_citations row."]),
+
+    T("hazard_score_citations", "verification", phase=2, immutable=[],
+      pk=["assessment_id", "dimension_code", "evidence_id"], features="TC-P1-011",
+      purpose="Evidence cited for each dimension score.",
+      cols=[FK("assessment_id", "hazard_assessments.id", on_delete="cascade"),
+            C("dimension_code", "text", nn=True),
+            FK("evidence_id", "evidence_items.id")],
+      fks=[FKC("assessment_id, dimension_code", "hazard_dimension_scores(assessment_id, dimension_code)",
+               on_delete="cascade")]),
+
+    T("passports", "verification", phase=1, immutable=[], features="FR-10/11, PAS-01",
+      purpose="Versioned Product Passport. A new version on every verdict change. Composite FKs guarantee it cites THIS product's screening/assessment.",
+      cols=[ID(),
+            FK("product_id", "products.id"),
+            C("version", "integer", nn=True),
+            C("tier", "smallint", nn=True, note="0 unidentified · 1 identified · 2 verified"),
+            C("status_badge", "passport_badge", nn=True),
+            C("trust_score", "numeric(5,2)"),
+            C("recall_component", "numeric(5,2)"),
+            C("certification_component", "numeric(5,2)"),
+            C("hazard_component", "numeric(5,2)"),
+            FK("screening_id", "screenings.id", nn=False),
+            FK("hazard_assessment_id", "hazard_assessments.id", nn=False),
+            C("formula_version", "text", nn=True),
+            C("verified_at", "timestamptz", nn=True, default="now()")],
+      uniques=[U("product_id, version"), U("id, product_id")],
+      fks=[FKC("screening_id, product_id", "screenings(id, product_id)"),
+           FKC("hazard_assessment_id, product_id", "hazard_assessments(id, product_id)")],
+      checks=["version > 0", "tier BETWEEN 0 AND 2", "trust_score BETWEEN 0 AND 100",
+              "tier = 2 OR status_badge = 'needs_information'",
+              "tier < 2 OR (screening_id IS NOT NULL AND trust_score IS NOT NULL)"],
+      indexes=[I("status_badge")],
+      rules=["Trigger: screening must be completed; verdict match ⇒ badge recalled; badge recalled ⇒ verdict match|near_match.",
+             "Trigger: version = previous max + 1."]),
+
+    T("passport_evidence", "verification", phase=1, immutable=[], pk=["passport_id", "evidence_id"],
+      features="FR-11 (cited evidence)",
+      purpose="Evidence shown on a passport version, grouped by purpose.",
+      cols=[FK("passport_id", "passports.id", on_delete="cascade"),
+            FK("evidence_id", "evidence_items.id"),
+            C("purpose", "evidence_purpose", nn=True)]),
+
+    # ════════════════ DIGITAL WALLET ════════════════
+    T("wallet_items", "wallet", phase=1, features="TC-P1-013/014, FR-12",
+      purpose="A product in a user's Digital Wallet. Manual/barcode adds stay pending until a matching video verification exists.",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            FK("product_id", "products.id"),
+            C("add_method", "wallet_add_method", nn=True),
+            FK("identification_request_id", "identification_requests.id", nn=False),
+            C("status", "wallet_item_status", nn=True, note="no default: app chooses by add_method"),
+            FK("verified_by_verification_id", "wallet_item_verifications.id", nn=False),
+            C("nickname", "text"),
+            C("notes", "text"),
+            C("alerts_enabled", "boolean", nn=True, default="true"),
+            FK("last_seen_passport_id", "passports.id", nn=False),
+            CREATED(), UPDATED(), DELETED()],
+      uniques=[U("user_id, product_id", where="deleted_at IS NULL")],
+      fks=[FKC("verified_by_verification_id, id", "wallet_item_verifications(id, wallet_item_id)", deferrable=True),
+           FKC("last_seen_passport_id, product_id", "passports(id, product_id)")],
+      checks=["add_method NOT IN ('manual','barcode') OR status <> 'active' OR verified_by_verification_id IS NOT NULL"],
+      indexes=[I("user_id, created_at DESC", where="deleted_at IS NULL"),
+               I("product_id", where="deleted_at IS NULL AND alerts_enabled")],
+      rules=["Verification referenced must have result = 'matched' (trigger).", "Active items per user ≤ app_settings wallet.max_items (app)."]),
+
+    T("wallet_item_verifications", "wallet", phase=1, features="TC-P1-014",
+      purpose="Short-video proof that the user has the manual/barcode-added product.",
+      cols=[ID(),
+            FK("wallet_item_id", "wallet_items.id", on_delete="cascade"),
+            FK("media_asset_id", "media_assets.id"),
+            C("result", "video_check_result", nn=True, default="'pending'"),
+            C("confidence", "numeric(4,3)"),
+            C("mismatch_reason", "text"),
+            C("model_code", "text"),
+            CREATED()],
+      uniques=[U("id, wallet_item_id")],
+      checks=["result <> 'mismatch' OR mismatch_reason IS NOT NULL"]),
+
+    T("wallet_labels", "wallet", phase=1, features="TC-P1-013",
+      purpose="User-defined custom labels ('kitchen', 'kids room').",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("name", "text", nn=True),
+            C("color", "text"),
+            CREATED()],
+      uniques=[U("user_id, lower(name)")],
+      checks=["length(name) BETWEEN 1 AND 40"]),
+
+    T("wallet_item_labels", "wallet", phase=1, pk=["wallet_item_id", "label_id"], features="TC-P1-013",
+      purpose="Many-to-many: wallet items ↔ labels (same owner enforced by trigger).",
+      cols=[FK("wallet_item_id", "wallet_items.id", on_delete="cascade"),
+            FK("label_id", "wallet_labels.id", on_delete="cascade"),
+            CREATED()]),
+
+    T("qr_labels", "wallet", phase=3, features="TC-P1-015",
+      purpose="QR label generated for a wallet item via iotsecurityprivacy.org template.",
+      cols=[ID(),
+            FK("wallet_item_id", "wallet_items.id", on_delete="cascade"),
+            C("provider", "text", nn=True, default="'iotsecurityprivacy'"),
+            C("template_code", "text", nn=True),
+            C("status", "qr_label_status", nn=True, default="'pending'"),
+            C("external_label_id", "text"),
+            C("payload_url", "text"),
+            FK("image_media_id", "media_assets.id", nn=False),
+            C("error", "text"),
+            CREATED()],
+      checks=["status <> 'generated' OR payload_url IS NOT NULL", "status <> 'failed' OR error IS NOT NULL"],
+      indexes=[I("wallet_item_id, created_at DESC")]),
+
+    T("product_watches", "wallet", phase=3, features="TC-P1-017d",
+      purpose="Watch a product not in the wallet (granted by a watchlist entitlement).",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            FK("product_id", "products.id"),
+            FK("entitlement_id", "user_entitlements.id"),
+            C("expires_at", "timestamptz"),
+            CREATED()],
+      uniques=[U("user_id, product_id")]),
+
+    # ════════════════ REWARDS (TELCOINS) ════════════════
+    T("coin_earn_rules", "rewards", phase=3, features="TC-P1-016",
+      purpose="Configurable earning rules (amount, limits, confirmation window).",
+      cols=[C("code", "text", pk=True),
+            C("amount", "bigint", nn=True),
+            C("counts_toward_daily_cap", "boolean", nn=True, default="true"),
+            C("per_subject_limit", "integer", note="e.g. review: 5 per product"),
+            C("lifetime_limit", "integer", note="one-time bonuses = 1"),
+            C("confirmation_delay", "interval", nn=True, default="'10 minutes'"),
+            C("is_active", "boolean", nn=True, default="true")],
+      checks=["amount > 0", "per_subject_limit IS NULL OR per_subject_limit > 0",
+              "lifetime_limit IS NULL OR lifetime_limit > 0"]),
+
+    T("coin_ledger_entries", "rewards", phase=3,
+      immutable=["status", "status_changed_at", "fraud_hold_id", "confirmable_at"],
+      features="TC-P1-016/017, Arch v2 §6",
+      purpose="Append-only TelCoin ledger. Only status moves (pending→confirmed|frozen|reversed, frozen→confirmed|reversed). Writes go through coin_* functions.",
+      cols=[ID(),
+            FK("user_id", "users.id"),
+            C("entry_type", "ledger_entry_type", nn=True),
+            C("amount", "bigint", nn=True, note="+ earn/bonus/refund · − spend/clawback · ± adjustment"),
+            C("status", "ledger_status", nn=True),
+            C("rule_code", "text", fk="coin_earn_rules.code"),
+            C("subject_type", "text", note="product | review | media_asset | hazard_flag | referral | redemption"),
+            C("subject_id", "uuid", note="per-subject limit key (e.g. product for reviews)"),
+            C("reference_type", "text"),
+            C("reference_id", "uuid"),
+            FK("reverses_entry_id", "coin_ledger_entries.id", nn=False),
+            FK("fraud_hold_id", "fraud_holds.id", nn=False),
+            C("idempotency_key", "text", nn=True, uk=True),
+            C("confirmable_at", "timestamptz"),
+            C("status_changed_at", "timestamptz"),
+            CREATED()],
+      uniques=[U("reverses_entry_id", where="entry_type IN ('clawback','refund')")],
+      checks=["amount <> 0",
+              "entry_type NOT IN ('earn','level_bonus','refund') OR amount > 0",
+              "entry_type NOT IN ('spend','clawback') OR amount < 0",
+              "entry_type NOT IN ('spend','clawback','refund','adjustment') OR status = 'confirmed'",
+              "entry_type NOT IN ('clawback','refund') OR reverses_entry_id IS NOT NULL",
+              "entry_type NOT IN ('earn') OR rule_code IS NOT NULL",
+              "status <> 'pending' OR confirmable_at IS NOT NULL"],
+      indexes=[I("user_id, created_at DESC"),
+               I("user_id, rule_code, subject_id", where="entry_type = 'earn'", note="per-subject limits"),
+               I("confirmable_at", where="status = 'pending'", note="confirmation sweeper")],
+      rules=["Status transitions validated by trigger.",
+             "coin_earn(): locks coin_balances row, enforces daily cap (app_settings rewards.daily_cap), limits, idempotency.",
+             "coin_spend(): locks balance row, requires confirmed_balance ≥ cost.",
+             "coin_clawback(): may drive confirmed_balance negative (debt repaid by future earnings)."]),
+
+    T("coin_balances", "rewards", phase=3, pk=["user_id"], features="TC-P1-016/018",
+      purpose="Per-user balances maintained by coin_* functions in the same transaction; row lock serialises earn/spend. Rebuildable from the ledger.",
+      cols=[FK("user_id", "users.id", on_delete="cascade"),
+            C("confirmed_balance", "bigint", nn=True, default="0", note="may be negative after clawback (debt)"),
+            C("pending_balance", "bigint", nn=True, default="0"),
+            C("frozen_balance", "bigint", nn=True, default="0"),
+            C("lifetime_earned", "bigint", nn=True, default="0", note="drives reward level"),
+            UPDATED()],
+      checks=["pending_balance >= 0", "frozen_balance >= 0", "lifetime_earned >= 0"]),
+
+    T("reward_levels", "rewards", phase=3, features="TC-P1-018",
+      purpose="Level ladder (Novice → Master) by LIFETIME coins earned; a user's level is derived, never stored.",
+      cols=[C("level", "smallint", pk=True),
+            C("title", "text", nn=True, uk=True),
+            C("min_lifetime_coins", "bigint", nn=True, uk=True),
+            C("earn_bonus_pct", "numeric(4,1)", nn=True, default="0"),
+            C("perks", "jsonb", nn=True, default="'[]'")],
+      checks=["level > 0", "min_lifetime_coins >= 0", "earn_bonus_pct BETWEEN 0 AND 100"]),
+
+    T("redemption_items", "rewards", phase=3, features="TC-P1-017",
+      purpose="Catalogue of what coins buy.",
+      cols=[C("code", "text", pk=True),
+            C("name", "text", nn=True),
+            C("cost_coins", "bigint", nn=True),
+            C("fulfilment_type", "fulfilment_type", nn=True),
+            C("duration", "interval"),
+            C("quantity", "integer"),
+            C("is_active", "boolean", nn=True, default="true")],
+      checks=["cost_coins > 0", "quantity IS NULL OR quantity > 0"]),
+
+    T("redemptions", "rewards", phase=3, features="TC-P1-017",
+      purpose="A redemption; its spend is exactly one ledger entry. Fulfilment evidence recorded.",
+      cols=[ID(),
+            FK("user_id", "users.id"),
+            C("item_code", "text", fk="redemption_items.code", nn=True),
+            FK("ledger_entry_id", "coin_ledger_entries.id", uk=True),
+            FK("product_id", "products.id", nn=False),
+            C("status", "redemption_status", nn=True, default="'processing'"),
+            C("fulfilment", "jsonb"),
+            C("fulfilled_at", "timestamptz"),
+            CREATED()],
+      checks=["(status = 'fulfilled') = (fulfilled_at IS NOT NULL)"],
+      indexes=[I("user_id, created_at DESC")]),
+
+    T("user_entitlements", "rewards", phase=3, features="TC-P1-017/018",
+      purpose="Time-boxed rights from redemptions, level perks or admins (rate boost, feature access, watchlist slots).",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("source", "entitlement_source", nn=True),
+            FK("redemption_id", "redemptions.id", nn=False),
+            C("entitlement", "text", nn=True, note="rate_limit_x3 | feature:<flag> | watchlist_slots"),
+            C("quantity", "integer"),
+            C("starts_at", "timestamptz", nn=True, default="now()"),
+            C("ends_at", "timestamptz")],
+      checks=["(source = 'redemption') = (redemption_id IS NOT NULL)", "ends_at IS NULL OR ends_at > starts_at"],
+      indexes=[I("user_id, entitlement, ends_at")]),
+
+    T("fraud_holds", "rewards", phase=3, features="TC-P1-016",
+      purpose="Automatic or manual freeze of a user's earning pending review.",
+      cols=[ID(),
+            FK("user_id", "users.id"),
+            C("reason", "text", nn=True),
+            C("rule_triggered", "text"),
+            C("status", "hold_status", nn=True, default="'open'"),
+            FK("resolved_by_user_id", "users.id", nn=False),
+            C("resolved_at", "timestamptz"),
+            CREATED()],
+      checks=["(status = 'open') = (resolved_at IS NULL)"],
+      indexes=[I("user_id", where="status = 'open'")]),
+
+    T("referrals", "rewards", phase=3, features="TC-P1-016g/026",
+      purpose="Referrer ↔ referred user; rewarded once the friend reaches Level 1. The single source of 'who referred whom'.",
+      cols=[ID(),
+            FK("referrer_user_id", "users.id"),
+            FK("referred_user_id", "users.id", uk=True),
+            C("status", "referral_status", nn=True, default="'pending'"),
+            C("qualified_at", "timestamptz"),
+            CREATED()],
+      checks=["referrer_user_id <> referred_user_id"]),
+
+    T("user_daily_logins", "rewards", phase=3, pk=["user_id", "login_date"], features="TC-P1-016f",
+      purpose="One row per user per active day (user's time zone); streak length derived.",
+      cols=[FK("user_id", "users.id", on_delete="cascade"),
+            C("login_date", "date", nn=True)]),
+
+    T("badges", "rewards", phase=3, features="TC-P1-017c/018",
+      purpose="Badge catalogue (Inspector…Master, beta tester, verified identity).",
+      cols=[C("code", "text", pk=True), C("name", "text", nn=True), C("description", "text")]),
+
+    T("user_badges", "rewards", phase=3, pk=["user_id", "badge_code"], features="TC-P1-018",
+      purpose="Badges awarded to users.",
+      cols=[FK("user_id", "users.id", on_delete="cascade"),
+            C("badge_code", "text", fk="badges.code", nn=True),
+            C("awarded_at", "timestamptz", nn=True, default="now()")]),
+
+    # ════════════════ COMMUNITY & REVIEWS ════════════════
+    T("reviews", "community", phase=1, features="TC-P1-022",
+      purpose="Product reviews by users, or ingested from marketplaces (keyed on source + external id so re-ingestion updates, not duplicates).",
+      cols=[ID(),
+            FK("product_id", "products.id"),
+            C("origin", "content_origin", nn=True, default="'user'"),
+            FK("author_user_id", "users.id", nn=False),
+            C("data_source_code", "text", fk="data_sources.code"),
+            C("external_id", "text"),
+            FK("source_record_id", "source_records.id", nn=False, note="latest version"),
+            C("rating", "smallint", nn=True),
+            C("title", "text"),
+            C("body", "text", nn=True),
+            C("author_reward_level", "smallint", note="snapshot at writing time"),
+            C("verified_owner", "boolean", nn=True, default="false"),
+            C("geohash", "text", note="~1 km cell, optional"),
+            C("helpful_count", "integer", nn=True, default="0"),
+            C("status", "content_status", nn=True, default="'published'"),
+            CREATED(), UPDATED(), DELETED()],
+      uniques=[U("data_source_code, external_id", where="origin = 'ingested'")],
+      checks=["rating BETWEEN 1 AND 5",
+              "(origin = 'user') = (author_user_id IS NOT NULL)",
+              "(origin = 'ingested') = (data_source_code IS NOT NULL AND external_id IS NOT NULL AND source_record_id IS NOT NULL)",
+              "helpful_count >= 0", GEOHASH_CHECK],
+      indexes=[I("product_id, created_at DESC", where="deleted_at IS NULL"), I("author_user_id, created_at DESC"),
+               I("geohash text_pattern_ops", where="geohash IS NOT NULL")]),
+
+    T("review_media", "community", phase=1, pk=["review_id", "media_asset_id"], features="TC-P1-022",
+      purpose="Photos attached to a review.",
+      cols=[FK("review_id", "reviews.id", on_delete="cascade"),
+            FK("media_asset_id", "media_assets.id"),
+            C("sort_order", "smallint", nn=True, default="0")]),
+
+    T("review_votes", "community", phase=1, pk=["review_id", "user_id"], features="TC-P1-022",
+      purpose="'Helpful' votes — one per user per review.",
+      cols=[FK("review_id", "reviews.id", on_delete="cascade"),
+            FK("user_id", "users.id", on_delete="cascade"),
+            CREATED()]),
+
+    T("posts", "community", phase=3, features="TC-P1-021/025",
+      purpose="Community post about a product. Location stored only as a ~1 km geohash cell (privacy).",
+      cols=[ID(),
+            FK("author_user_id", "users.id"),
+            FK("product_id", "products.id"),
+            FK("wallet_item_id", "wallet_items.id", nn=False, on_delete="set null"),
+            C("body", "text", nn=True),
+            C("geohash", "text", note="precision 6 ≈ 1.2 km"),
+            C("location_name", "text"),
+            C("country_code", "char(2)"),
+            C("status", "content_status", nn=True, default="'published'"),
+            C("comment_count", "integer", nn=True, default="0"),
+            C("reaction_count", "integer", nn=True, default="0"),
+            CREATED(), UPDATED(), DELETED()],
+      checks=[GEOHASH_CHECK, "comment_count >= 0", "reaction_count >= 0"],
+      indexes=[I("geohash text_pattern_ops", where="geohash IS NOT NULL"), I("product_id, created_at DESC"),
+               I("created_at DESC", where="status = 'published' AND deleted_at IS NULL")]),
+
+    T("post_media", "community", phase=3, pk=["post_id", "media_asset_id"], features="TC-P1-021",
+      purpose="Photos/videos attached to a post.",
+      cols=[FK("post_id", "posts.id", on_delete="cascade"),
+            FK("media_asset_id", "media_assets.id"),
+            C("sort_order", "smallint", nn=True, default="0")]),
+
+    T("comments", "community", phase=3, features="TC-P1-025/029",
+      purpose="Threaded discussion on a post or on a risk event (Risk Timeline community thread).",
+      cols=[ID(),
+            FK("post_id", "posts.id", nn=False, on_delete="cascade"),
+            FK("risk_event_id", "risk_events.id", nn=False, on_delete="cascade"),
+            FK("author_user_id", "users.id"),
+            FK("parent_comment_id", "comments.id", nn=False, on_delete="cascade"),
+            C("body", "text", nn=True),
+            C("status", "content_status", nn=True, default="'published'"),
+            CREATED(), UPDATED(), DELETED()],
+      checks=["num_nonnulls(post_id, risk_event_id) = 1", "parent_comment_id IS NULL OR parent_comment_id <> id"],
+      indexes=[I("post_id, created_at"), I("risk_event_id, created_at")]),
+
+    T("reactions", "community", phase=3, pk=["post_id", "user_id"], features="TC-P1-025",
+      purpose="One reaction per user per post.",
+      cols=[FK("post_id", "posts.id", on_delete="cascade"),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("reaction", "reaction_type", nn=True),
+            CREATED()]),
+
+    T("hazard_flags", "community", phase=3, features="TC-P1-023",
+      purpose="User-reported suspected hazard; coins only once confirmed (recall match or moderator).",
+      cols=[ID(),
+            FK("reporter_user_id", "users.id"),
+            FK("product_id", "products.id"),
+            FK("wallet_item_id", "wallet_items.id", nn=False, on_delete="set null"),
+            C("dimension_code", "text", fk="hazard_dimensions.code", note="hazard type"),
+            C("description", "text"),
+            C("geohash", "text"),
+            C("status", "flag_status", nn=True, default="'pending'"),
+            FK("matched_recall_id", "recalls.id", nn=False),
+            FK("reviewed_by_user_id", "users.id", nn=False),
+            C("reviewed_at", "timestamptz"),
+            C("resolution_note", "text"),
+            CREATED()],
+      checks=[GEOHASH_CHECK, "(status = 'pending') = (reviewed_at IS NULL)",
+              "status <> 'confirmed' OR matched_recall_id IS NOT NULL OR reviewed_by_user_id IS NOT NULL"],
+      indexes=[I("product_id, status"), I("reporter_user_id, created_at DESC")]),
+
+    T("hazard_flag_media", "community", phase=3, pk=["hazard_flag_id", "media_asset_id"], features="TC-P1-023",
+      purpose="Evidence photos on a hazard flag.",
+      cols=[FK("hazard_flag_id", "hazard_flags.id", on_delete="cascade"),
+            FK("media_asset_id", "media_assets.id")]),
+
+    T("product_fact_reports", "community", phase=3, features="TC-P1-016h",
+      purpose="User confirms or corrects a flagged product fact; accepted reports earn coins.",
+      cols=[ID(),
+            FK("product_id", "products.id"),
+            FK("reporter_user_id", "users.id"),
+            FK("hazard_flag_id", "hazard_flags.id", nn=False, note="flag being verified, if any"),
+            C("attribute", "text", nn=True),
+            C("current_value", "text"),
+            C("proposed_value", "text"),
+            C("is_confirmation", "boolean", nn=True),
+            C("status", "fact_report_status", nn=True, default="'pending'"),
+            FK("reviewed_by_user_id", "users.id", nn=False),
+            C("reviewed_at", "timestamptz"),
+            CREATED()],
+      checks=["is_confirmation OR proposed_value IS NOT NULL", "(status = 'pending') = (reviewed_at IS NULL)"]),
+
+    # ════════════════ COMMERCE FEED ════════════════
+    T("topics", "feed", phase=3, features="TC-P1-007",
+      purpose="Attribute/topic filter values.",
+      cols=[C("code", "text", pk=True), C("name", "text", nn=True), C("sort_order", "smallint", nn=True, default="0")]),
+
+    T("feed_items", "feed", phase=3, features="TC-P1-004/007",
+      purpose="A card in For You / Explore, keyed on its origin so re-ingestion updates rather than duplicates.",
+      cols=[ID(),
+            C("item_type", "feed_item_type", nn=True),
+            C("data_source_code", "text", fk="data_sources.code", nn=True),
+            C("external_id", "text"),
+            FK("source_record_id", "source_records.id", nn=False),
+            FK("media_asset_id", "media_assets.id", nn=False),
+            FK("post_id", "posts.id", nn=False, on_delete="cascade"),
+            FK("recall_id", "recalls.id", nn=False),
+            FK("product_id", "products.id", nn=False),
+            FK("category_id", "categories.id", nn=False),
+            C("country_code", "char(2)"),
+            C("title", "text"),
+            C("ai_label", "text"),
+            C("ai_confidence", "numeric(4,3)"),
+            C("trending_score", "real", nn=True, default="0", note="not indexed (keeps HOT updates)"),
+            C("is_public", "boolean", nn=True, default="true"),
+            C("published_at", "timestamptz", nn=True),
+            CREATED()],
+      uniques=[U("data_source_code, external_id", where="external_id IS NOT NULL"),
+               U("post_id", where="post_id IS NOT NULL"),
+               U("recall_id", where="item_type = 'recall'"),
+               U("media_asset_id", where="item_type = 'user_upload'")],
+      checks=["item_type <> 'user_upload' OR media_asset_id IS NOT NULL",
+              "item_type NOT IN ('listing','social_post') OR (external_id IS NOT NULL AND source_record_id IS NOT NULL)",
+              "item_type <> 'recall' OR recall_id IS NOT NULL",
+              "item_type <> 'community_post' OR post_id IS NOT NULL",
+              "ai_confidence BETWEEN 0 AND 1"],
+      indexes=[I("published_at DESC", where="is_public"),
+               I("country_code, category_id, published_at DESC"),
+               I("data_source_code, published_at DESC")]),
+
+    T("feed_item_topics", "feed", phase=3, pk=["feed_item_id", "topic_code"], features="TC-P1-007",
+      purpose="Topics tagged on a feed item (AI-assigned with confidence).",
+      cols=[FK("feed_item_id", "feed_items.id", on_delete="cascade"),
+            C("topic_code", "text", fk="topics.code", nn=True),
+            C("confidence", "numeric(4,3)")],
+      indexes=[I("topic_code, feed_item_id")]),
+
+    T("search_queries", "feed", phase=3, immutable=[], features="TC-P1-007/013",
+      purpose="User search history (text or image).",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("query_text", "text"),
+            FK("query_media_id", "media_assets.id", nn=False, on_delete="set null"),
+            FK("clicked_product_id", "products.id", nn=False),
+            CREATED()],
+      checks=["num_nonnulls(query_text, query_media_id) >= 1"],
+      indexes=[I("user_id, created_at DESC")]),
+
+    T("feed_interactions", "feed", phase=3, immutable=[], partition_by="created_at", features="TC-P1-007",
+      purpose="Implicit feedback for ranking. Monthly partitions.",
+      cols=[ID(),
+            C("user_id", "uuid", nn=True, note="no FK on partitioned log; purged on account deletion"),
+            C("feed_item_id", "uuid", nn=True),
+            C("action", "feed_action", nn=True),
+            CREATED()],
+      indexes=[I("user_id, created_at DESC")]),
+
+    # ════════════════ PRICING ════════════════
+    T("price_snapshots", "pricing", phase=3, immutable=[], features="TC-P1-024",
+      purpose="Observed prices per product, source, seller and currency over time.",
+      cols=[ID(),
+            FK("product_id", "products.id"),
+            C("data_source_code", "text", fk="data_sources.code", nn=True),
+            C("seller_name", "text"),
+            C("listing_url", "text"),
+            C("country_code", "char(2)", nn=True),
+            C("currency", "char(3)", nn=True),
+            C("price", "numeric(12,2)", nn=True),
+            C("in_stock", "boolean"),
+            C("observed_at", "timestamptz", nn=True)],
+      checks=["price >= 0", "currency ~ '^[A-Z]{3}$'"],
+      indexes=[I("product_id, currency, observed_at DESC")]),
+
+    T("price_alerts", "pricing", phase=3, features="TC-P1-024",
+      purpose="Target-price alert on a wallet product (owner = wallet item's user).",
+      cols=[ID(),
+            FK("wallet_item_id", "wallet_items.id", on_delete="cascade"),
+            C("target_price", "numeric(12,2)", nn=True),
+            C("currency", "char(3)", nn=True),
+            C("status", "price_alert_status", nn=True, default="'active'"),
+            C("last_triggered_at", "timestamptz"),
+            CREATED(), UPDATED()],
+      uniques=[U("wallet_item_id", where="status = 'active'")],
+      checks=["target_price > 0", "currency ~ '^[A-Z]{3}$'"]),
+
+    # ════════════════ RISK EVENTS & NOTIFICATIONS ════════════════
+    T("risk_events", "alerts", phase=3, immutable=[], features="TC-P1-029, FR-13, PAS-04",
+      purpose="A product-level risk signal, created once per (product, cause) — re-screens do not duplicate it.",
+      cols=[ID(),
+            FK("product_id", "products.id"),
+            C("event_type", "risk_event_type", nn=True),
+            C("severity", "severity", nn=True),
+            FK("screening_id", "screenings.id", nn=False),
+            FK("recall_id", "recalls.id", nn=False),
+            FK("certification_check_id", "certification_checks.id", nn=False),
+            FK("hazard_assessment_id", "hazard_assessments.id", nn=False),
+            FK("price_snapshot_id", "price_snapshots.id", nn=False),
+            FK("hazard_flag_id", "hazard_flags.id", nn=False),
+            C("title", "text", nn=True),
+            C("summary", "text"),
+            C("detected_at", "timestamptz", nn=True, default="now()")],
+      fks=[FKC("screening_id, product_id", "screenings(id, product_id)"),
+           FKC("hazard_assessment_id, product_id", "hazard_assessments(id, product_id)")],
+      uniques=[U("product_id, event_type, recall_id", where="recall_id IS NOT NULL"),
+               U("certification_check_id", where="certification_check_id IS NOT NULL"),
+               U("hazard_assessment_id", where="hazard_assessment_id IS NOT NULL"),
+               U("price_snapshot_id", where="price_snapshot_id IS NOT NULL"),
+               U("hazard_flag_id", where="hazard_flag_id IS NOT NULL")],
+      checks=["CASE event_type"
+              " WHEN 'recall_match' THEN recall_id IS NOT NULL AND screening_id IS NOT NULL"
+              " WHEN 'recall_near_match' THEN recall_id IS NOT NULL AND screening_id IS NOT NULL"
+              " WHEN 'hazard_threshold' THEN hazard_assessment_id IS NOT NULL"
+              " WHEN 'certification_change' THEN certification_check_id IS NOT NULL"
+              " WHEN 'price_drop' THEN price_snapshot_id IS NOT NULL"
+              " WHEN 'community_flag_confirmed' THEN hazard_flag_id IS NOT NULL"
+              " END"],
+      indexes=[I("product_id, detected_at DESC")]),
+
+    T("risk_event_media", "alerts", phase=3, pk=["risk_event_id", "media_asset_id"], features="TC-P1-029",
+      purpose="Images/videos shown in a risk instance's detail feed.",
+      cols=[FK("risk_event_id", "risk_events.id", on_delete="cascade"),
+            FK("media_asset_id", "media_assets.id"),
+            C("sort_order", "smallint", nn=True, default="0")]),
+
+    T("user_risk_alerts", "alerts", phase=3, features="TC-P1-029",
+      purpose="A risk instance in one user's timeline; the user investigates then confirms or dismisses.",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            FK("risk_event_id", "risk_events.id"),
+            FK("wallet_item_id", "wallet_items.id", nn=False, on_delete="set null"),
+            FK("price_alert_id", "price_alerts.id", nn=False, on_delete="set null"),
+            C("status", "risk_alert_status", nn=True, default="'new'"),
+            C("action_taken", "text"),
+            C("seen_at", "timestamptz"),
+            C("resolved_at", "timestamptz"),
+            CREATED()],
+      uniques=[U("user_id, risk_event_id")],
+      checks=["status NOT IN ('confirmed','dismissed','resolved') OR resolved_at IS NOT NULL"],
+      indexes=[I("user_id, created_at DESC"), I("user_id", where="status = 'new'")]),
+
+    T("notifications", "alerts", phase=3, features="PAS-04, TC-P1-010/024/029",
+      purpose="Outbound notification per channel with delivery status.",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("channel", "notification_channel", nn=True),
+            C("template_code", "text", nn=True),
+            C("payload", "jsonb", nn=True, default="'{}'"),
+            FK("user_risk_alert_id", "user_risk_alerts.id", nn=False, on_delete="set null"),
+            C("status", "notification_status", nn=True, default="'queued'"),
+            C("error", "text"),
+            C("sent_at", "timestamptz"),
+            C("read_at", "timestamptz"),
+            CREATED()],
+      indexes=[I("user_id, created_at DESC"), I("created_at", where="status = 'queued'")]),
+
+    T("notification_preferences", "alerts", phase=3, pk=["user_id", "channel", "category"],
+      purpose="Per-user, per-channel, per-category opt in/out.",
+      cols=[FK("user_id", "users.id", on_delete="cascade"),
+            C("channel", "notification_channel", nn=True),
+            C("category", "text", nn=True, note="recall | price | community | marketing"),
+            C("enabled", "boolean", nn=True, default="true")]),
+
+    T("user_devices", "alerts", phase=3, features="future mobile app",
+      purpose="Push tokens for the (future) mobile app and web push.",
+      cols=[ID(),
+            FK("user_id", "users.id", on_delete="cascade"),
+            C("platform", "text", nn=True),
+            C("push_token", "text", nn=True, uk=True),
+            C("last_seen_at", "timestamptz"),
+            CREATED()],
+      checks=["platform IN ('ios','android','web')"]),
+
+    # ════════════════ PLATFORM, AUDIT & OPERATIONS ════════════════
+    T("app_settings", "platform", phase=1, features="NFR-02, D9 config-as-data",
+      purpose="Typed runtime settings: quotas, caps, thresholds (wallet.max_items, identify.daily_quota, rewards.daily_cap, session timeouts…).",
+      cols=[C("key", "text", pk=True),
+            C("value", "jsonb", nn=True),
+            C("description", "text"),
+            UPDATED()],
+      checks=["key ~ '^[a-z0-9_]+(\\.[a-z0-9_]+)+$'"]),
+
+    T("audit_log", "platform", phase=1, immutable=[], partition_by="created_at", features="FR-16, NFR-03",
+      purpose="Permanent audit of every significant write. Monthly partitions.",
+      cols=[ID(),
+            C("actor_type", "actor_type", nn=True),
+            C("actor_user_id", "uuid", note="no FK — survives account anonymisation"),
+            C("action", "text", nn=True),
+            C("entity_type", "text", nn=True),
+            C("entity_id", "uuid"),
+            C("request_id", "text"),
+            C("trace_id", "text"),
+            C("ip_address", "inet"),
+            C("changes", "jsonb"),
+            C("metadata", "jsonb"),
+            CREATED()],
+      indexes=[I("entity_type, entity_id, created_at DESC"), I("actor_user_id, created_at DESC")]),
+
+    T("review_tasks", "platform", phase=2, features="TC-P1-009/011/023",
+      purpose="Unified human-review queue; user-submitted material (e.g. manual certification evidence) in payload.",
+      cols=[ID(),
+            C("task_type", "review_task_type", nn=True),
+            C("subject_type", "text", nn=True),
+            C("subject_id", "uuid", nn=True),
+            C("status", "review_task_status", nn=True, default="'open'"),
+            C("priority", "smallint", nn=True, default="3"),
+            FK("submitted_by_user_id", "users.id", nn=False, on_delete="set null"),
+            C("payload", "jsonb", nn=True, default="'{}'"),
+            FK("assigned_to_user_id", "users.id", nn=False, on_delete="set null"),
+            C("resolution", "text"),
+            C("resolved_at", "timestamptz"),
+            CREATED(), UPDATED()],
+      uniques=[U("task_type, subject_type, subject_id", where="status IN ('open','in_progress')")],
+      checks=["priority BETWEEN 1 AND 5", "(status IN ('resolved','dismissed')) = (resolved_at IS NOT NULL)"],
+      indexes=[I("status, priority, created_at")]),
+
+    T("ai_invocations", "platform", phase=2, immutable=[], partition_by="created_at", features="NFR-02, D-05",
+      purpose="Every model call: purpose, model, tokens, cost, latency — quotas, budgets, evals. Monthly partitions.",
+      cols=[ID(),
+            C("purpose", "ai_purpose", nn=True),
+            C("model_code", "text", nn=True),
+            C("prompt_version", "text"),
+            C("user_id", "uuid"),
+            C("subject_type", "text"),
+            C("subject_id", "uuid"),
+            C("input_tokens", "integer"),
+            C("output_tokens", "integer"),
+            C("cost_usd", "numeric(10,6)"),
+            C("latency_ms", "integer"),
+            C("succeeded", "boolean", nn=True),
+            C("error", "text"),
+            CREATED()],
+      indexes=[I("user_id, created_at DESC"), I("purpose, model_code, created_at DESC")]),
+
+    T("outbox_events", "platform", phase=2, features="event-driven alerts, re-screen fan-out",
+      purpose="Transactional outbox: events written with the change, published afterwards.",
+      cols=[ID(),
+            C("aggregate_type", "text", nn=True),
+            C("aggregate_id", "uuid", nn=True),
+            C("event_type", "text", nn=True),
+            C("payload", "jsonb", nn=True),
+            C("published_at", "timestamptz"),
+            C("attempts", "smallint", nn=True, default="0"),
+            CREATED()],
+      indexes=[I("created_at", where="published_at IS NULL")]),
+
+    T("feature_flags", "platform", phase=3, features="TC-P1-017c",
+      purpose="Feature flags / early-access gates.",
+      cols=[C("code", "text", pk=True), C("description", "text"),
+            C("is_enabled", "boolean", nn=True, default="false"),
+            C("rollout", "jsonb", nn=True, default="'{}'"), UPDATED()]),
+]
+
+TABLE_BY_NAME = {t.name: t for t in TABLES}
+
+
+def pk_cols(t):
+    if t.pk:
+        return list(t.pk)
+    return [c.name for c in t.cols if c.pk]
+
+
+def fk_edges():
+    """(child, col, parent, parent_col, nullable) for every single-column FK reference."""
+    for t in TABLES:
+        for c in t.cols:
+            if c.fk:
+                pt, pc = c.fk.split(".")
+                yield t.name, c.name, pt, pc, not (c.nn or c.name in pk_cols(t))
+
+
+def validate():
+    errors = []
+    for child, col, parent, pcol, _ in fk_edges():
+        if parent not in TABLE_BY_NAME:
+            errors.append(f"{child}.{col} → unknown table {parent}")
+        elif pcol not in [c.name for c in TABLE_BY_NAME[parent].cols]:
+            errors.append(f"{child}.{col} → unknown column {parent}.{pcol}")
+    for t in TABLES:
+        names = [c.name for c in t.cols]
+        if t.domain not in DOMAINS:
+            errors.append(f"{t.name}: unknown domain")
+        if len(names) != len(set(names)):
+            errors.append(f"{t.name}: duplicate column")
+        for p in pk_cols(t):
+            if p not in names:
+                errors.append(f"{t.name}: pk column {p} missing")
+        if t.immutable:
+            for c in t.immutable:
+                if c not in names:
+                    errors.append(f"{t.name}: immutable allow-list column {c} missing")
+        if t.partition_by and t.partition_by not in names:
+            errors.append(f"{t.name}: partition column missing")
+        for c in t.cols:
+            base = c.type.split("(")[0].split("[")[0]
+            if base not in ENUMS and base not in {
+                "uuid", "text", "citext", "timestamptz", "boolean", "smallint", "integer", "bigint",
+                "numeric", "char", "bytea", "inet", "jsonb", "date", "real", "interval", "vector",
+                "tsvector", "int4", "numrange"}:
+                errors.append(f"{t.name}.{c.name}: unknown type {c.type}")
+    return errors
+
+
+if __name__ == "__main__":
+    errs = validate()
+    edges = list(fk_edges())
+    print("\n".join(errs) or
+          f"OK — {len(TABLES)} tables ({', '.join(f'phase {p}: {sum(t.phase == p for t in TABLES)}' for p in (1, 2, 3))}), "
+          f"{len(ENUMS)} enums, {len(edges)} FK columns")
