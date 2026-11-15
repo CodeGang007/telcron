@@ -1,0 +1,22 @@
+# Local stack for the application: PostgreSQL 18 + pgvector on :5436, Redis on :6381.
+# Branch feat/database-schema has its own compose file for the designed database (service `db`,
+# :5433, PostGIS). WO-011 converges the two; until then this one is what backend/ runs against.
+name: telcron-dev
+services:
+  postgres:
+    image: pgvector/pgvector:pg18
+    environment:
+      POSTGRES_USER: telcron
+      POSTGRES_PASSWORD: telcron
+      POSTGRES_DB: telcron
+    ports: ['5436:5432']
+    volumes: ['pgdata:/var/lib/postgresql']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U telcron']
+      interval: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports: ['6381:6379']
+volumes:
+  pgdata:

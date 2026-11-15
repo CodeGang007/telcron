@@ -1,0 +1,40 @@
+# secrets / local config
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# editors / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+
+# draw.io backups
+*.drawio.bkp
+.$*
+
+# local runtime
+.dev-logs/
+.scratch/
+test-results/
+coverage/
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/worktrees/
+
+# Source documents live outside the repository (see CLAUDE.md); local copies stay local.
+docs/reference/
+# Machine- and account-specific notes (AWS identifiers and the like).
+*.local.md
