@@ -39,7 +39,18 @@ Worker → new passport. Without the Worker nothing is re-screened and no coin i
 make api-test     # ruff + pytest; the tests build their own database from db/
 make db-test      # the schema's own suite, on a throwaway Postgres
 cd frontend && npx tsc --noEmit && npm run build
+cd e2e && npm run journey     # the member's journey in a browser; needs `make dev` and the demo data
 ```
+
+The journey creates a new member on every run. It needs `DEV_EXPOSE_CODES=true` and a short
+`COIN_CONFIRM_DELAY_SECONDS`. `npm run smoke` is the read-only set for a deployed site
+(`BASE_URL`, `API_URL`, optional `EXPECT_VERSION`).
+
+## Releases
+A push to `main` runs the pipeline and, when it is green, deploys to AWS dev by itself: the workflow
+commits the web build and a `VERSION` file to `release/dev`, and each host's agent deploys it within
+about a minute (the backend host builds the image first, a few minutes). `/health` on the API and
+`/version.txt` on the web host name the commit that is live.
 
 ## When something is off
 - Passport did not change after a review: is the Worker running? `tail .dev-logs/worker.log`.
@@ -48,4 +59,4 @@ cd frontend && npx tsc --noEmit && npm run build
 - `relation "hazard_assessments" does not exist`: phases 2-3 are missing. `make db-next`.
 - Start clean: `make db-reset`, then `make db-next` and `cd backend && uv run python -m app.seed`.
 
-AWS dev is described in `docs/runbooks/aws-dev.md`. Nothing is deployed there yet.
+AWS dev is described in `docs/runbooks/aws-dev.md`: what runs where, how to look at it, how to sign in.

@@ -1,102 +1,120 @@
 # AWS dev environment
 
-Region `us-east-2`. The repository is public, so the account id, instance and security-group ids, IP
-addresses and the database endpoint are **not** in this file. They are in the console and in
-`docs/runbooks/aws-dev.local.md`, which is gitignored.
+Region `us-east-2`. The repository is public, so the account id, resource ids, IP addresses, hostnames
+and the database endpoint are **not** in this file. They are in the console, in the repository's Actions
+variables (`DEV_WEB_URL`, `DEV_API_URL`) and in `docs/runbooks/aws-dev.local.md`, which is gitignored.
 
-Everything below was created on 2026-11-15 from CloudShell in the console. No access keys exist.
-**Nothing is deployed: the hosts are empty.** Deployment is WO-002.
+The dev site has been live since 2026-11-16. Nobody holds AWS access keys: people use the console or
+`aws login`; the EC2 host uses its instance role; GitHub holds no AWS credentials at all.
+
+## What runs where
+
+| Where | What |
+| --- | --- |
+| EC2 `telcron-dev-backend` (`t3.micro`, Ubuntu 24.04) | Docker Compose: Caddy (HTTPS), API, Worker, Redis. `infra/aws/compose.yml` |
+| RDS `telcron-dev` (PostgreSQL 18, `db.t4g.micro`) | The database. Private; reachable from the EC2 host only |
+| Lightsail `telcron-dev-web` (Debian 12, smallest bundle) | Caddy serving the built web app from `/var/www/telcron` |
+
+Both public hosts have a fixed address and a hostname that encodes it (a wildcard-DNS service), with
+Let's Encrypt certificates that Caddy obtains and renews. A real domain would replace both.
+
+## How a release happens
+
+1. A push to `main` runs `.github/workflows/pipeline.yml`: schema tests, backend lint and tests, web
+   typecheck and build, and the member's journey in a browser against a full stack.
+2. If all of it passes, the `release` job builds the web app, and commits it with a `VERSION` file naming
+   the commit to the `release/dev` branch. That is the whole release: a commit on a branch.
+3. Each host runs a small agent from a systemd timer, once a minute. It asks GitHub where `release/dev`
+   points. When that has moved:
+   - the EC2 host (`infra/aws/agent-backend.sh` → `deploy-host.sh`) checks out the commit, builds the
+     backend image, creates or updates the application's database role, runs the migrations, loads
+     reference data and phases 2-3, restarts the stack and seeds the admin;
+   - the Lightsail host (`infra/aws/agent-web.sh`) copies the new web build into place.
+4. The `release` job waits until the API's `/health` and the web host's `/version.txt` both report the
+   new commit, then runs read-only checks against the live site (`e2e/smoke.spec.ts`).
+
+A release that fails to deploy on the EC2 host is retried every ten minutes, and the pipeline run fails
+after twenty. Nothing is rolled back automatically: the previous containers keep running until the new
+ones are up. To roll back, revert the commit on `main`.
+
+Why pull-based: the account's organisation policy denies creating the identity provider that would let
+GitHub assume a role, and long-lived access keys in GitHub were not wanted. The hosts therefore fetch
+their releases, and anyone who can write to `release/dev` can deploy to dev. Protect that branch.
+
+## Looking at it
+
+```bash
+aws login                                   # your own sign-in; region us-east-2
+# what the backend host's agent did last
+aws ssm send-command --document-name AWS-RunShellScript --instance-ids <instance id> \
+  --parameters 'commands=["journalctl -u telcron-deploy -n 60 --no-pager"]'
+aws ssm get-command-invocation --command-id <id> --instance-id <instance id> --query StandardOutputContent --output text
+# on the host: docker compose -f /opt/telcron/repo/infra/aws/compose.yml --env-file /opt/telcron/.env ps
+```
+
+The EC2 host is reached through Session Manager; it has no SSH key and port 22 is closed. The Lightsail
+host is reached with the account's Lightsail key over SSH; its agent logs to `journalctl -u telcron-web-deploy`.
+
+To deploy by hand, run `infra/aws/deploy-host.sh` on the EC2 host with the variables its header lists.
+To set a host up again from nothing: `infra/aws/setup-backend-host.sh`, `infra/aws/setup-web-host.sh`.
+
+## Signing in to the dev site
+
+Sign-up is closed there: the application cannot send verification codes yet (WO-005), and codes are never
+shown on a deployed build. One admin exists, `admin@telcron.example.com`; its password is the
+`SEED_ADMIN_PASSWORD` field of the `telcron/dev/app` secret. The demo products are fictional.
 
 ## What exists
 
 | Resource | Name | Notes |
 | --- | --- | --- |
-| EC2 instance | `telcron-dev-backend` | `t3.micro`, Ubuntu 24.04, 20 GB gp3 encrypted, IMDSv2 only, no key pair. For the API, the Worker and Redis in Docker |
-| Lightsail instance | `telcron-dev-web` | Smallest bundle with a public IPv4, nginx blueprint. For the built frontend |
-| RDS PostgreSQL | `telcron-dev` | 18.6, `db.t4g.micro`, 20 GB gp3 encrypted, single zone, not publicly reachable, deletion protection on, 1-day backups |
-| Security group | `telcron-dev-backend` | Inbound 80 and 443 only |
-| Security group | `telcron-dev-db` | Inbound 5432 from `telcron-dev-backend` only |
-| IAM role and instance profile | `telcron-dev-backend` | Session Manager, ECR read, the two buckets, `telcron/dev/*` secrets, Bedrock invoke |
-| S3 buckets | `telcron-dev-media-<account-id>`, `telcron-dev-raw-<account-id>` | Public access blocked |
-| ECR repository | `telcron/backend` | Scan on push, immutable tags. Empty |
-| Secret | `telcron/dev/app` | `JWT_SECRET`, generated in CloudShell and never displayed |
-| Secret | RDS-managed master password | Created by RDS for user `telcron` |
+| EC2 instance | `telcron-dev-backend` | 20 GB gp3 encrypted, IMDSv2 only, no key pair, 2 GB swap |
+| Elastic IP | `telcron-dev-backend` | Attached to the instance |
+| Lightsail instance, static IP | `telcron-dev-web`, `telcron-dev-web-ip` | The blueprint's own stack (nginx, MariaDB, PHP, phpMyAdmin, Varnish) is stopped and disabled |
+| RDS PostgreSQL | `telcron-dev` | 20 GB gp3 encrypted, single zone, not publicly reachable, deletion protection, 1-day backups |
+| Security groups | `telcron-dev-backend`, `telcron-dev-db` | 80 and 443 in; 5432 from the backend group only |
+| IAM role and instance profile | `telcron-dev-backend` | Session Manager, ECR read, the two buckets, `telcron/dev/*` secrets, the RDS master secret, Bedrock invoke |
+| S3 buckets | `telcron-dev-media-<account-id>`, `telcron-dev-raw-<account-id>` | Public access blocked. Not used yet |
+| ECR repository | `telcron/backend` | Holds the image of the first, manual deploy. The pipeline does not use it |
+| Secret | `telcron/dev/app` | `JWT_SECRET`, `APP_DB_PASSWORD`, `SEED_ADMIN_PASSWORD`; generated, never displayed |
+| Secret | RDS-managed master password | Rotated by RDS. Used only to create the application's role |
 | Budget | `telcron-monthly` | USD 22 a month, cost budget |
 
-Resources carry the tags `project=telcron`, `env=dev`.
+Resources carry the tags `project=telcron`, `env=dev` where the service supports them.
 
 ## What it costs
 
-Estimates from list prices, not from a bill. The account is on the AWS free plan, so this is drawn
-from credit until the credit or the plan's six months run out.
+Estimates from list prices, not from a bill. The account is on the AWS free plan, so this is drawn from
+credit until the credit or the plan's six months run out. The human accepted this on 2026-11-15.
 
 | Item | USD a month |
 | --- | --- |
 | EC2 `t3.micro` | about 7.60 |
 | EC2 disk, 20 GB | about 1.60 |
-| EC2 public IPv4 | about 3.65 |
+| EC2 public IPv4 (the Elastic IP; it replaced the instance's own, same price) | about 3.65 |
 | RDS `db.t4g.micro` | about 11.70 |
 | RDS disk, 20 GB | about 2.30 |
-| Lightsail | 5.00 |
+| Lightsail (its static IP is free while attached) | 5.00 |
 | Two secrets | 0.80 |
 | **Total** | **about 33** |
 
-This is over the original USD 20 to 22 target; the database is the difference. On 2026-11-15 the human
-accepted the cost as built. If that changes: running PostgreSQL in Docker on the EC2 host and deleting the
-RDS instance brings it to about USD 18, at the price of shared memory and no managed backups.
-
-## Deploying
-
-Not done yet. The pieces are in the repository and were run together on a developer machine
-(2026-11-16): `backend/Dockerfile`, `infra/aws/compose.yml` (Caddy with automatic HTTPS, API, Worker,
-Redis), `infra/aws/Caddyfile`, and `infra/aws/deploy-host.sh`.
-
-The shape of a deploy, from a machine with the AWS CLI signed in:
-
-1. Build `backend/` for linux/amd64, tag it with the commit, push it to the `telcron/backend` repository.
-2. Run `infra/aws/deploy-host.sh` on the EC2 host through Session Manager. It checks out that commit from
-   GitHub, reads its secrets with the instance role, creates the application's database role and the
-   extensions, runs the migrations, loads reference data and phases 2-3, writes `/opt/telcron/.env`,
-   starts the stack and seeds the admin. It is idempotent.
-3. Build `frontend/` with `VITE_API_URL` set to the API's address and copy `dist/` to the Lightsail host.
-
-Needed first, each a change in AWS that needs the human's yes:
-- `APP_DB_PASSWORD` and `SEED_ADMIN_PASSWORD` added to the `telcron/dev/app` secret (generated, never shown).
-- The instance role allowed to read the RDS-managed master secret (used once, to create the app role).
-- A fixed address for the EC2 host and for the Lightsail host, so their names do not change on restart.
-- A hostname for each and a certificate. Without a domain: a wildcard-DNS name for the fixed address and
-  a Let's Encrypt certificate, which means accepting its subscriber agreement.
-
-What the script has NOT been run against: RDS (TLS, the extensions on RDS PostgreSQL 18, the app role),
-the instance role's permissions, the registry login, a real certificate. Expect a first-run fix or two.
-
-On the dev host the application logs in to PostgreSQL as `telcron_app`, which holds `rds_superuser`
-because it also runs the migrations. Production needs a narrower role.
+If the cost has to come down: PostgreSQL in Docker on the EC2 host instead of RDS brings it to about 18.
 
 ## Known gaps
 
+- The application's database role, `telcron_app`, holds `rds_superuser`, because it also creates the
+  extensions and runs the migrations. Production needs a narrower role and a separate migration step.
+- The backend image is built on the 1 GB host at deploy time. It works, and it is slow and competes with
+  the running stack for memory. A registry the host can read without new credentials would be better.
+- The Lightsail host has port 22 open to the internet (key-only). It was needed to set the host up; it is
+  not needed for releases and should be closed or restricted.
+- The hostnames depend on a third-party wildcard-DNS service. A real domain removes that.
 - The budget has no alert recipient, so it notifies nobody.
-- The Lightsail blueprint's default firewall leaves port 22 open as well as 80 and 443 (the blueprint's
-  default; not checked in the console). The project rule is no port 22 open to the internet.
-- The EC2 public address is not an Elastic IP: it changes on stop and start.
-- The EC2 start-up script (Docker, 2 GB swap) was never checked for success.
-- The EC2 role cannot read the RDS-managed secret (its policy covers `telcron/dev/*` only).
-- Bedrock: every model call on 2026-11-15 failed with `ThrottlingException: Too many tokens per day`,
-  from the CLI and the playground. The account's quota is effectively zero. The multimodal Titan
-  embedding model was not in the region's model list; the text one was.
-
-## Credit activities
-
-Four of the six "Earn AWS credits" activities showed as completed on 2026-11-15: the budget, a Lambda
-web app, a DynamoDB table, and one more. The Lambda function with its role and log group, the DynamoDB
-table and a throwaway instance made for them were deleted afterwards. "Launch an instance using EC2"
-still showed *In progress* at the last look (not re-checked since), and the Bedrock playground activity could not be done
-because of the quota above.
-
-## Reaching it
-
-Console, then CloudShell (it has the CLI and your console permissions). The EC2 host is reached
-through Session Manager, not SSH. There is no SSH key and port 22 is closed on it.
+- No backups beyond RDS's one day. No monitoring or alarms. Logs live only on the hosts.
+- Bedrock: every model call on 2026-11-15 failed with `ThrottlingException: Too many tokens per day`.
+  The account's quota is effectively zero, so hazard scoring is still the keyword placeholder.
+- Two of the six "Earn AWS credits" activities are not done (EC2 was still "in progress"; the Bedrock
+  playground is blocked by the quota).
 
 ## Removing something
 

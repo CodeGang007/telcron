@@ -59,7 +59,12 @@ Always run the Worker for real testing: a review is HTTP → outbox → publishe
 Worker → new passport. Without it nothing is re-screened and no coin is ever confirmed.
 
 Gates: `make api-test` (backend lint and tests), `make db-test` (schema tests),
-`cd frontend && npx tsc --noEmit && npm run build`.
+`cd frontend && npx tsc --noEmit && npm run build`, and with the stack running
+`cd e2e && npm run journey` (the member's journey in a browser).
+
+**A push to `main` is a release.** `.github/workflows/pipeline.yml` runs all of those gates and, when they
+pass, publishes the build to the `release/dev` branch; the two AWS hosts poll that branch and deploy
+themselves; the run then checks the live site. See `docs/runbooks/aws-dev.md`.
 
 ## Non-negotiables
 - Search and passport reads need no account. Contributions need verification Level 1.
@@ -75,7 +80,8 @@ Gates: `make api-test` (backend lint and tests), `make db-test` (schema tests),
   in a tracked file. `.env` and `*.local.md` are gitignored.
 - AWS: creating, changing or deleting anything needs the human's explicit yes, with the monthly cost
   stated. The inventory is `docs/runbooks/aws-dev.md`.
-- Committing locally never needs permission. Pushing does.
+- Committing locally never needs permission. Pushing does, and pushing `main` deploys to dev: show the
+  human what will go out and get an explicit yes. Never push to `release/dev` by hand.
 
 ## Commands
 `make help` lists everything: db-up, db-migrate, db-seed, db-sample, db-reset, db-psql, db-test, db-test-perf,

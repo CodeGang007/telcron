@@ -24,6 +24,8 @@ description: Telcron's security rules — identity and sessions, verification le
 - **Uploads and AI.** Images pass a safety check and have location data removed before storage. User text that
   reaches a model prompt is data, never instructions; a score must cite evidence that exists.
 - **Errors.** Never reveal whether an email is registered, a provider's error text, or a stack trace.
-- **AWS.** No access keys. No port 22 or 5432 open to the internet. Creating, changing or deleting a resource
+- **AWS.** No access keys, anywhere: people sign in with `aws login`, the EC2 host uses its role, and the
+  pipeline holds no AWS credentials (the hosts pull their releases). Whoever can write to `release/dev` can
+  deploy to dev. No port 22 or 5432 open to the internet. Creating, changing or deleting a resource
   needs the human's explicit yes, with the monthly cost stated. The repository is public: account ids,
   resource ids, addresses and endpoints go in `*.local.md` (gitignored), never in a tracked file.

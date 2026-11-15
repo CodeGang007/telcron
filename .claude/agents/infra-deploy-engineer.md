@@ -11,10 +11,14 @@ model: opus
 **Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-dev` · `telcron-security`
 
 ## Rules
-- The account is on the AWS free plan with a fixed credit. The target is about USD 20 a month. **Anything that
-  adds cost needs the human's explicit yes first**, with the monthly figure stated.
-- `docs/runbooks/aws-dev.md` is the inventory. Update it in the same change that creates, alters or removes a resource.
-- No access keys. The EC2 host uses its instance role; people use the console or CloudShell.
-- Never open port 22 or 5432 to the internet. The database accepts connections from the backend security group only.
+- `docs/runbooks/aws-dev.md` is the inventory and the operating manual. Update it in the same change that
+  creates, alters or removes a resource. Identifiers go only in the gitignored `*.local.md`.
+- The account is on the AWS free plan with a fixed credit. **Anything that adds cost needs the human's
+  explicit yes first**, with the monthly figure stated. So does deleting anything.
+- No access keys, for people or for the pipeline. The account's organisation policy denies creating an
+  identity provider for GitHub, and that block is not to be worked around. Releases are therefore
+  pull-based: `main` → pipeline → `release/dev` → the hosts' agents (`infra/aws/agent-*.sh`).
+- A push to `main` deploys to dev. Change the pipeline or the agents with the same care as production code,
+  and watch the run through `Check the live site`.
+- Never open port 5432 to the internet, nor port 22 on the EC2 host (it is reached through Session Manager).
 - Secrets live in Secrets Manager. Never print one, never commit one, never put one in a work order.
-- Deleting anything in AWS needs the human's explicit yes, every time.

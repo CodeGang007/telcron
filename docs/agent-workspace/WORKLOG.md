@@ -51,3 +51,22 @@ two remaining "Earn AWS credits" activities (the browser chosen for it was not s
 At the user's instruction ("merge to main now") `feat/backend-on-designed-schema` was fast-forwarded into
 `main`. That landed `feat/database-schema` as well. No pull request was opened; the schema's author has not
 reviewed the convergence.
+
+
+## 2026-11-16 — Deployed to AWS dev; pipeline through main (WO-002, WO-009)
+
+**Decided by the user**
+- Deploy to AWS. Sign-up stays closed on the deployed site, with one seeded admin, until codes can be sent.
+- Yes to: HTTPS on wildcard-DNS hostnames with Let's Encrypt; generated passwords in the app secret; the
+  instance role reading the RDS master secret; fixed addresses; pushing the deploy files to `main`.
+- Everything tested end to end, and an end-to-end CI/CD pipeline through `main`.
+- The AWS CLI was installed for the user (no sudo); the user signed in with `aws login`. No keys exist.
+
+**Done** — the dev site is live (WO-002). A push to `main` is tested and, if green, released to it without
+anyone touching AWS (WO-009). The pipeline is pull-based because the account's policy denies the identity
+provider GitHub would need; nothing was done to get around that.
+
+**Not done** — security review of the deployment; DEF-006; the branch `release/dev` is unprotected; two
+"Earn AWS credits" activities; everything else on the board.
+
+Gates, 2026-11-16: pipeline run 43751927320 for commit f267b07 succeeded in all five jobs (schema tests, backend lint and tests, web typecheck and build, the member's journey in a browser, release to dev). After it both hosts reported f267b07 as the running build, without anyone touching AWS. Against the live site: the read-only smoke set passed 5 of 5, and the member journey signed in as the admin passed 5 of 5 steps (wallet round trip, a review re-screened from passport v1 to v2, earlier coins confirmed). Locally: make db-test 66 passed, make api-test 26 passed, journey 4 passed.

@@ -28,6 +28,7 @@ make db-test       # after any change under db/ or docs/database/
 - [ ] Anything that awards or spends coins has a test that a repeat does not award twice.
 
 ## Gate 3 — It runs
+- [ ] A change a member can see is covered by `cd e2e && npm run journey`, and that passes.
 - [ ] `make dev` starts API, Worker and web; the changed flow was walked in a browser, console clean.
 - [ ] A schema change started in `schema_spec.py`, `make db-test` passes, and the drift test is green.
 - [ ] `cd frontend && npm run build` succeeds for any frontend change.
@@ -39,3 +40,9 @@ make db-test       # after any change under db/ or docs/database/
 ## Gate 5 — It is recorded
 - [ ] WO log has the report block with real output. Board row updated. Status is `DONE-PENDING-QA`.
 - [ ] A stub or unwired provider is reported as `PARTIAL` and named.
+
+
+## Gate 6 — It is released
+Merging to `main` deploys to dev. The work is not finished until the pipeline run for that commit is
+green through its last step, `Check the live site`. A red `Release to dev` after green tests means the
+code is on `main` and NOT live: say so, and look at the host's agent log (`docs/runbooks/aws-dev.md`).

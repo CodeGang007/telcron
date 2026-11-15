@@ -17,7 +17,8 @@ a second ORM.
 | Tests, lint | pytest + pytest-asyncio + httpx against real Postgres and Redis. ruff |
 | Frontend | React 19, Vite, TypeScript (strict), react-router, Tailwind v4 |
 | Local | Docker Compose through `make`: Postgres on :5433 (`DB_PORT`), Redis on :6381. API :4310, web :3200 |
-| AWS (dev) | EC2 t3.micro (API, Worker, Redis in Docker), RDS PostgreSQL 18 db.t4g.micro, Lightsail (web), S3, ECR, Secrets Manager |
+| AWS (dev) | EC2 t3.micro (Caddy, API, Worker, Redis in Docker), RDS PostgreSQL 18 db.t4g.micro, Lightsail (Caddy serving the web build), Secrets Manager |
+| CI/CD | GitHub Actions, `.github/workflows/pipeline.yml`. Pull-based release through the `release/dev` branch; no cloud credentials in GitHub. Playwright for the browser tests (`e2e/`) |
 
 - Add a backend dependency with `uv add`, a frontend one with `npm install` in `frontend/`. Say why in the WO.
 - Models use `mapped_column` through the helpers in `models/base.py` (`pk`, `fk`, `ts`, `created`, `updated`).

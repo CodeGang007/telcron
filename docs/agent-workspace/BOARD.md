@@ -6,15 +6,15 @@
 | --- | --- | --- | --- | --- |
 | WO-011 | Converge the backend on the designed database schema | (single session) → database-engineer, qa-test-engineer | DEF-005 | DONE-PENDING-QA — merged into `main` on 2026-11-15 at the human's instruction; gates in the WO log. Not yet reviewed by the schema's author or a second agent |
 | WO-001 | Foundation: schema, core API, worker, web app, agent workspace | (single session) → qa-test-engineer | — | DONE-PENDING-QA — its schema part is replaced by WO-011. Not independently verified |
-| WO-002 | Deploy dev to AWS (EC2: API + Worker + Redis; RDS; Lightsail web) | infra-deploy-engineer → security-auditor | WO-011, WO-005 | PARTIAL — image, compose stack and host script built and run locally; nothing deployed (no AWS access from the terminal yet) |
+| WO-002 | Deploy dev to AWS (EC2: API + Worker + Redis; RDS; Lightsail web) | (single session) → security-auditor | WO-011 | DONE-PENDING-QA — live since 2026-11-16; gates in the WO log. Not reviewed by security-auditor |
 | WO-003 | Ingestion: job runner and first marketplace source | data-ai-engineer | WO-007 | BLOCKED ON HUMAN — needs SerpApi/ScraperAPI keys and the legal position on scraping |
 | WO-004 | Bedrock scorer, Titan vectors, vector retrieval, photo identification | data-ai-engineer → security-auditor | — | BLOCKED ON HUMAN — the account's Bedrock quota is zero |
 | WO-005 | Send the verification codes (email, SMS) and a resend endpoint | platform-identity-engineer → security-auditor | — | OPEN — codes are only shown on screen locally |
 | WO-006 | Safety-team queue: confirm or reject flags, resolve tasks and fraud holds | community-rewards-engineer + frontend-engineer | CT-001 (to write) | OPEN |
-| WO-007 | Media pipeline and photos on reviews and flags | data-ai-engineer | WO-002 | OPEN |
+| WO-007 | Media pipeline and photos on reviews and flags | data-ai-engineer | WO-002 | Deploy dev to AWS (EC2: API + Worker + Redis; RDS; Lightsail web) | (single session) → security-auditor | WO-011 | DONE-PENDING-QA — live since 2026-11-16; gates in the WO log. Not reviewed by security-auditor |
 | WO-008 | Business API: keys, rate limits, webhooks | platform-identity-engineer | DEF-002 | BLOCKED ON HUMAN — business accounts are not modelled (schema design Q8) |
-| WO-009 | CI on GitHub Actions: `make db-test`, `make api-test`, tsc, build | infra-deploy-engineer | — | OPEN |
-| WO-010 | Level 2 identity check (Textract, Rekognition) | data-ai-engineer + platform-identity-engineer → security-auditor | WO-002 | BLOCKED ON HUMAN — legal basis for ID documents |
+| WO-009 | Pipeline: tests on every push, release to dev from `main`, browser tests | (single session) → qa-test-engineer | WO-002 | DONE-PENDING-QA — green end to end; see the WO log |
+| WO-010 | Level 2 identity check (Textract, Rekognition) | data-ai-engineer + platform-identity-engineer → security-auditor | WO-002 | Deploy dev to AWS (EC2: API + Worker + Redis; RDS; Lightsail web) | (single session) → security-auditor | WO-011 | DONE-PENDING-QA — live since 2026-11-16; gates in the WO log. Not reviewed by security-auditor |
 
 ## Defects
 
@@ -26,7 +26,7 @@
 | DEF-002 | No table for business API keys or webhooks | database-engineer | S3 | OPEN — the schema design lists it as Q8; blocks WO-008 |
 | DEF-003 | Initial Alembic migration's `downgrade()` leaves the enum types behind | database-engineer | S4 | CLOSED — Alembic removed by WO-011 |
 | DEF-004 | Users who leave the sign-up screen cannot get new codes (no resend) | platform-identity-engineer | S3 | OPEN — covered by WO-005 |
-| DEF-006 | AWS dev: budget alerts nobody; Lightsail leaves port 22 open | infra-deploy-engineer | S3 | OPEN |
+| DEF-006 | AWS dev: budget alerts nobody; Lightsail port 22 open; app database role is a superuser; image built on the 1 GB host | infra-deploy-engineer | S3 | OPEN |
 
 ## Decisions waiting on the human
 1. **Review after the fact.** The convergence and `feat/database-schema` were merged into `main` on 2026-11-15
@@ -35,3 +35,4 @@
 3. **Passport trust-score arithmetic** (ADR-004; the schema design's Q3). A placeholder is in use.
 
 Decided 2026-11-15: the AWS dev environment stays as built (about USD 33 a month, RDS included).
+Decided 2026-11-16: sign-up stays closed on the deployed site, with one seeded admin, until codes can be sent.

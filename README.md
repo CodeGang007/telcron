@@ -47,7 +47,7 @@ Adminer UI (optional): `docker compose --profile tools up -d adminer` → http:/
 - **Hazard scores come from a keyword placeholder, not an AI model.** Amazon Bedrock is not wired.
 - Verification codes are shown on screen locally; nothing is emailed or texted.
 - No scraping or ingestion, no photo upload, no Level 2 identity check, no business API.
-- Nothing is deployed. The AWS hosts exist and are empty.
+- On the deployed dev site sign-up is closed (codes cannot be sent); one seeded admin can sign in.
 
 The full list, with owners, is `docs/agent-workspace/BOARD.md`.
 
@@ -57,7 +57,15 @@ The full list, with owners, is `docs/agent-workspace/BOARD.md`.
 make db-test      # the schema's own suite, on a throwaway Postgres
 make api-test     # backend lint and tests, on a database built only from db/
 cd frontend && npx tsc --noEmit && npm run build
+cd e2e && npm ci && npx playwright install chromium && npm run journey   # needs `make dev` running
 ```
+
+## Pipeline
+
+Every push and pull request runs all of the above on GitHub Actions. A push to `main` that passes is
+released to the dev environment on AWS: the workflow publishes the build to the `release/dev` branch, the
+hosts pick it up by themselves, and the run finishes by checking the live site. The workflow holds no cloud
+credentials. Details: [`docs/runbooks/aws-dev.md`](docs/runbooks/aws-dev.md).
 
 ## Docs
 - Database design, decisions, tests: [`docs/database/schema-design.md`](docs/database/schema-design.md)
