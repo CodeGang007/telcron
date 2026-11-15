@@ -1,0 +1,44 @@
+[project]
+name = "telcron-backend"
+version = "0.1.0"
+description = "Telcron product-safety platform: one codebase, two services (API and Worker)."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "sqlalchemy[asyncio]>=2.0.36",
+  "asyncpg>=0.30",
+  "alembic>=1.14",
+  "pgvector>=0.3.6",
+  "pydantic-settings>=2.6",
+  "email-validator>=2.2",
+  "pyjwt>=2.10",
+  "argon2-cffi>=23.1",
+  "arq>=0.26",
+  "redis>=5.2",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "httpx>=0.28", "ruff>=0.8"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "T20"]
+ignore = ["B008", "S101"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]
+"alembic/versions/*" = ["E501", "I001", "F401"]
+"app/seed.py" = ["E501", "S106"]
+"app/models/*" = ["E501"]
+"alembic/env.py" = ["I001"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+pythonpath = ["."]
