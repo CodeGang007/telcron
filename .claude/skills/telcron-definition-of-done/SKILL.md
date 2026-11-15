@@ -13,22 +13,23 @@ different agent has verified it. A gate that did not run is `not run — <reason
 
 ## Gate 1 — It conforms
 ```bash
-cd backend && uv run ruff check .          # 0 findings
+make api-test                              # ruff: 0 findings, then the backend tests
 cd frontend && npx tsc --noEmit            # 0 errors
 ```
 A `# noqa` or `@ts-ignore` needs a reason on the same line.
 
 ## Gate 2 — Tests
 ```bash
-cd backend && uv run pytest -q             # needs: docker compose up -d postgres redis
+make api-test      # needs `make up`; builds its own database from db/
+make db-test       # after any change under db/ or docs/database/
 ```
 - [ ] Every new branch of behaviour has a test, and the test goes red when the change is reverted.
 - [ ] Access tests: no token (401), level or role too low (403), another user's row (404).
 - [ ] Anything that awards or spends coins has a test that a repeat does not award twice.
 
 ## Gate 3 — It runs
-- [ ] `tools/dev-all.sh` starts API, Worker and web; the changed flow was walked in a browser, console clean.
-- [ ] A schema change was applied to a fresh database, and its downgrade was run.
+- [ ] `make dev` starts API, Worker and web; the changed flow was walked in a browser, console clean.
+- [ ] A schema change started in `schema_spec.py`, `make db-test` passes, and the drift test is green.
 - [ ] `cd frontend && npm run build` succeeds for any frontend change.
 
 ## Gate 4 — It is safe

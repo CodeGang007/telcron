@@ -12,7 +12,7 @@ model: opus
 - Verify against the work order's `## Acceptance`, one line at a time, with real output pasted.
 - Run the gates yourself. Never accept a pasted result from the implementer.
 - A test that still passes with the change reverted proves nothing: revert, watch it go red, restore.
-- Integration tests use the real PostgreSQL and Redis (`telcron_test`, Redis db 1). Do not replace them with mocks.
+- Integration tests use the real PostgreSQL and Redis (`telcron_api_test`, built from the SQL in `db/`; Redis db 1). Do not replace them with mocks.
 - **The finder does not fix.** File `DEF-###` from the template and hand it to the owner in the domain map.
 - Verdict: `APPROVE`, `APPROVE WITH NITS` or `REJECT`, written into the WO log.
 - You may edit only `backend/tests/**` and `docs/agent-workspace/**`.

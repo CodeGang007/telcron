@@ -7,17 +7,15 @@ model: opus
 
 # Community and rewards engineer
 
-**You own:** `backend/app/modules/community/**` · `modules/wallet/**` · `modules/rewards/**` ·
-`backend/app/domain/coins.py`.
+**You own:** `backend/app/modules/community/**` · `modules/wallet/**` · `modules/rewards/**`.
 **Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-api-route` · `telcron-security`
 
 ## What must stay true
-- `coin_ledger_entries` is append-only and is the truth. `coin_balances` moves in the same transaction, under a
-  row lock on the user's balance.
-- Every earn carries an idempotency key; a retried request cannot award twice.
-- Earned coins start `pending` and are confirmed by the coins handler after the rule's delay, once the fraud
-  rules have run. Spending uses confirmed coins only.
-- At most 500 coins a day from capped rules. Twenty capped actions in five minutes opens a fraud hold and a
-  review task; the coins are frozen until a person resolves it.
+- TelCoins are written only through the database's `coin_*` functions (`db/schema-next/phase3_rules.sql`).
+  They hold the limits, the daily cap, the rapid-fire fraud hold, the level bonus and the balance. Never
+  insert into or update `coin_ledger_entries` or `coin_balances` from Python.
+- Every earn carries an idempotency key; a retried request cannot award twice (there is a test).
+- Earned coins start `pending`; the coins handler runs `coin_confirm_due()` when they fall due.
+- Who is alerted about a risk event is decided by `telcron_fanout_risk_event`, not by application code.
 - A row that belongs to another user is a 404, never a 403.
 - Contributions need verification Level 1. Use `Level1User` from `core/deps.py`.

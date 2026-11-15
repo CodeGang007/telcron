@@ -9,9 +9,9 @@ description: Telcron's security rules — identity and sessions, verification le
   rotate on every use; a reused one revokes the whole family. Five bad passwords lock the account for 15 minutes.
   Codes are hashed, expire in 10 minutes and die after five wrong tries.
 - **Access.** Every member route states its requirement through a `core/deps.py` dependency. Level 0 reads;
-  Level 1 contributes; staff routes need `admin` or `safety_reviewer`. Another user's row is a 404.
-- **Coins.** Append-only ledger, an idempotency key on every entry, fraud rules before confirmation, a row lock
-  on the balance. Coins are never exchangeable for money.
+  Level 1 contributes; staff routes need `admin` or `moderator`. Another user's row is a 404.
+- **Coins.** Written only through the database's `coin_*` functions: idempotency key on every entry, limits,
+  daily cap, rapid-fire fraud hold, a row lock on the balance. Coins are never exchangeable for money.
 - **ID documents.** Uploaded to a private S3 prefix, read by Textract, compared by Rekognition, then **deleted**.
   Only the result and the match score are stored. This is regulated personal data: do not log it, cache it or
   copy it anywhere else.

@@ -13,7 +13,7 @@ sources. They talk through Redis queues. **PostgreSQL is the single source of tr
 backend/app/
   core/      config, db session, security, auth dependencies, the outbox (events.py), redis
   domain/    pure rules with exact answers: hazard formula, passport combination, coin fraud rules
-  models/    all 90 tables, one file per ERD domain
+  models/    a mapping of the 90 tables in db/ (never creates them), one file per domain
   modules/<name>/  router.py (HTTP), service.py (logic), schemas.py (pydantic)
   workers/   publisher.py (outbox -> queues), main.py (consumers), handlers/<queue>.py
 frontend/src/  lib (api client, auth), components, pages
@@ -31,7 +31,9 @@ frontend/src/  lib (api client, auth), components, pages
 - Routers are thin: validate, call the service, shape the response. Logic lives in `service.py`; rules with an
   exact answer live in `domain/` as pure functions with unit tests.
 - A module imports another module's `service`, never its router, and never reaches into its tables to write.
-- Append-only tables are never updated. A passport is never edited: a re-screen issues a new version.
+- The database's rules are the rules (`db/**/*_rules.sql`): append-only history, the `coin_*` functions,
+  screening and passport triggers, risk fan-out. Services order their writes to satisfy them.
+- A passport is never edited: a re-screen issues a new version.
 - Reference data and user data are kept apart from derived data (screenings, passports, risk events), which can
   always be rebuilt.
 - A provider client is the only file that talks to its provider.

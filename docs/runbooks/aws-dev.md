@@ -41,9 +41,9 @@ from credit until the credit or the plan's six months run out.
 | Two secrets | 0.80 |
 | **Total** | **about 33** |
 
-**This is over the USD 20 to 22 target.** The database is the difference. Running PostgreSQL in Docker
-on the EC2 host next to Redis and deleting the RDS instance brings it to about USD 18. The price is one
-gigabyte of memory shared by four processes and no managed backups. Awaiting the human's decision.
+This is over the original USD 20 to 22 target; the database is the difference. On 2026-11-15 the human
+accepted the cost as built. If that changes: running PostgreSQL in Docker on the EC2 host and deleting the
+RDS instance brings it to about USD 18, at the price of shared memory and no managed backups.
 
 ## Known gaps
 
@@ -62,7 +62,7 @@ gigabyte of memory shared by four processes and no managed backups. Awaiting the
 Four of the six "Earn AWS credits" activities showed as completed on 2026-11-15: the budget, a Lambda
 web app, a DynamoDB table, and one more. The Lambda function with its role and log group, the DynamoDB
 table and a throwaway instance made for them were deleted afterwards. "Launch an instance using EC2"
-still showed *In progress* at the last look, and the Bedrock playground activity could not be done
+still showed *In progress* at the last look (not re-checked since), and the Bedrock playground activity could not be done
 because of the quota above.
 
 ## Reaching it

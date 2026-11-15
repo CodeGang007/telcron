@@ -31,3 +31,17 @@ completed; the resources made only for them were deleted afterwards. The Bedrock
 done: the account's quota is zero.
 
 **Open** — eleven work orders and six defects on the board; three decisions waiting on the human.
+
+## 2026-11-15 — Converged on the designed schema (WO-011)
+
+**Decided by the user**
+- Rework the backend onto the schema of `feat/database-schema` on a new branch, for review.
+- The AWS dev environment stays as built, about USD 33 a month ("its fine actually").
+- Other local projects' dev servers were to be closed; Osten's were stopped with its own script.
+
+**Done** on branch `feat/backend-on-designed-schema` — see WO-011 and ADR-005. The backend now creates
+nothing: it maps the designed schema and a drift test guards the mapping. The database's rules replaced
+the Python duplicates. Three faults surfaced and were fixed.
+
+**Not done** — phases 2–3 are still not migrations; DEF-007 lists three gaps for the schema's author; the
+two remaining "Earn AWS credits" activities (the browser chosen for it was not signed in to AWS).

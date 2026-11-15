@@ -13,8 +13,8 @@ frozen contract, not one agent reaching across.
 | `platform-identity-engineer` | `backend/app/core/**`, `modules/identity/**` | Identity & Access; Platform, Audit & Operations |
 | `catalogue-engineer` | `modules/catalogue/**`, later `modules/recalls`, `modules/certifications` | Product Catalogue; Recalls; Certifications |
 | `data-ai-engineer` | `backend/app/workers/**`, `modules/screening/**`, `domain/hazard.py`, `domain/passport.py`, later `modules/ingestion`, `modules/media` | Sources, Ingestion & Evidence; Media & AI Recognition; Screening, Hazard & Passport |
-| `community-rewards-engineer` | `modules/community/**`, `modules/wallet/**`, `modules/rewards/**`, `domain/coins.py` | Community & Reviews; Digital Wallet; Rewards; Risk Events & Notifications; Pricing |
-| `database-engineer` | `backend/app/models/**`, `backend/alembic/**`, reference rows in `seed.py` | all 14 (schema only) |
+| `community-rewards-engineer` | `modules/community/**`, `modules/wallet/**`, `modules/rewards/**` | Community & Reviews; Digital Wallet; Rewards; Risk Events & Notifications; Pricing |
+| `database-engineer` | `db/**`, `docs/database/**`, `backend/app/models/**`, `backend/tests/test_schema_drift.py` | all 14 (schema and its mapping) |
 | `frontend-engineer` | `frontend/**` | — |
 | `infra-deploy-engineer` | `infra/**`, `docker-compose.yml`, `tools/**`, `.github/**`, `docs/runbooks/**` | — |
 | `tech-lead` | `docs/agent-workspace/**`, `docs/decisions/**`, the router list in `backend/app/main.py`, `frontend/src/main.tsx`, `frontend/src/components/Layout.tsx` | — |

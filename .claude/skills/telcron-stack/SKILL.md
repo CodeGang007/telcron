@@ -11,12 +11,12 @@ a second ORM.
 | Layer | Choice |
 | --- | --- |
 | Backend | Python 3.13, managed by `uv`. FastAPI, pydantic v2, pydantic-settings |
-| Database | PostgreSQL 18 with `vector`, `pg_trgm`, `citext`. Async SQLAlchemy 2 on asyncpg. Alembic |
+| Database | PostgreSQL 18 with PostGIS, pgvector, pg_trgm, btree_gist, citext. Schema generated from `docs/database/schema_spec.py`, applied by dbmate. Async SQLAlchemy 2 on asyncpg as a mapping only; no Alembic |
 | Queues, cache | Redis 7. arq for jobs |
 | Auth | PyJWT (HS256 access tokens), argon2-cffi for passwords |
 | Tests, lint | pytest + pytest-asyncio + httpx against real Postgres and Redis. ruff |
 | Frontend | React 19, Vite, TypeScript (strict), react-router, Tailwind v4 |
-| Local | Docker Compose: Postgres on :5436, Redis on :6381. API :4310, web :3200 |
+| Local | Docker Compose through `make`: Postgres on :5433 (`DB_PORT`), Redis on :6381. API :4310, web :3200 |
 | AWS (dev) | EC2 t3.micro (API, Worker, Redis in Docker), RDS PostgreSQL 18 db.t4g.micro, Lightsail (web), S3, ECR, Secrets Manager |
 
 - Add a backend dependency with `uv add`, a frontend one with `npm install` in `frontend/`. Say why in the WO.

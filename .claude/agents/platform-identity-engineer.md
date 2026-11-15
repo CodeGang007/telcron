@@ -15,6 +15,8 @@ model: opus
   refresh token revokes the whole session family. `tests/test_journey.py` proves it; keep it proving it.
 - Codes are hashed, expire, and count attempts. A wrong code must persist its attempt even though the request fails.
 - Every sign-in, failure and lockout writes `auth_events`. Every state change writes `audit_log`.
+- The schema decides the vocabulary: a new account is `pending` until its email is confirmed; one verified
+  owner per phone number; a rotated session never outlives its family.
 - `Db` commits before the response is sent (`scope="function"` in `core/deps.py`). Do not remove that: a client
   once received tokens for a session row that did not exist yet.
 - ID documents and selfies are deleted after the match; only the result is stored.
