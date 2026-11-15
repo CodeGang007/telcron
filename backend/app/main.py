@@ -47,4 +47,4 @@ async def health() -> dict[str, str]:
     async with engine.connect() as conn:
         await conn.execute(text("select 1"))
     await (await get_redis()).ping()
-    return {"status": "ok"}
+    return {"status": "ok", "version": get_settings().git_sha}

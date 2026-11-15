@@ -16,6 +16,8 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY app ./app
 
 RUN useradd --system --uid 10001 --no-create-home telcron
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA
 USER telcron
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000

@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     run_outbox_publisher: bool = True
     # The seed creates an admin from this, and only when ENV is local or dev. Never in production.
     seed_admin_password: str | None = None
+    # The commit this build was made from; baked into the image, reported by /health.
+    git_sha: str = "dev"
 
     @field_validator("database_url")
     @classmethod

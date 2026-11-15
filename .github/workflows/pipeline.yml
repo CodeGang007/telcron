@@ -1,0 +1,167 @@
+# Everything that reaches `main` is tested, and what passes is released to the dev environment.
+#
+# The release is pull-based. This workflow holds no cloud credentials: it builds the web app, commits
+# it with the commit id to the `release/dev` branch, and the two hosts — which poll that branch —
+# deploy themselves (infra/aws/agent-backend.sh, agent-web.sh). The job then waits until both hosts
+# report the new build and checks the live site.
+name: pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  schema:
+    name: Schema tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: make db-test
+
+  backend:
+    name: Backend lint and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - name: Postgres and Redis
+        run: make up
+      - run: make api-test
+      - name: The image builds
+        run: docker build -q -t telcron-backend:ci backend
+
+  frontend:
+    name: Web app typecheck and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run build
+
+  e2e:
+    name: End-to-end journey
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Settings for a throwaway local stack
+        run: |
+          cp .env.example .env
+          {
+            echo "COIN_CONFIRM_DELAY_SECONDS=2"
+            echo "SEED_ADMIN_PASSWORD=$(openssl rand -hex 16)"
+          } >> .env
+      - name: Database, reference data, phases 2-3, demo data
+        run: make app-db
+      - name: Dependencies
+        run: |
+          (cd frontend && npm ci)
+          (cd e2e && npm ci && npx playwright install --with-deps chromium)
+      - name: Start the API, the Worker and the web app
+        run: |
+          make dev
+          for _ in $(seq 1 90); do
+            if curl -fsS http://localhost:4310/health >/dev/null && curl -fsS http://localhost:3200/ >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          tail -n 60 .dev-logs/*.log
+          exit 1
+      - name: The member's journey, in a browser
+        working-directory: e2e
+        run: npm run journey
+      - name: Logs and traces, if it failed
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure
+          path: |
+            .dev-logs/
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 7
+
+  release:
+    name: Release to dev
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [schema, backend, frontend, e2e]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-dev
+      cancel-in-progress: false
+    env:
+      API_URL: ${{ vars.DEV_API_URL }}
+      WEB_URL: ${{ vars.DEV_WEB_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The dev environment's addresses are configured
+        run: test -n "$API_URL" && test -n "$WEB_URL"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build the web app for dev
+        working-directory: frontend
+        env:
+          VITE_API_URL: ${{ vars.DEV_API_URL }}
+        run: |
+          npm ci
+          npm run build
+          echo "$GITHUB_SHA" > dist/version.txt
+      - name: Publish the release
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          remote="https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git config --global user.name "telcron-pipeline"
+          git config --global user.email "telcron-pipeline@users.noreply.github.com"
+          mkdir "$RUNNER_TEMP/release" && cd "$RUNNER_TEMP/release"
+          git init -q -b release/dev
+          if git fetch -q --depth 1 "$remote" release/dev 2>/dev/null; then git reset -q --soft FETCH_HEAD; fi
+          rm -rf web
+          cp -r "$GITHUB_WORKSPACE/frontend/dist" web
+          echo "$GITHUB_SHA" > VERSION
+          git add -A
+          git commit -q -m "Release ${GITHUB_SHA::12}" -m "Built by the pipeline from main at ${GITHUB_SHA}."
+          git push -q "$remote" HEAD:refs/heads/release/dev
+      - name: Wait for both hosts to deploy it
+        run: |
+          for _ in $(seq 1 120); do
+            api=$(curl -fsS -m 10 "$API_URL/health" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)
+            web=$(curl -fsS -m 10 "$WEB_URL/version.txt" 2>/dev/null | tr -d '[:space:]' || true)
+            echo "api ${api:0:12}  web ${web:0:12}  want ${GITHUB_SHA::12}"
+            if [ "$api" = "$GITHUB_SHA" ] && [ "$web" = "$GITHUB_SHA" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "The release was published, but a host did not deploy it within 20 minutes." >&2
+          exit 1
+      - name: Check the live site
+        working-directory: e2e
+        env:
+          BASE_URL: ${{ vars.DEV_WEB_URL }}
+          EXPECT_VERSION: ${{ github.sha }}
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run smoke

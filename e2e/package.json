@@ -1,0 +1,14 @@
+{
+  "name": "telcron-e2e",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "journey": "playwright test journey",
+    "smoke": "playwright test smoke"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.60.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.9.3"
+  }
+}

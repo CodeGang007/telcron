@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# Runs ON the AWS dev host, as root, through Session Manager. Idempotent: run it again to redeploy.
+# Runs ON the AWS dev host, as root. Idempotent: run it again to redeploy.
+# Normally started by agent-backend.sh when the release branch moves; it can also be run by hand
+# through Session Manager.
 #
 # It reads secrets with the instance's own role. Nothing secret is passed in, printed or logged.
 #
-#   GIT_REF=<commit> BACKEND_IMAGE=<registry/telcron/backend:tag> API_HOST=<hostname> \
-#   WEB_ORIGIN=<https://web host> DB_HOST=<rds endpoint> RDS_SECRET_ARN=<arn> \
-#   [APP_SECRET_ID=telcron/dev/app] [AWS_REGION=us-east-2] [LOAD_SAMPLE=1] bash deploy-host.sh
+#   GIT_REF=<commit> API_HOST=<hostname> WEB_ORIGIN=<https://web host> DB_HOST=<rds endpoint> \
+#   RDS_SECRET_ARN=<arn> [BACKEND_IMAGE=<registry/telcron/backend:tag>] [APP_SECRET_ID=telcron/dev/app] \
+#   [AWS_REGION=us-east-2] [LOAD_SAMPLE=1] bash deploy-host.sh
 #
+# Without BACKEND_IMAGE the image is built on this host from the commit. With it, it is pulled.
 # The app secret must hold JWT_SECRET, APP_DB_PASSWORD and SEED_ADMIN_PASSWORD.
 set -euo pipefail
 
-: "${GIT_REF:?}" "${BACKEND_IMAGE:?}" "${API_HOST:?}" "${WEB_ORIGIN:?}" "${DB_HOST:?}" "${RDS_SECRET_ARN:?}"
+: "${GIT_REF:?}" "${API_HOST:?}" "${WEB_ORIGIN:?}" "${DB_HOST:?}" "${RDS_SECRET_ARN:?}"
 APP_SECRET_ID=${APP_SECRET_ID:-telcron/dev/app}
 export AWS_REGION=${AWS_REGION:-us-east-2}
 DB_NAME=${DB_NAME:-telcron}
@@ -40,6 +43,12 @@ say "code at $GIT_REF"
 [ -d "$REPO/.git" ] || git clone -q --depth 1 "$REPO_URL" "$REPO"
 git -C "$REPO" fetch -q --depth 1 origin "$GIT_REF"
 git -C "$REPO" checkout -q --detach FETCH_HEAD
+
+if [ -z "${BACKEND_IMAGE:-}" ]; then
+  BACKEND_IMAGE="telcron-backend:${GIT_REF:0:12}"
+  say "building $BACKEND_IMAGE on this host"
+  docker build -q --build-arg GIT_SHA="$GIT_REF" -t "$BACKEND_IMAGE" "$REPO/backend" >/dev/null
+fi
 
 say "secrets"
 app_secret=$(aws secretsmanager get-secret-value --secret-id "$APP_SECRET_ID" --query SecretString --output text)
@@ -101,9 +110,13 @@ AI_PROVIDER=stub
 DEV_EXPOSE_CODES=false
 EOF
 
-say "image"
-aws ecr get-login-password | docker login --username AWS --password-stdin "${BACKEND_IMAGE%%/*}" >/dev/null
-compose pull -q
+say "start"
+case "$BACKEND_IMAGE" in
+  *.amazonaws.com/*)
+    aws ecr get-login-password | docker login --username AWS --password-stdin "${BACKEND_IMAGE%%/*}" >/dev/null
+    compose pull -q api worker
+    ;;
+esac
 compose up -d --remove-orphans
 
 say "seeded admin"
@@ -113,6 +126,9 @@ say "health"
 for _ in $(seq 1 30); do
   if compose exec -T api python -c "import urllib.request as u; u.urlopen('http://localhost:8000/health')" 2>/dev/null; then
     compose ps --format 'table {{.Service}}\t{{.Status}}'
+    # Keep the disk in check: the two newest locally built images stay, older ones go.
+    docker images telcron-backend --format '{{.Repository}}:{{.Tag}}' | tail -n +3 | xargs -r docker rmi >/dev/null 2>&1 || true
+    docker image prune -f >/dev/null 2>&1 || true
     say "deployed $GIT_REF"
     exit 0
   fi
