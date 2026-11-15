@@ -9,39 +9,38 @@ each with the evidence behind it. Verified members add reviews and hazard flags 
 
 | Path | What |
 | --- | --- |
+| `db/`, `docs/database/` | The database: PostgreSQL 18, 90 tables in 14 domains, generated from `schema_spec.py` |
 | `backend/` | FastAPI. One codebase, two services: the API and an arq Worker fed by a transactional outbox |
 | `frontend/` | React + Vite + Tailwind web app |
 | `.claude/` | Agents and skills this project is built with |
 | `docs/agent-workspace/` | Board, work orders, defects, worklog |
-| `docs/decisions/` | Decision records |
-| `docs/runbooks/` | Local development and the AWS dev environment |
-
-The database design (PostgreSQL 18, 90 tables in 14 domains) lives on branch
-[`feat/database-schema`](../../tree/feat/database-schema). The backend here carries a provisional copy
-of that schema; bringing the two together is the first open work order (WO-011).
+| `docs/decisions/`, `docs/runbooks/` | Decision records; local development and the AWS dev environment |
 
 ## Run it locally
 
-Requires Docker, [`uv`](https://docs.astral.sh/uv/) and Node 22 or later.
+Requires Docker, `make`, [`uv`](https://docs.astral.sh/uv/) and Node 22 or later.
 
 ```bash
-docker compose up -d postgres redis      # PostgreSQL 18 + pgvector on :5436, Redis on :6381
-cp .env.example .env.local               # set JWT_SECRET to `openssl rand -hex 32`
-cd backend && uv sync && uv run alembic upgrade head && uv run python -m app.seed && cd ..
+cp .env.example .env     # set JWT_SECRET to `openssl rand -hex 32`
+make app-db              # Postgres 18 + PostGIS + pgvector and Redis; migrations, reference data,
+                         # phases 2-3, fictional demo products
 cd frontend && npm install && cd ..
-tools/dev-all.sh                         # API :4310, Worker, web :3200
+make dev                 # API :4310, Worker, web :3200   ·   make dev-stop
 ```
 
-Open http://localhost:3200. API documentation is at http://localhost:4310/docs. The seed loads three
-invented demo products; one of them is recalled.
+Open http://localhost:3200. API documentation is at http://localhost:4310/docs.
+
+Database only: `make db-up db-migrate db-seed db-sample`, then `make db-psql`.
+Connection string: `postgresql://telcron:telcron_dev@127.0.0.1:5433/telcron`.
+Adminer UI (optional): `docker compose --profile tools up -d adminer` → http://localhost:8080.
 
 ## What works today
 
 - Sign-up with an email and a phone code, sign-in, rotating sessions, lockout
 - Product search by name, brand or barcode, and the passport page with its evidence
 - Reviews and hazard flags from verified members; a review triggers a re-screen and a new passport version
-- Digital Wallet, with an alert when a saved product's passport changes
-- TelCoins: pending then confirmed, a daily cap, fraud holds, levels, a monthly leaderboard
+- Digital Wallet, with an alert when a saved product is recalled or its certificate fails
+- TelCoins through the database's own functions: pending then confirmed, daily cap, fraud holds, levels
 
 ## What does not, yet
 
@@ -55,6 +54,12 @@ The full list, with owners, is `docs/agent-workspace/BOARD.md`.
 ## Tests
 
 ```bash
-cd backend && uv run ruff check . && uv run pytest -q
+make db-test      # the schema's own suite, on a throwaway Postgres
+make api-test     # backend lint and tests, on a database built only from db/
 cd frontend && npx tsc --noEmit && npm run build
 ```
+
+## Docs
+- Database design, decisions, tests: [`docs/database/schema-design.md`](docs/database/schema-design.md)
+- ERD (draw.io, 10 pages): [`docs/database/telcron-erd.drawio`](docs/database/telcron-erd.drawio)
+- How the application is built and run: [`CLAUDE.md`](CLAUDE.md)
