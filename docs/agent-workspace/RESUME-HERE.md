@@ -3,14 +3,13 @@
 State at the end of the session of 2026-11-15. The detail is in `BOARD.md`; this is the short version.
 
 ## Where things stand
-- `main`: the first application push. Its backend carries a provisional schema; do not build on it.
-- `feat/database-schema` (the schema's author): the designed database. Untouched.
-- `feat/backend-on-designed-schema`: `main` + that branch + the backend converged on it (WO-011).
-  This is the branch to review and build on. It runs end to end locally; see `CLAUDE.md`.
+- `main` holds everything: the designed database (`db/`, `docs/database/`), the backend converged on it
+  (WO-011), the web app, agents, skills and this workspace. It runs end to end locally; see `CLAUDE.md`.
+- Branches `feat/database-schema` and `feat/backend-on-designed-schema` are both contained in `main`.
 - AWS dev hosts exist and are empty. Nothing is deployed. `docs/runbooks/aws-dev.md`.
 
 ## Waiting on the human
-1. Review of `feat/backend-on-designed-schema` by the schema's author, then the merge into `main`.
+1. A review, after the fact, by the schema's author of how the backend uses the schema.
 2. Whether phases 2–3 become migrations (the backend needs them).
 3. DEF-007: three gaps between what the backend wants and what the schema has.
 4. The passport trust-score arithmetic (ADR-004).

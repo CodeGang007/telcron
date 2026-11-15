@@ -45,3 +45,9 @@ the Python duplicates. Three faults surfaced and were fixed.
 
 **Not done** — phases 2–3 are still not migrations; DEF-007 lists three gaps for the schema's author; the
 two remaining "Earn AWS credits" activities (the browser chosen for it was not signed in to AWS).
+
+## 2026-11-15 — Merged into main
+
+At the user's instruction ("merge to main now") `feat/backend-on-designed-schema` was fast-forwarded into
+`main`. That landed `feat/database-schema` as well. No pull request was opened; the schema's author has not
+reviewed the convergence.

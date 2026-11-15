@@ -1,6 +1,6 @@
 # ADR-005 — The backend maps the designed schema and creates nothing
 
-Date: 2026-11-15 · Status: accepted (on branch `feat/backend-on-designed-schema`, pending review)
+Date: 2026-11-15 · Status: accepted (merged into `main` 2026-11-15; review by the schema's author still owed)
 
 The database is designed in `docs/database/schema_spec.py` and applied by dbmate SQL migrations, with
 rules enforced in the database and its own test suite. The backend adopts it as is:

@@ -4,7 +4,7 @@
 
 | ID | Title | Owner | Depends | Status |
 | --- | --- | --- | --- | --- |
-| WO-011 | Converge the backend on the designed database schema | (single session) → database-engineer, qa-test-engineer | DEF-005 | DONE-PENDING-QA on branch `feat/backend-on-designed-schema` — gates in the WO log. Needs the schema author's review; not merged |
+| WO-011 | Converge the backend on the designed database schema | (single session) → database-engineer, qa-test-engineer | DEF-005 | DONE-PENDING-QA — merged into `main` on 2026-11-15 at the human's instruction; gates in the WO log. Not yet reviewed by the schema's author or a second agent |
 | WO-001 | Foundation: schema, core API, worker, web app, agent workspace | (single session) → qa-test-engineer | — | DONE-PENDING-QA — its schema part is replaced by WO-011. Not independently verified |
 | WO-002 | Deploy dev to AWS (EC2: API + Worker + Redis; RDS; Lightsail web) | infra-deploy-engineer → security-auditor | WO-011, WO-005 | OPEN — hosts exist and are empty |
 | WO-003 | Ingestion: job runner and first marketplace source | data-ai-engineer | WO-007 | BLOCKED ON HUMAN — needs SerpApi/ScraperAPI keys and the legal position on scraping |
@@ -29,8 +29,8 @@
 | DEF-006 | AWS dev: budget alerts nobody; Lightsail leaves port 22 open | infra-deploy-engineer | S3 | OPEN |
 
 ## Decisions waiting on the human
-1. **Review and merge order.** `feat/backend-on-designed-schema` contains `feat/database-schema`. Merging
-   it into `main` lands both. The schema's author should see it first.
+1. **Review after the fact.** The convergence and `feat/database-schema` were merged into `main` on 2026-11-15
+   at the human's instruction, before the schema's author reviewed how the backend uses it. That review is still owed.
 2. **Promote phases 2–3 to migrations?** The backend needs them; today `make db-next` applies them locally.
 3. **Passport trust-score arithmetic** (ADR-004; the schema design's Q3). A placeholder is in use.
 
