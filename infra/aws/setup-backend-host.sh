@@ -31,6 +31,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=HOME=/root
 ExecStart=$ROOT/agent-backend.sh
 TimeoutStartSec=1800
 EOF

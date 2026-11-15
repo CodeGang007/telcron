@@ -91,6 +91,10 @@ jobs:
       - name: The member's journey, in a browser
         working-directory: e2e
         run: npm run journey
+      - name: Stop the app
+        # Also frees the uv cache lock, which the setup action's cleanup needs.
+        if: always()
+        run: make dev-stop
       - name: Logs and traces, if it failed
         if: failure()
         uses: actions/upload-artifact@v4

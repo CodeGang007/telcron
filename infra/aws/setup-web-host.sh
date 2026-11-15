@@ -43,6 +43,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+Environment=HOME=/root
 ExecStart=/opt/telcron-web/agent-web.sh
 TimeoutStartSec=300
 EOF

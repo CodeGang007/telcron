@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "journey": "playwright test journey",
-    "smoke": "playwright test smoke"
+    "smoke": "playwright test smoke",
+    "hosted": "playwright test hosted"
   },
   "devDependencies": {
     "@playwright/test": "1.60.0",
