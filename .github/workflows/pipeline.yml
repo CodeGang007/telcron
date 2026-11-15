@@ -58,7 +58,8 @@ jobs:
 
   e2e:
     name: End-to-end journey
-    runs-on: ubuntu-latest
+    # Pinned: the Playwright version in e2e/ supports this image, not yet the newest one.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -105,7 +106,7 @@ jobs:
     name: Release to dev
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [schema, backend, frontend, e2e]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     concurrency:

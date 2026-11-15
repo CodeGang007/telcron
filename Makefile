@@ -44,13 +44,15 @@ db-nuke:  ## stop and DELETE the data volume
 	$(COMPOSE) down -v
 
 db-test:  ## run the schema test suite on a throwaway in-memory Postgres
-	$(COMPOSE) --profile test up -d --build --wait db-test
+	$(COMPOSE) build -q db   # db-test reuses this image; on a fresh machine it does not exist yet
+	$(COMPOSE) --profile test up -d --wait db-test
 	TELCRON_TEST_ADMIN_DSN=postgresql://postgres:test@127.0.0.1:$${DB_TEST_PORT:-55433}/postgres \
 	  $(PYTEST) db/tests --ignore=db/tests/test_performance.py -q; s=$$?; \
 	  $(COMPOSE) --profile test stop db-test >/dev/null; exit $$s
 
 db-test-perf:  ## run read-path performance tests (~1 min, loads ~1M rows)
-	$(COMPOSE) --profile test up -d --build --wait db-test
+	$(COMPOSE) build -q db
+	$(COMPOSE) --profile test up -d --wait db-test
 	TELCRON_TEST_ADMIN_DSN=postgresql://postgres:test@127.0.0.1:$${DB_TEST_PORT:-55433}/postgres \
 	  $(PYTEST) db/tests/test_performance.py -q -s; s=$$?; \
 	  $(COMPOSE) --profile test stop db-test >/dev/null; exit $$s
