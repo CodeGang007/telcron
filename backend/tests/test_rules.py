@@ -1,10 +1,9 @@
-"""Rules with exact answers: hazard formula, passport combination, coin fraud rules."""
+"""Rules with exact answers: the hazard total and the passport combination."""
 
 from decimal import Decimal as D
 
 from app.domain import passport
-from app.domain.coins import capped_amount, is_burst, streak_multiplier
-from app.domain.hazard import DimensionScore, label_for, total_score
+from app.domain.hazard import DimensionScore, total_score
 
 WEIGHTS = ["3.0", "2.5", "1.5", "1.5", "1.0", "1.0", "0.5"]
 
@@ -30,39 +29,46 @@ def test_insufficient_dimension_is_excluded_not_counted_as_zero():
 
 def test_nothing_scored_gives_no_total():
     assert total_score(scores([None] * 7)) is None
-    assert label_for(None) is None
 
 
-def test_band_edges():
-    assert label_for(D("29.99")) == "low"
-    assert label_for(D("30")) == "medium"
-    assert label_for(D("59.99")) == "medium"
-    assert label_for(D("60")) == "high"
-
-
-def test_confirmed_recall_always_reads_recalled():
-    result = passport.build("confirmed_match", ["valid"], D("5"), "low")
-    assert result.status_badge == "recalled"
+def test_a_match_reads_recalled_and_still_has_a_trust_score():
+    result = passport.build("match", ["valid"], None)
+    assert (result.tier, result.status_badge) == (2, "recalled")
     assert result.recall_component == 0
+    assert result.trust_score is not None  # the schema requires one at tier 2
 
 
-def test_high_hazard_is_blocked_and_low_with_valid_cert_is_verified():
-    assert passport.build("no_match", ["valid"], D("75"), "high").status_badge == "blocked"
-    assert passport.build("no_match", ["valid"], D("10"), "low").status_badge == "verified"
-    assert passport.build("no_match", [], D("10"), "low").status_badge == "unverified"
+def test_a_near_match_is_neither_recalled_nor_verified():
+    assert passport.build("near_match", ["valid"], D("5")).status_badge == "needs_information"
 
 
-def test_no_hazard_total_means_no_trust_score():
-    result = passport.build("no_match", [], None, None)
-    assert result.trust_score is None and result.tier == 4
+def test_a_bad_certificate_is_a_certification_issue():
+    for status in ("expired", "revoked"):
+        result = passport.build("no_match_found", ["valid", status], D("5"))
+        assert result.status_badge == "certification_issue"
+        assert result.certification_component == 0
 
 
-def test_daily_cap_clips_the_award():
-    assert capped_amount(25, 490, True) == 10
-    assert capped_amount(25, 500, True) == 0
-    assert capped_amount(100, 500, False) == 100
+def test_no_recall_and_nothing_wrong_is_verified():
+    result = passport.build("no_match_found", ["valid"], D("10"))
+    assert (result.tier, result.status_badge) == (2, "verified")
+    assert result.hazard_component == D("90")
+    assert result.trust_score == D("96.00")  # 0.4*100 + 0.2*100 + 0.4*90
 
 
-def test_burst_and_streak():
-    assert not is_burst(19) and is_burst(20)
-    assert streak_multiplier(7) == 1 and streak_multiplier(8) == 2
+def test_a_missing_hazard_total_drops_out_of_the_trust_score():
+    assert passport.build("no_match_found", ["valid"], None).trust_score == D("100.00")
+
+
+def test_below_tier_two_the_badge_is_needs_information_with_no_score():
+    for result in (passport.build("insufficient_information", [], None), passport.unidentified()):
+        assert result.tier < 2 and result.status_badge == "needs_information"
+        assert result.trust_score is None
+
+
+def test_certification_component():
+    assert passport.certification_component([]) == 70
+    assert passport.certification_component(["not_checked"]) == 70
+    assert passport.certification_component(["valid", "not_checked"]) == 85
+    assert passport.certification_component(["valid"]) == 100
+    assert passport.certification_component(["lookup_failed", "expired"]) == 0

@@ -1,4 +1,7 @@
-"""All 90 tables in 14 domains. Importing this package registers every model on Base.metadata."""
+"""A mapping of the designed schema: 90 tables in 14 domains.
+
+The tables are created by the SQL in db/ (generated from docs/database/schema_spec.py), never by
+SQLAlchemy. tests/test_schema_drift.py fails when this mapping and that schema disagree."""
 
 from .base import VECTOR_DIM, Base
 from .catalogue import *  # noqa: F403

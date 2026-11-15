@@ -6,18 +6,20 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select, text
 
 from app.core.deps import Db, Level1User
 from app.models import Brand, Passport, Product, RiskEvent, UserRiskAlert, WalletItem
 from app.modules.catalogue.service import find_product
 
 router = APIRouter(tags=["wallet"])
+MAX_ITEMS = text("select telcron_setting_int('wallet.max_items', 100)")
 
 
 class WalletItemIn(BaseModel):
     product_id: str
-    add_method: Literal["scan", "search", "manual"] = "search"
+    # `media_grid` and `extension` adds arrive with the media pipeline (WO-007).
+    add_method: Literal["search", "barcode", "manual"] = "search"
     nickname: str | None = Field(None, max_length=80)
 
 
@@ -25,7 +27,7 @@ def _item(item: WalletItem, product: Product, brand: str | None,
           passport: Passport | None) -> dict[str, Any]:
     return {"id": str(item.id), "product_id": str(product.id), "slug": product.public_slug,
             "name": product.canonical_name, "brand": brand, "nickname": item.nickname,
-            "alerts_enabled": item.alerts_enabled,
+            "status": item.status, "alerts_enabled": item.alerts_enabled,
             "status_badge": passport.status_badge if passport else None,
             "trust_score": float(passport.trust_score)
             if passport and passport.trust_score is not None else None,
@@ -50,11 +52,16 @@ async def save_item(data: WalletItemIn, db: Db, user: Level1User) -> dict[str, A
     product = await find_product(db, data.product_id)
     if product is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "product_not_found")
-    if (await db.execute(select(WalletItem.id).where(
-            WalletItem.user_id == user.id, WalletItem.product_id == product.id,
-            WalletItem.deleted_at.is_(None)))).first():
+    mine = select(func.count()).select_from(WalletItem).where(
+        WalletItem.user_id == user.id, WalletItem.deleted_at.is_(None))
+    if await db.scalar(mine.where(WalletItem.product_id == product.id)):
         raise HTTPException(status.HTTP_409_CONFLICT, "already_in_wallet")
+    if await db.scalar(mine) >= await db.scalar(MAX_ITEMS):
+        raise HTTPException(status.HTTP_409_CONFLICT, "wallet_full")
+    # A product found in the registry is owned on the member's word. A manual or barcode add
+    # stays pending until a matching video check activates it (WO-007); only active items alert.
     item = WalletItem(user_id=user.id, product_id=product.id, add_method=data.add_method,
+                      status="active" if data.add_method == "search" else "pending_verification",
                       nickname=data.nickname, last_seen_passport_id=product.current_passport_id)
     db.add(item)
     await db.flush()

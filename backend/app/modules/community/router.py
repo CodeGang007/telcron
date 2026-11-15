@@ -5,7 +5,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.deps import Db, Level1User
@@ -76,6 +76,8 @@ async def list_reviews(id_or_slug: str, db: Db,
 @router.post("/products/{id_or_slug}/reviews", response_model=CreatedOut,
              status_code=status.HTTP_201_CREATED)
 async def post_review(id_or_slug: str, data: ReviewIn, db: Db, user: Level1User) -> CreatedOut:
+    """One review per member per product. The schema allows several (its open question Q1);
+    this API keeps the stricter rule of the technical documentation until that is decided."""
     product = await _product(db, id_or_slug)
     if (await db.execute(select(Review.id).where(
             Review.product_id == product.id, Review.author_user_id == user.id,
@@ -91,29 +93,27 @@ async def post_review(id_or_slug: str, data: ReviewIn, db: Db, user: Level1User)
     db.add(review)
     await db.flush()
     pending = 0
-    for rule in ("review", *(("first_review",) if is_first else ())):
+    for rule in ("review", *(("first_reviewer",) if is_first else ())):
         entry = await rewards.earn(db, user.id, rule, subject_type="product",
                                    subject_id=product.id,
                                    idempotency_key=f"{rule}:{user.id}:{product.id}")
-        pending += int(entry.amount) if entry else 0
+        pending += int(entry.amount) if entry and entry.status == "pending" else 0
     emit(db, "review", review.id, "ReviewSubmitted", {"product_id": str(product.id)})
-    audit(db, action="review.create", entity_type="review", entity_id=review.id,
+    audit(db, action="review.created", entity_type="review", entity_id=review.id,
           actor_user_id=user.id)
     return CreatedOut(id=str(review.id), coins_pending=pending)
 
 
 @router.post("/reviews/{review_id}/helpful", status_code=status.HTTP_204_NO_CONTENT)
 async def vote_helpful(review_id: uuid.UUID, db: Db, user: Level1User) -> None:
-    review = (await db.execute(select(Review).where(Review.id == review_id).with_for_update())
-              ).scalar_one_or_none()
-    if review is None or review.status != "published":
+    review = (await db.execute(select(Review).where(Review.id == review_id))).scalar_one_or_none()
+    if review is None or review.status != "published" or review.deleted_at is not None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "review_not_found")
     if review.author_user_id == user.id:
         raise HTTPException(status.HTTP_409_CONFLICT, "own_review")
+    # A trigger keeps reviews.helpful_count in step with the votes.
     await db.execute(insert(ReviewVote).values(review_id=review_id, user_id=user.id)
                      .on_conflict_do_nothing())
-    review.helpful_count = await db.scalar(
-        select(func.count()).select_from(ReviewVote).where(ReviewVote.review_id == review_id))
 
 
 @router.post("/products/{id_or_slug}/flags", response_model=CreatedOut,
@@ -128,8 +128,8 @@ async def flag_hazard(id_or_slug: str, data: FlagIn, db: Db, user: Level1User) -
     db.add(flag)
     await db.flush()
     db.add(ReviewTask(task_type="hazard_flag", subject_type="hazard_flag", subject_id=flag.id,
-                      priority=1, submitted_by_user_id=user.id,
+                      priority=2, submitted_by_user_id=user.id,
                       payload={"product_id": str(product.id)}))
-    audit(db, action="hazard_flag.create", entity_type="hazard_flag", entity_id=flag.id,
+    audit(db, action="hazard_flag.created", entity_type="hazard_flag", entity_id=flag.id,
           actor_user_id=user.id)
     return CreatedOut(id=str(flag.id), coins_pending=0)

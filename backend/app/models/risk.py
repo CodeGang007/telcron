@@ -96,7 +96,7 @@ class PriceSnapshot(Base):
     currency = c(CHAR(3), nullable=False)
     price = c(Numeric(12, 2), nullable=False)
     in_stock = c(Boolean)
-    observed_at = ts(nullable=False, now=True)
+    observed_at = ts(nullable=False)
 
 
 class PriceAlert(Base):

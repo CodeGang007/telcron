@@ -1,23 +1,39 @@
-"""End to end against the real database: sign-up to coins, review to re-screen to alert."""
+"""End to end against the designed database: sign-up to coins, review to re-screen,
+recall to alert."""
 
 import uuid
 
-from sqlalchemy import select
+import pytest
+from demo_catalogue import add_recall
+from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError
 
-from app.models import CoinLedgerEntry, HazardFlag, OutboxEvent, Passport, Product, User
-from app.modules.rewards.service import confirm_entry
-from app.modules.screening.service import screen_product
+from app.models import CoinBalance, OutboxEvent, Passport, Product
+from app.modules.rewards import service as rewards
+from app.workers.handlers import alerts, screening
 
 API = "/api/v1"
 PASSWORD = "correct-horse-battery"
 
 
-async def signup(client, name="Tester"):
+def new_phone() -> str:
+    return "+1555" + f"{uuid.uuid4().int % 10**7:07d}"
+
+
+async def signup(client, name="Tester", phone=None):
     email = f"{uuid.uuid4().hex[:10]}@example.com"
     r = await client.post(f"{API}/auth/register", json={
-        "email": email, "password": PASSWORD, "display_name": name, "phone_e164": "+15550001111"})
+        "email": email, "password": PASSWORD, "display_name": name,
+        "phone_e164": phone or new_phone()})
     assert r.status_code == 201, r.text
     return email, r.json()["dev_codes"]
+
+
+async def login(client, email):
+    r = await client.post(f"{API}/auth/login", json={"email": email, "password": PASSWORD})
+    assert r.status_code == 200, r.text
+    tokens = r.json()
+    return tokens, {"Authorization": f"Bearer {tokens['access_token']}"}
 
 
 async def verified_user(client, name="Tester"):
@@ -27,31 +43,28 @@ async def verified_user(client, name="Tester"):
             "email": email, "channel": channel, "code": codes[channel]})
         assert r.status_code == 200, r.text
     assert r.json()["verification_level"] == 1
-    r = await client.post(f"{API}/auth/login", json={"email": email, "password": PASSWORD})
-    tokens = r.json()
-    return email, tokens, {"Authorization": f"Bearer {tokens['access_token']}"}
+    tokens, headers = await login(client, email)
+    return email, tokens, headers
 
 
-async def confirm_pending(db, user_id):
-    ids = (await db.execute(select(CoinLedgerEntry.id).where(
-        CoinLedgerEntry.user_id == user_id, CoinLedgerEntry.status == "pending"))).scalars().all()
-    for entry_id in ids:
-        await confirm_entry(db, entry_id)
-    await db.commit()
+async def product_id(db, slug) -> uuid.UUID:
+    return (await db.execute(select(Product.id).where(Product.public_slug == slug))).scalar_one()
 
 
 async def test_search_and_passport_need_no_account(client):
     r = await client.get(f"{API}/products", params={"q": "aquablend"})
     assert r.status_code == 200 and r.json()[0]["slug"] == "aquablend-900"
-    r = await client.post(f"{API}/identify", json={"barcode": "0850012345678"})
+    r = await client.post(f"{API}/identify", json={"barcode": "00850012345678"})
     assert r.json()["slug"] == "aquablend-900"
+    r = await client.get(f"{API}/products/voltpro-65w-charger/passport")
+    assert r.status_code == 200 and r.json()["status_badge"] == "verified"
     assert (await client.get(f"{API}/products/nope")).status_code == 404
 
 
-async def test_level_zero_cannot_contribute(client):
+async def test_level_zero_can_sign_in_but_not_contribute(client):
     email, _ = await signup(client)
-    r = await client.post(f"{API}/auth/login", json={"email": email, "password": PASSWORD})
-    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
+    _, headers = await login(client, email)
+    assert (await client.get(f"{API}/auth/me", headers=headers)).json()["verification_level"] == 0
     assert (await client.get(f"{API}/wallet/items", headers=headers)).status_code == 403
     assert (await client.get(f"{API}/wallet/items")).status_code == 401
 
@@ -69,6 +82,18 @@ async def test_wrong_code_is_refused_and_counted(client):
     assert r.status_code == 400
 
 
+async def test_a_phone_number_has_one_verified_owner(client):
+    phone = new_phone()
+    first, codes = await signup(client, "First", phone)
+    for channel in ("email", "phone"):
+        await client.post(f"{API}/auth/verify", json={
+            "email": first, "channel": channel, "code": codes[channel]})
+    second, codes = await signup(client, "Second", phone)
+    r = await client.post(f"{API}/auth/verify", json={
+        "email": second, "channel": "phone", "code": codes["phone"]})
+    assert r.status_code == 409 and r.json()["detail"] == "phone_in_use"
+
+
 async def test_signup_to_coins(client, db):
     _, _, headers = await verified_user(client)
     me = (await client.get(f"{API}/auth/me", headers=headers)).json()
@@ -76,11 +101,35 @@ async def test_signup_to_coins(client, db):
     coins = (await client.get(f"{API}/coins", headers=headers)).json()
     assert coins["pending"] == 100 and coins["confirmed"] == 0
 
-    await confirm_pending(db, uuid.UUID(me["id"]))
+    await rewards.confirm_due(db)  # what the coins handler does
+    await db.commit()
     coins = (await client.get(f"{API}/coins", headers=headers)).json()
     assert coins == {"confirmed": 100, "pending": 0, "frozen": 0, "lifetime_earned": 100,
-                     "level": {"level": 1, "title": "Novice", "next_title": "Contributor",
-                               "next_at": 250}}
+                     "level": {"level": 1, "title": "Novice", "next_title": "Inspector",
+                               "next_at": 200}}
+
+
+async def test_a_repeated_earn_awards_once(client, db):
+    _, _, headers = await verified_user(client)
+    user_id = uuid.UUID((await client.get(f"{API}/auth/me", headers=headers)).json()["id"])
+    subject = await product_id(db, "aquablend-900")
+    key = f"photo:{uuid.uuid4()}"
+    first = await rewards.earn(db, user_id, "photo", subject_type="product", subject_id=subject,
+                               idempotency_key=key)
+    again = await rewards.earn(db, user_id, "photo", subject_type="product", subject_id=subject,
+                               idempotency_key=key)
+    await db.commit()
+    assert first is not None and int(first.amount) == 15 and again is None
+    balance = await db.get(CoinBalance, user_id)
+    assert int(balance.pending_balance) == 100 + 15  # the Level 1 bonus and one photo
+
+
+async def test_the_ledger_cannot_be_edited_directly(db):
+    entry = (await db.execute(text("select id from coin_ledger_entries limit 1"))).scalar_one()
+    with pytest.raises(DBAPIError, match="append-only"):
+        await db.execute(text("update coin_ledger_entries set amount = 999999 where id = :id"),
+                         {"id": entry})
+    await db.rollback()
 
 
 async def test_refresh_rotates_and_reuse_kills_the_family(client):
@@ -109,18 +158,9 @@ async def test_lockout_after_five_bad_passwords(client):
     assert r.status_code == 423
 
 
-async def test_review_rescreens_and_alerts_the_wallet_holder(client, db):
+async def test_a_review_rescreens_and_the_new_score_cites_it(client, db):
     slug = "voltpro-65w-charger"
-    product = (await db.execute(select(Product).where(Product.public_slug == slug))).scalar_one()
-    await screen_product(db, product.id, "ingest")
-    await db.commit()
     before = (await client.get(f"{API}/products/{slug}/passport")).json()
-
-    _, _, holder = await verified_user(client, "Holder")
-    r = await client.post(f"{API}/wallet/items", headers=holder, json={"product_id": slug})
-    assert r.status_code == 201
-    r = await client.post(f"{API}/wallet/items", headers=holder, json={"product_id": slug})
-    assert r.status_code == 409
 
     _, _, reviewer = await verified_user(client, "Reviewer")
     body = ("It started to overheat, then smoke came out and it caused a burn on my hand. "
@@ -132,51 +172,72 @@ async def test_review_rescreens_and_alerts_the_wallet_holder(client, db):
                           json={"rating": 1, "body": body})
     assert r.status_code == 409
 
-    # A flag the safety team has confirmed (confirmation has no endpoint yet: WO-006).
-    reviewer_id = (await client.get(f"{API}/auth/me", headers=reviewer)).json()["id"]
-    assert await db.get(User, uuid.UUID(reviewer_id)) is not None
-    db.add(HazardFlag(reporter_user_id=uuid.UUID(reviewer_id), product_id=product.id,
-                      status="confirmed",
-                      description="Banned counterfeit unit: fire and burn injury, defective, "
-                                  "cracked casing, and the cable coating is toxic to pets."))
-    await db.commit()
-
     # The review wrote its event in the same transaction; the screening handler does this.
     event = (await db.execute(select(OutboxEvent).where(
         OutboxEvent.event_type == "ReviewSubmitted").order_by(OutboxEvent.created_at.desc())
         .limit(1))).scalar_one()
-    assert event.payload["product_id"] == str(product.id)
-    from app.workers.handlers import alerts, screening
+    assert event.payload["product_id"] == before["product_id"]
     await screening.handle("ReviewSubmitted", event.payload)
 
     after = (await client.get(f"{API}/products/{slug}/passport")).json()
     assert after["version"] == before["version"] + 1
     assert [h["version"] for h in after["history"]][:2] == [after["version"], before["version"]]
-    health = next(d for d in after["hazard"]["dimensions"] if d["code"] == "health_safety")
+    # A hazard finding lowers the trust score; it does not change the badge.
+    assert after["status_badge"] == "verified" and after["trust_score"] < before["trust_score"]
+    assert after["hazard"]["label"] in ("Low", "Medium", "High")
+    health = next(d for d in after["hazard"]["dimensions"] if d["code"] == "safety.health_safety")
     assert health["status"] == "scored" and health["score"] > 0
     assert any("overheat" in c["excerpt"] for c in health["citations"])
-    # The old passport row is untouched: append-only.
-    old = (await db.execute(select(Passport).where(
-        Passport.id == uuid.UUID(before["passport_id"])))).scalar_one()
+    # The earlier version still exists, unchanged: passports are insert-only.
+    old = await db.get(Passport, uuid.UUID(before["passport_id"]))
     assert float(old.trust_score) == before["trust_score"]
 
-    assert before["status_badge"] == "verified" and after["status_badge"] == "caution"
-    assert after["hazard"]["label"] == "medium"
-    issued = (await db.execute(select(OutboxEvent).where(
-        OutboxEvent.event_type == "PassportIssued",
-        OutboxEvent.payload["product_id"].astext == str(product.id))
-        .order_by(OutboxEvent.created_at.desc()).limit(1))).scalar_one()
-    await alerts.handle("PassportIssued", issued.payload)
+
+async def test_a_recall_reaches_the_wallet_holder_once(client, db):
+    slug = "aquablend-900"
+    _, _, holder = await verified_user(client, "Holder")
+    r = await client.post(f"{API}/wallet/items", headers=holder, json={"product_id": slug})
+    assert r.status_code == 201 and r.json()["status"] == "active"
+    r = await client.post(f"{API}/wallet/items", headers=holder, json={"product_id": slug})
+    assert r.status_code == 409
+    _, _, bystander = await verified_user(client, "Bystander")
+
+    await add_recall(db, external_id="TEST-26-002", product_name="AquaBlend 900 Blender",
+                     brand="AquaBlend", model="AB-900",
+                     title="AquaBlend 900 blenders recalled: blade can detach",
+                     hazard="Laceration hazard")
+    await db.commit()
+    pid = await product_id(db, slug)
+    await screening.handle("RecallImported", {"product_id": str(pid)})
+
+    view = (await client.get(f"{API}/products/{slug}/passport")).json()
+    assert view["status_badge"] == "recalled" and view["recall_matches"][0]["verdict"] == "match"
+
+    raised = (await db.execute(select(OutboxEvent).where(
+        OutboxEvent.event_type == "RiskEventRaised",
+        OutboxEvent.payload["product_id"].astext == str(pid)))).scalars().all()
+    assert len(raised) == 1
+    await alerts.handle("RiskEventRaised", raised[0].payload)
+    await alerts.handle("RiskEventRaised", raised[0].payload)  # delivered twice, alerted once
     got = (await client.get(f"{API}/alerts", headers=holder)).json()
-    assert len(got) == 1 and got[0]["product_slug"] == slug
-    assert (await client.get(f"{API}/alerts", headers=reviewer)).json() == []
+    assert len(got) == 1
+    assert (got[0]["event_type"], got[0]["severity"], got[0]["product_slug"]) == (
+        "recall_match", "critical", slug)
+    assert (await client.get(f"{API}/alerts", headers=bystander)).json() == []
+
+    # A second screening finds nothing new: no second event, no second alert.
+    await screening.handle("RecallImported", {"product_id": str(pid)})
+    again = (await db.execute(select(OutboxEvent).where(
+        OutboxEvent.event_type == "RiskEventRaised",
+        OutboxEvent.payload["product_id"].astext == str(pid)))).scalars().all()
+    assert len(again) == 1
 
 
 async def test_wallet_item_of_another_user_is_a_404(client):
+    slug = "voltpro-65w-charger"
     _, _, a = await verified_user(client, "Ana")
     _, _, b = await verified_user(client, "Ben")
-    item = (await client.post(f"{API}/wallet/items", headers=a,
-                              json={"product_id": "aquablend-900"})).json()
+    item = (await client.post(f"{API}/wallet/items", headers=a, json={"product_id": slug})).json()
     assert (await client.delete(f"{API}/wallet/items/{item['id']}", headers=b)).status_code == 404
     assert (await client.delete(f"{API}/wallet/items/{item['id']}", headers=a)).status_code == 204
     assert (await client.get(f"{API}/wallet/items", headers=a)).json() == []
@@ -190,15 +251,9 @@ async def test_staff_routes_refuse_ordinary_users(client):
     assert r.status_code == 403
 
 
-async def test_recalled_product_reads_recalled_with_the_recall_cited(client, db):
-    slug = "brightbuild-magnet-set"
-    product = (await db.execute(select(Product).where(Product.public_slug == slug))).scalar_one()
-    await screen_product(db, product.id, "ingest")
-    await db.commit()
-    from app.core.redis import get_redis
-    await (await get_redis()).delete(f"telcron:passport:{product.id}")
-    view = (await client.get(f"{API}/products/{slug}/passport")).json()
-    assert view["status_badge"] == "recalled"
+async def test_recalled_product_reads_recalled_with_the_recall_cited(client):
+    view = (await client.get(f"{API}/products/brightbuild-magnet-set/passport")).json()
+    assert view["status_badge"] == "recalled" and view["tier"] == 2
     assert view["recall_matches"][0]["verdict"] == "match"
-    regulatory = next(d for d in view["hazard"]["dimensions"] if d["code"] == "regulatory_flags")
+    regulatory = next(d for d in view["hazard"]["dimensions"] if d["code"] == "safety.regulatory")
     assert regulatory["citations"] and regulatory["citations"][0]["kind"] == "recall"

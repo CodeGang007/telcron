@@ -7,7 +7,7 @@ PSQL := $(COMPOSE) exec -T db psql -U $${POSTGRES_USER:-telcron} -d $${POSTGRES_
 PYTEST := uv run -q --no-project --with 'psycopg[binary]>=3.2' --with 'pytest>=8' pytest
 
 .PHONY: help db-up db-down db-migrate db-rollback db-status db-seed db-sample db-reset db-psql db-nuke \
-        db-test db-test-perf db-gen db-erd-png
+        db-test db-test-perf db-gen db-erd-png up db-next app-db api-test dev dev-stop
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -59,6 +59,31 @@ db-gen:  ## regenerate SQL + ERD + catalogue from docs/database/schema_spec.py
 	python3 docs/database/schema_spec.py
 	python3 docs/database/tools/build_sql.py
 	python3 docs/database/tools/build_erd.py
+
+# ───────────────────────── application (backend/ + frontend/) ─────────────────────────
+up:  ## start Postgres and Redis
+	$(COMPOSE) up -d --build --wait db redis
+
+db-next:  ## apply phases 2-3 from db/schema-next to the LOCAL database (the backend needs them; skipped if present)
+	@if [ "$$($(PSQL) -Atc "select to_regclass('hazard_assessments') is not null")" = "t" ]; then \
+	  echo "phases 2-3 already applied"; \
+	else \
+	  for f in phase2_schema phase2_rules phase3_schema phase3_rules seed_reference; do \
+	    echo "applying db/schema-next/$$f.sql"; $(PSQL) -1 < db/schema-next/$$f.sql || exit 1; done; \
+	fi
+
+app-db: up  ## everything the backend needs in the local database: migrate, reference data, phases 2-3, demo data
+	$(MAKE) db-migrate db-seed db-next db-sample
+	cd backend && uv run python -m app.seed
+
+api-test:  ## backend lint and tests (the tests build their own database from db/ inside the local Postgres)
+	cd backend && uv run ruff check . && uv run pytest -q
+
+dev:  ## start the API (:4310), the Worker and the web app (:3200), detached; logs in .dev-logs/
+	tools/dev-all.sh
+
+dev-stop:  ## stop them
+	tools/dev-all.sh stop
 
 db-erd-png:  ## export ERD pages to docs/database/preview/*.png (needs draw.io desktop)
 	@mkdir -p docs/database/preview

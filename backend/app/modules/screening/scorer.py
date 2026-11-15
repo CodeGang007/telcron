@@ -12,7 +12,7 @@ from app.core.config import get_settings
 @dataclass(frozen=True)
 class EvidenceRef:
     id: str
-    kind: str  # recall | certification | review | hazard_flag | source_record | media
+    kind: str  # an evidence_kind: recall | certification_check | review | hazard_flag | ...
     text: str
 
 
@@ -40,18 +40,19 @@ class Scorer(Protocol):
 
 
 KEYWORDS: dict[str, tuple[str, ...]] = {
-    "regulatory_flags": ("recall", "banned", "non-compliant", "violation", "counterfeit"),
-    "health_safety": ("injur", "burn", "fire", "shock", "toxic", "chok", "cut", "overheat",
+    "safety.regulatory": ("recall", "banned", "non-compliant", "violation", "counterfeit"),
+    "safety.health_safety": ("injur", "burn", "fire", "shock", "toxic", "chok", "cut", "overheat",
                       "smoke", "explod", "laceration"),
-    "customer_issues": ("broke", "stopped working", "refund", "defective", "terrible", "faulty"),
-    "fragility_usability": ("crack", "fragile", "flimsy", "snapped", "leak", "loose"),
-    "environmental_harm": ("non-recyclable", "landfill", "pollut", "disposal hazard"),
-    "regional_constraints": ("voltage", "import restriction", "not approved in", "110v", "220v"),
-    "animal_harm": ("toxic to pets", "pet", "bait", "poison"),
+    "safety.customer_issues": ("broke", "stopped working", "refund", "defective", "terrible",
+                               "faulty"),
+    "safety.fragility": ("crack", "fragile", "flimsy", "snapped", "leak", "loose"),
+    "safety.environmental": ("non-recyclable", "landfill", "pollut", "disposal hazard"),
+    "safety.regional": ("voltage", "import restriction", "not approved in", "110v", "220v"),
+    "safety.animal_harm": ("toxic to pets", "pet", "bait", "poison"),
 }
 # Which evidence kinds a dimension may be scored from.
 SOURCES: dict[str, tuple[str, ...]] = {
-    "regulatory_flags": ("recall", "certification", "hazard_flag"),
+    "safety.regulatory": ("recall", "certification_check", "hazard_flag"),
 }
 DEFAULT_SOURCES = ("review", "hazard_flag", "recall")
 
@@ -70,7 +71,7 @@ class StubScorer:
                 continue
             words = KEYWORDS.get(dim.code, ())
             hits = [ev for ev in pool if any(w in ev.text.lower() for w in words)]
-            if dim.code == "regulatory_flags":
+            if dim.code == "safety.regulatory":
                 hits = hits or [ev for ev in pool if ev.kind == "recall"]
             if hits:
                 weight = sum(40 if ev.kind in ("recall", "hazard_flag") else 20 for ev in hits)

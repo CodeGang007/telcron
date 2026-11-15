@@ -1,41 +1,82 @@
-"""Integration tests run against a real PostgreSQL and Redis (docker compose), in their own
-database `telcron_test` and Redis db 1. Nothing here touches the development data."""
+"""Integration tests run against a real PostgreSQL and Redis.
+
+The database is built from the designed schema in db/ — migrations, reference seeds, then phases
+2-3 from db/schema-next — in the order db/tests/conftest.py uses, as its own database inside the
+local Postgres (`make up`). Nothing here touches the development data, and SQLAlchemy creates
+nothing: if the application disagrees with the schema, these tests fail.
+"""
 
 import os
+import pathlib
 
-os.environ["DATABASE_URL"] = "postgresql+asyncpg://telcron:telcron@localhost:5436/telcron_test"
-os.environ["REDIS_URL"] = "redis://localhost:6381/1"
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+TEST_DB = "telcron_api_test"
+
+
+def _setting(name: str) -> str | None:
+    """A value from the environment, else from the repository's .env file."""
+    if os.environ.get(name):
+        return os.environ[name]
+    env = ROOT / ".env"
+    if env.exists():
+        for line in env.read_text().splitlines():
+            if line.startswith(name + "="):
+                return line.split("=", 1)[1].strip()
+    return None
+
+
+ADMIN_DSN = (os.environ.get("TELCRON_TEST_ADMIN_DSN") or _setting("DATABASE_URL")
+             or "postgresql://telcron:telcron_dev@127.0.0.1:5433/telcron"
+             ).replace("postgresql+asyncpg://", "postgresql://")
+TEST_DSN = ADMIN_DSN.rsplit("/", 1)[0] + "/" + TEST_DB
+REDIS = "/".join((_setting("REDIS_URL") or "redis://127.0.0.1:6381").split("/")[:3])
+
+os.environ["DATABASE_URL"] = TEST_DSN
+os.environ["REDIS_URL"] = REDIS + "/1"
 os.environ["DEV_EXPOSE_CODES"] = "true"
 os.environ["RUN_OUTBOX_PUBLISHER"] = "false"
-os.environ["COIN_CONFIRM_DELAY_SECONDS"] = "0"
 os.environ["AI_PROVIDER"] = "stub"
 os.environ["ENV"] = "test"
 
 import asyncpg  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+
+FILES = (sorted((ROOT / "db" / "migrations").glob("*.sql"))
+         + [ROOT / "db" / "seeds" / "001_core_reference.sql"]
+         + [ROOT / "db" / "schema-next" / f for f in
+            ("phase2_schema.sql", "phase2_rules.sql", "phase3_schema.sql", "phase3_rules.sql",
+             "seed_reference.sql")])
+
+
+def up_part(sql: str) -> str:
+    """dbmate files: keep only the migrate:up section."""
+    return sql.split("-- migrate:down", 1)[0]
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
 async def database():
-    admin = await asyncpg.connect("postgresql://telcron:telcron@localhost:5436/telcron")
-    await admin.execute("DROP DATABASE IF EXISTS telcron_test WITH (FORCE)")
-    await admin.execute("CREATE DATABASE telcron_test")
+    admin = await asyncpg.connect(ADMIN_DSN)
+    await admin.execute(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")
+    await admin.execute(f"CREATE DATABASE {TEST_DB}")
     await admin.close()
+    conn = await asyncpg.connect(TEST_DSN)
+    for path in FILES:
+        try:
+            await conn.execute(up_part(path.read_text()))
+        except Exception as exc:  # surfaces which file broke
+            raise RuntimeError(f"applying {path.relative_to(ROOT)} failed: {exc}") from exc
+    # Tests confirm coins at once instead of waiting out the fraud-review window.
+    await conn.execute("UPDATE coin_earn_rules SET confirmation_delay = interval '0'")
+    await conn.close()
 
-    from app import seed
+    from demo_catalogue import make_catalogue
+
     from app.core.db import SessionLocal, engine
     from app.core.redis import close_redis, get_redis
-    from app.models import Base
 
-    async with engine.begin() as conn:
-        for ext in ("vector", "pg_trgm", "citext"):
-            await conn.execute(text(f"CREATE EXTENSION IF NOT EXISTS {ext}"))
-        await conn.run_sync(Base.metadata.create_all)
     async with SessionLocal() as db:
-        await seed.reference(db)
-        await seed.demo(db)
+        await make_catalogue(db)
         await db.commit()
     await (await get_redis()).flushdb()
     yield

@@ -8,7 +8,6 @@ dependencies = [
   "uvicorn[standard]>=0.32",
   "sqlalchemy[asyncio]>=2.0.36",
   "asyncpg>=0.30",
-  "alembic>=1.14",
   "pgvector>=0.3.6",
   "pydantic-settings>=2.6",
   "email-validator>=2.2",
@@ -31,10 +30,7 @@ ignore = ["B008", "S101"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S105", "S106"]
-"alembic/versions/*" = ["E501", "I001", "F401"]
-"app/seed.py" = ["E501", "S106"]
 "app/models/*" = ["E501"]
-"alembic/env.py" = ["I001"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

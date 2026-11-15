@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -9,11 +9,12 @@ DEFAULT_JWT_SECRET = "change-me-change-me-change-me-change-me"  # noqa: S105
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=ROOT / ".env.local", extra="ignore")
+    # One file for Docker Compose, make and the application; .env.local may override it.
+    model_config = SettingsConfigDict(env_file=(ROOT / ".env", ROOT / ".env.local"), extra="ignore")
 
     env: str = "local"
-    database_url: str = "postgresql+asyncpg://telcron:telcron@localhost:5436/telcron"
-    redis_url: str = "redis://localhost:6381"
+    database_url: str = "postgresql://telcron:telcron_dev@127.0.0.1:5433/telcron"
+    redis_url: str = "redis://127.0.0.1:6381"
     web_origin: str = "http://localhost:3200"
     jwt_secret: str = DEFAULT_JWT_SECRET
     access_token_minutes: int = 60
@@ -27,11 +28,20 @@ class Settings(BaseSettings):
     # stub | bedrock. Bedrock is not wired yet (WO-004).
     ai_provider: str = "stub"
     passport_cache_seconds: int = 24 * 3600
-    # Overrides coin_earn_rules.confirmation_delay when set (local demos).
+    # Local demos only: the application seed shortens every earn rule's confirmation delay to this.
     coin_confirm_delay_seconds: int | None = None
     run_outbox_publisher: bool = True
     # The seed creates a local admin from this, and only when ENV=local. Never set it elsewhere.
     seed_admin_password: str | None = None
+
+    @field_validator("database_url")
+    @classmethod
+    def _use_the_async_driver(cls, url: str) -> str:
+        # .env carries the plain URL that psql, dbmate and the schema tests share.
+        for prefix in ("postgresql://", "postgres://"):
+            if url.startswith(prefix):
+                return "postgresql+asyncpg://" + url[len(prefix):]
+        return url
 
     @model_validator(mode="after")
     def _refuse_default_secret_outside_local(self) -> "Settings":

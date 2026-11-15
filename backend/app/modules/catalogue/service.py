@@ -55,15 +55,17 @@ def _summary_query():
 async def search(db: AsyncSession, q: str, limit: int, user_id: uuid.UUID | None
                  ) -> list[dict[str, Any]]:
     q = q.strip()
-    db.add(SearchQuery(user_id=user_id, query_text=q[:200]))
+    if user_id is not None:  # the schema logs searches per member; a visitor leaves no row
+        db.add(SearchQuery(user_id=user_id, query_text=q[:200]))
     if not q:
         rows = (await db.execute(_summary_query().order_by(Product.created_at.desc())
                                  .limit(limit))).all()
         return [_summary(r) for r in rows]
     # An exact identifier (barcode, model number) wins outright.
     exact = (await db.execute(_summary_query().where(or_(
-        Product.id.in_(select(ProductAlias.product_id).where(ProductAlias.alias_value == q)),
-        Product.model_number_normalized == "".join(c for c in q.lower() if c.isalnum()),
+        Product.id.in_(select(ProductAlias.product_id).where(ProductAlias.alias_value.in_(
+            {q, q.zfill(14)} if q.isdigit() and len(q) <= 14 else {q}))),
+        Product.model_number_normalized == "".join(c for c in q.upper() if c.isalnum()),
     )).limit(limit))).all()
     if exact:
         return [_summary(r) for r in exact]

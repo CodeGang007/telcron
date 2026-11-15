@@ -90,7 +90,7 @@ class Redemption(Base):
     item_code = fk("redemption_items.code", index=False)
     ledger_entry_id = fk("coin_ledger_entries.id", index=False, unique=True)
     product_id = fk("products.id", nullable=True, index=False)
-    status = c(e.redemption_status, nullable=False, server_default="pending")
+    status = c(e.redemption_status, nullable=False, server_default="processing")
     fulfilment = c(JSONB)
     fulfilled_at = ts()
     created_at = created()

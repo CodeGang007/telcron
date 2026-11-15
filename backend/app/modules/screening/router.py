@@ -12,7 +12,7 @@ from app.models import Product, User
 from . import service
 
 router = APIRouter(tags=["screening"])
-Staff = Annotated[User, Depends(require_role("admin", "safety_reviewer"))]
+Staff = Annotated[User, Depends(require_role("admin", "moderator"))]
 
 
 class ScreenIn(BaseModel):

@@ -33,7 +33,7 @@ class FeedItem(Base):
     ai_confidence = c(Numeric(4, 3))
     trending_score = c(REAL, nullable=False, server_default="0")
     is_public = c(Boolean, nullable=False, server_default=text("true"))
-    published_at = ts(nullable=False, now=True)
+    published_at = ts(nullable=False)
     created_at = created()
 
 
@@ -45,12 +45,11 @@ class FeedItemTopic(Base):
 
 
 class SearchQuery(Base):
-    """Append-only. Logged in phase one. The ERD marks user_id required and FK to users;
-    anonymous search (F1) needs it nullable — DEF-001."""
+    """Insert-only. One row per search by a signed-in member (user_id is required)."""
 
     __tablename__ = "search_queries"
     id = pk()
-    user_id = fk("users.id", nullable=True)
+    user_id = fk("users.id")
     query_text = c(Text)
     query_media_id = fk("media_assets.id", nullable=True, index=False)
     clicked_product_id = fk("products.id", nullable=True, index=False)

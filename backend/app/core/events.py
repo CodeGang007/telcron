@@ -14,7 +14,7 @@ ROUTES: dict[str, str] = {
     "ReviewSubmitted": "screening",
     "HazardFlagConfirmed": "screening",
     "CoinsEarned": "coins",
-    "PassportIssued": "alerts",
+    "RiskEventRaised": "alerts",
 }
 QUEUES = ("ingest", "media", "screening", "identity", "coins", "alerts")
 DEAD_LETTER_KEY = "telcron:dead-letter"

@@ -1,7 +1,7 @@
 """Media & AI Recognition — 6 tables (ERD page 3)."""
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, Boolean, Integer, LargeBinary, Numeric, Text, text
+from sqlalchemy import BigInteger, Boolean, FetchedValue, Integer, LargeBinary, Numeric, Text, text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import mapped_column as c
 
@@ -24,10 +24,10 @@ class MediaBlob(Base):
     storage_key_original = c(Text, nullable=False)
     storage_key_normalized = c(Text)
     perceptual_hash = c(BigInteger, index=True)
-    phash_band0 = c(Integer)
-    phash_band1 = c(Integer)
-    phash_band2 = c(Integer)
-    phash_band3 = c(Integer)
+    phash_band0 = c(Integer, server_default=FetchedValue())  # generated from perceptual_hash
+    phash_band1 = c(Integer, server_default=FetchedValue())  # generated from perceptual_hash
+    phash_band2 = c(Integer, server_default=FetchedValue())  # generated from perceptual_hash
+    phash_band3 = c(Integer, server_default=FetchedValue())  # generated from perceptual_hash
     moderation_status = c(e.moderation_status, nullable=False, server_default="pending")
     moderation_labels = c(JSONB)
     created_at = created()

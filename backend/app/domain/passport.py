@@ -1,8 +1,13 @@
 """How recall, certification and hazard combine into a passport.
 
-PROVISIONAL — formula_version `provisional-0`. The v2 architecture document does not define
-this combination (technical documentation 7.5, open point 2). ADR-004 records the placeholder
-and that Telcron must agree the real formula. Do not tune these numbers without that decision.
+The vocabulary is the designed schema's: tier 0 unidentified, 1 identified, 2 verified; badge
+verified | recalled | certification_issue | needs_information. The database enforces the hard
+rules (a match forces `recalled`; below tier 2 the badge is `needs_information`; tier 2 needs a
+trust score).
+
+The NUMBERS are PROVISIONAL — formula_version `provisional-0`. Neither the v2 architecture
+document nor the schema design (open question Q3) defines the trust-score formula or badge
+bands. ADR-004 records this placeholder. Do not tune these numbers without that decision.
 """
 
 from dataclasses import dataclass
@@ -11,57 +16,55 @@ from decimal import ROUND_HALF_UP, Decimal
 FORMULA_VERSION = "provisional-0"
 RECALL_WEIGHT, CERT_WEIGHT, HAZARD_WEIGHT = Decimal("0.4"), Decimal("0.2"), Decimal("0.4")
 
-RECALL_COMPONENT = {"no_match": Decimal(100), "possible_match": Decimal(40),
-                    "confirmed_match": Decimal(0)}
+RECALL_COMPONENT = {"no_match_found": Decimal(100), "near_match": Decimal(40),
+                    "match": Decimal(0)}
+BAD_CERTIFICATE = ("expired", "revoked")
 
 
 @dataclass(frozen=True)
 class PassportResult:
-    recall_component: Decimal
-    certification_component: Decimal
-    hazard_component: Decimal | None
-    trust_score: Decimal | None
     tier: int
     status_badge: str
+    trust_score: Decimal | None
+    recall_component: Decimal | None
+    certification_component: Decimal | None
+    hazard_component: Decimal | None
 
 
 def certification_component(statuses: list[str]) -> Decimal:
-    if "valid" in statuses:
-        return Decimal(100)
-    if any(s in ("revoked", "suspended", "expired") for s in statuses):
+    if any(s in BAD_CERTIFICATE for s in statuses):
         return Decimal(0)
-    return Decimal(50)  # nothing known either way
+    if "valid" in statuses:
+        return Decimal(100) if all(s == "valid" for s in statuses) else Decimal(85)
+    return Decimal(70)  # nothing known either way; never a negative finding
 
 
-def build(recall_verdict: str, cert_statuses: list[str], hazard_total: Decimal | None,
-          hazard_label: str | None) -> PassportResult:
+def unidentified() -> PassportResult:
+    """The product's identity is not established: nothing can be claimed about it."""
+    return PassportResult(0, "needs_information", None, None, None, None)
+
+
+def build(recall_verdict: str, cert_statuses: list[str],
+          hazard_total: Decimal | None) -> PassportResult:
+    if recall_verdict == "insufficient_information":
+        return PassportResult(1, "needs_information", None, None, None, None)
     recall = RECALL_COMPONENT[recall_verdict]
     cert = certification_component(cert_statuses)
     hazard = None if hazard_total is None else Decimal(100) - hazard_total
-    trust = None
+    # Tier 2 requires a trust score, so a missing hazard component drops out of the mean
+    # instead of counting as zero or as a hundred.
+    parts = [(recall, RECALL_WEIGHT), (cert, CERT_WEIGHT)]
     if hazard is not None:
-        trust = (recall * RECALL_WEIGHT + cert * CERT_WEIGHT + hazard * HAZARD_WEIGHT).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP)
+        parts.append((hazard, HAZARD_WEIGHT))
+    trust = (sum(v * w for v, w in parts) / sum(w for _, w in parts)).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-    if recall_verdict == "confirmed_match":
+    if recall_verdict == "match":
         badge = "recalled"
-    elif hazard_label == "high":
-        badge = "blocked"
-    elif hazard_label == "medium" or recall_verdict == "possible_match":
-        badge = "caution"
-    elif hazard_label == "low" and "valid" in cert_statuses:
+    elif recall_verdict == "near_match":
+        badge = "needs_information"  # a possible recall is not a recall, and not a clean bill
+    elif any(s in BAD_CERTIFICATE for s in cert_statuses):
+        badge = "certification_issue"
+    else:
         badge = "verified"
-    else:
-        badge = "unverified"
-
-    if trust is None:
-        tier = 4
-    elif trust >= 80:
-        tier = 1
-    elif trust >= 60:
-        tier = 2
-    elif trust >= 40:
-        tier = 3
-    else:
-        tier = 4
-    return PassportResult(recall, cert, hazard, trust, tier, badge)
+    return PassportResult(2, badge, trust, recall, cert, hazard)

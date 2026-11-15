@@ -77,7 +77,8 @@ async def leaderboard(db: Db, limit: int = Query(20, ge=1, le=100)) -> list[Lead
     coins = func.sum(CoinLedgerEntry.amount).label("coins")
     rows = (await db.execute(
         select(User.display_name, coins).join(CoinLedgerEntry, CoinLedgerEntry.user_id == User.id)
-        .where(CoinLedgerEntry.entry_type == "earn", CoinLedgerEntry.status == "confirmed",
+        .where(CoinLedgerEntry.entry_type.in_(("earn", "level_bonus")),
+               CoinLedgerEntry.status == "confirmed",
                CoinLedgerEntry.created_at >= month_start)
         .group_by(User.id).order_by(coins.desc(), User.created_at).limit(limit))).all()
     return [LeaderRow(rank=i + 1, display_name=r[0], coins=int(r[1])) for i, r in enumerate(rows)]

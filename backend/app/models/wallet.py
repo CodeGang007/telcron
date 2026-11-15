@@ -14,7 +14,7 @@ class WalletItem(Base):
     product_id = fk("products.id")
     add_method = c(e.wallet_add_method, nullable=False)
     identification_request_id = fk("identification_requests.id", nullable=True, index=False)
-    status = c(e.wallet_item_status, nullable=False, server_default="active")
+    status = c(e.wallet_item_status, nullable=False)
     verified_by_verification_id = fk(
         "wallet_item_verifications.id", nullable=True, index=False, use_alter=True
     )
@@ -32,7 +32,7 @@ class WalletItemVerification(Base):
     id = pk()
     wallet_item_id = fk("wallet_items.id")
     media_asset_id = fk("media_assets.id", index=False)
-    result = c(e.video_check_result, nullable=False)
+    result = c(e.video_check_result, nullable=False, server_default="pending")
     confidence = c(Numeric(4, 3))
     mismatch_reason = c(Text)
     model_code = c(Text)
@@ -62,7 +62,7 @@ class QrLabel(Base):
     __tablename__ = "qr_labels"
     id = pk()
     wallet_item_id = fk("wallet_items.id")
-    provider = c(Text, nullable=False)
+    provider = c(Text, nullable=False, server_default="")
     template_code = c(Text, nullable=False)
     status = c(e.qr_label_status, nullable=False, server_default="pending")
     external_label_id = c(Text)
@@ -78,6 +78,6 @@ class ProductWatch(Base):
     id = pk()
     user_id = fk("users.id")
     product_id = fk("products.id")
-    entitlement_id = fk("user_entitlements.id", nullable=True, index=False)
+    entitlement_id = fk("user_entitlements.id", index=False)
     expires_at = ts()
     created_at = created()

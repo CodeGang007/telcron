@@ -37,7 +37,7 @@ async def optional_user(
         .join(SessionRow, SessionRow.user_id == User.id)
         .where(User.id == user_id, SessionRow.id == session_id)
     )).first()
-    if row is None or row[1] is not None or row[0].status != "active":
+    if row is None or row[1] is not None or row[0].status in ("suspended", "deleted"):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "session_revoked")
     return row[0]
 
