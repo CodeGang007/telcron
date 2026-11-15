@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # Local demos only: the application seed shortens every earn rule's confirmation delay to this.
     coin_confirm_delay_seconds: int | None = None
     run_outbox_publisher: bool = True
-    # The seed creates a local admin from this, and only when ENV=local. Never set it elsewhere.
+    # The seed creates an admin from this, and only when ENV is local or dev. Never in production.
     seed_admin_password: str | None = None
 
     @field_validator("database_url")

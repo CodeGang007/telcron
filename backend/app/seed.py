@@ -2,8 +2,8 @@
 
 Reference data (sources, categories, hazard dimensions, earn rules, levels) and the fictional
 demo products are the database's: `make db-seed`, `make db-next` and `make db-sample`. This
-script adds only what the application needs to be usable on a developer's machine, and does
-nothing at all unless ENV=local.
+script adds only what the application needs to be usable on a developer's machine or the dev
+environment, and does nothing at all unless ENV is local or dev.
 """
 
 import asyncio
@@ -47,8 +47,8 @@ async def local_coin_delay(db) -> str:
 
 
 async def main() -> None:
-    if get_settings().env != "local":
-        print("ENV is not local: nothing to do")  # noqa: T201
+    if get_settings().env not in ("local", "dev"):
+        print("ENV is neither local nor dev: nothing to do")  # noqa: T201
         return
     async with SessionLocal() as db:
         done = [await local_admin(db), await local_coin_delay(db)]

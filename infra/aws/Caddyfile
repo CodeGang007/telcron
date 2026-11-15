@@ -1,0 +1,5 @@
+# One public entry point for the API. Caddy obtains and renews the certificate for API_HOST itself.
+{$API_HOST} {
+	encode gzip
+	reverse_proxy api:8000
+}

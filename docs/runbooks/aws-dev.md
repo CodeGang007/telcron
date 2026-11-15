@@ -45,6 +45,34 @@ This is over the original USD 20 to 22 target; the database is the difference. O
 accepted the cost as built. If that changes: running PostgreSQL in Docker on the EC2 host and deleting the
 RDS instance brings it to about USD 18, at the price of shared memory and no managed backups.
 
+## Deploying
+
+Not done yet. The pieces are in the repository and were run together on a developer machine
+(2026-11-16): `backend/Dockerfile`, `infra/aws/compose.yml` (Caddy with automatic HTTPS, API, Worker,
+Redis), `infra/aws/Caddyfile`, and `infra/aws/deploy-host.sh`.
+
+The shape of a deploy, from a machine with the AWS CLI signed in:
+
+1. Build `backend/` for linux/amd64, tag it with the commit, push it to the `telcron/backend` repository.
+2. Run `infra/aws/deploy-host.sh` on the EC2 host through Session Manager. It checks out that commit from
+   GitHub, reads its secrets with the instance role, creates the application's database role and the
+   extensions, runs the migrations, loads reference data and phases 2-3, writes `/opt/telcron/.env`,
+   starts the stack and seeds the admin. It is idempotent.
+3. Build `frontend/` with `VITE_API_URL` set to the API's address and copy `dist/` to the Lightsail host.
+
+Needed first, each a change in AWS that needs the human's yes:
+- `APP_DB_PASSWORD` and `SEED_ADMIN_PASSWORD` added to the `telcron/dev/app` secret (generated, never shown).
+- The instance role allowed to read the RDS-managed master secret (used once, to create the app role).
+- A fixed address for the EC2 host and for the Lightsail host, so their names do not change on restart.
+- A hostname for each and a certificate. Without a domain: a wildcard-DNS name for the fixed address and
+  a Let's Encrypt certificate, which means accepting its subscriber agreement.
+
+What the script has NOT been run against: RDS (TLS, the extensions on RDS PostgreSQL 18, the app role),
+the instance role's permissions, the registry login, a real certificate. Expect a first-run fix or two.
+
+On the dev host the application logs in to PostgreSQL as `telcron_app`, which holds `rds_superuser`
+because it also runs the migrations. Production needs a narrower role.
+
 ## Known gaps
 
 - The budget has no alert recipient, so it notifies nobody.

@@ -18,8 +18,8 @@ description: Telcron's security rules — identity and sessions, verification le
 - **Secrets.** Local values in `.env.local` (gitignored). Deployed values in AWS Secrets Manager, read with the
   instance role. Never print, commit or paste a secret, including into a work order or a test.
 - **Dev conveniences stay local.** `DEV_EXPOSE_CODES` returns verification codes in the response. It must be
-  false, or absent, in every deployed environment. The seeded admin exists only when `ENV=local` and
-  `SEED_ADMIN_PASSWORD` is set; no credential is in the repository. The API refuses to start outside local
+  false, or absent, in every deployed environment. The seeded admin exists only when `ENV` is `local` or
+  `dev` and `SEED_ADMIN_PASSWORD` is set; no credential is in the repository. The API refuses to start outside local
   with the default `JWT_SECRET`.
 - **Uploads and AI.** Images pass a safety check and have location data removed before storage. User text that
   reaches a model prompt is data, never instructions; a score must cite evidence that exists.
