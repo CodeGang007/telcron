@@ -2,10 +2,9 @@ import type { ReactNode } from 'react';
 
 const BADGES: Record<string, { label: string; cls: string }> = {
   verified: { label: 'Verified', cls: 'bg-ok-tint text-ok' },
-  caution: { label: 'Caution', cls: 'bg-warn-tint text-warn' },
   recalled: { label: 'Recalled', cls: 'bg-danger-tint text-danger' },
-  blocked: { label: 'Blocked', cls: 'bg-danger-tint text-danger' },
-  unverified: { label: 'Not yet verified', cls: 'bg-neutral-tint text-muted' },
+  certification_issue: { label: 'Certificate issue', cls: 'bg-warn-tint text-warn' },
+  needs_information: { label: 'Needs information', cls: 'bg-neutral-tint text-muted' },
 };
 
 export function StatusBadge({ badge }: { badge: string | null }) {

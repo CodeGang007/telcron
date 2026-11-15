@@ -79,6 +79,8 @@ const MESSAGES: Record<string, string> = {
   invalid_or_expired_code: 'That code is wrong or has expired.',
   already_reviewed: 'You have already reviewed this product.',
   already_in_wallet: 'This product is already in your wallet.',
+  wallet_full: 'Your wallet is full. Remove a product to save another.',
+  phone_in_use: 'That phone number is already verified on another account.',
   verification_level_1_required: 'Confirm your email and phone to do this.',
   not_authenticated: 'Sign in to continue.',
 };

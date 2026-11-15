@@ -27,7 +27,7 @@ function Gate({ children }: { children: React.ReactNode }) {
 
 type WalletItem = {
   id: string; slug: string; name: string; brand: string | null;
-  status_badge: string | null; trust_score: number | null; passport_changed: boolean;
+  status: string; status_badge: string | null; trust_score: number | null; passport_changed: boolean;
 };
 type Alert = { id: string; severity: string; title: string; summary: string | null; product_slug: string; created_at: string };
 
@@ -61,6 +61,7 @@ function WalletBody() {
                 <Link to={`/products/${i.slug}`} className="font-semibold hover:text-action">{i.name}</Link>
                 <p className="text-sm text-muted">{i.brand}</p>
                 {i.passport_changed && <p className="mt-1 text-sm font-medium text-warn">Passport changed since you saved it</p>}
+                {i.status === 'pending_verification' && <p className="mt-1 text-sm text-muted">Awaiting ownership check; no alerts yet</p>}
               </div>
               <div className="flex items-center gap-3">
                 <StatusBadge badge={i.status_badge} />
@@ -104,9 +105,13 @@ type Coins = {
 };
 type Entry = { id: string; entry_type: string; amount: number; status: string; rule_code: string | null; created_at: string };
 const RULES: Record<string, string> = {
-  reach_level_1: 'Reached Level 1', reach_level_2: 'Reached Level 2', review: 'Review',
-  first_review: 'First review of a product', photo: 'Photo', hazard_flag: 'Hazard flag confirmed',
-  fact_correction: 'Fact correction', daily_login: 'Daily sign-in',
+  level1_verified: 'Reached Level 1', level2_verified: 'Reached Level 2', review: 'Review',
+  first_reviewer: 'First review of a product', photo: 'Photo', hazard_flag_confirmed: 'Hazard flag confirmed',
+  fact_verification: 'Fact verified', login_streak: 'Daily sign-in', login_streak_7plus: 'Sign-in streak',
+  referral: 'Referral',
+};
+const ENTRY: Record<string, string> = {
+  level_bonus: 'Level bonus', spend: 'Spent', clawback: 'Taken back', adjustment: 'Adjustment', refund: 'Refund',
 };
 const STATUS: Record<string, string> = { pending: 'Pending check', confirmed: 'Confirmed', frozen: 'On hold', reversed: 'Reversed' };
 
@@ -146,10 +151,10 @@ function RewardsBody() {
         {history.data?.map((e) => (
           <li key={e.id} className="flex items-center justify-between gap-4 px-5 py-4 text-sm">
             <div>
-              <p className="font-medium">{RULES[e.rule_code ?? ''] ?? e.entry_type}</p>
+              <p className="font-medium">{RULES[e.rule_code ?? ''] ?? ENTRY[e.entry_type] ?? e.entry_type}</p>
               <p className="text-muted">{new Date(e.created_at).toLocaleString()} · {STATUS[e.status] ?? e.status}</p>
             </div>
-            <p className="font-semibold">{e.entry_type === 'spend' ? '−' : '+'}{e.amount}</p>
+            <p className="font-semibold">{e.amount < 0 ? '−' : '+'}{Math.abs(e.amount)}</p>
           </li>
         ))}
       </ul>

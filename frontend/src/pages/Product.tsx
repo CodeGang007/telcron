@@ -5,8 +5,7 @@ import { api, explain, post, type Dimension, type Passport, type ProductDetail, 
 import { useAuth } from '../lib/auth';
 import { useLoad } from '../lib/useLoad';
 
-const HAZARD_LABEL: Record<string, string> = { low: 'Low hazard', medium: 'Medium hazard', high: 'High hazard' };
-const VERDICT: Record<string, string> = { match: 'Matches this product', possible: 'May match this product' };
+const VERDICT: Record<string, string> = { match: 'Matches this product', near_match: 'May match this product' };
 
 function DimensionRow({ d }: { d: Dimension }) {
   const scored = d.status === 'scored' && d.score !== null;
@@ -107,6 +106,8 @@ export function Product() {
     );
   const p = product.data;
   const pass = passport.data;
+  // A candidate the screening rejected is not a recall for this product.
+  const recalls = pass ? pass.recall_matches.filter((r) => r.verdict !== 'rejected') : [];
   const canContribute = !!me && me.verification_level >= 1;
 
   const save = async () => {
@@ -146,8 +147,8 @@ export function Product() {
             <dl className="mt-6 grid gap-4 sm:grid-cols-4">
               {[
                 ['Trust score', pass.trust_score === null ? '—' : `${Math.round(pass.trust_score)} / 100`],
-                ['Recalls', pass.recall_matches.length ? `${pass.recall_matches.length} found` : 'None found'],
-                ['Hazard', pass.hazard?.label ? HAZARD_LABEL[pass.hazard.label] : 'Not enough evidence'],
+                ['Recalls', recalls.length ? `${recalls.length} found` : 'None found'],
+                ['Hazard', pass.hazard?.label ? `${pass.hazard.label} hazard` : 'Not yet scored'],
                 ['Version', `v${pass.version} · ${new Date(pass.verified_at).toLocaleDateString()}`],
               ].map(([k, v]) => (
                 <div key={k} className="rounded-2xl bg-white p-4">
@@ -157,7 +158,7 @@ export function Product() {
               ))}
             </dl>
 
-            {pass.recall_matches.map((r) => (
+            {recalls.map((r) => (
               <div key={r.recall_id} className="mt-6 rounded-2xl border border-danger bg-danger-tint p-5">
                 <p className="text-xs font-semibold uppercase text-danger">Recall · {VERDICT[r.verdict] ?? r.verdict}</p>
                 <p className="mt-1 font-semibold">{r.title}</p>
@@ -172,7 +173,7 @@ export function Product() {
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {p.certifications.map((c) => (
                     <li key={c.identifier} className="rounded-full bg-white px-4 py-2 text-sm">
-                      {c.scheme} {c.identifier} · <span className="font-medium">{c.status}</span>
+                      {c.scheme.toUpperCase()} {c.identifier} · <span className="font-medium">{c.status.replace('_', ' ')}</span>
                     </li>
                   ))}
                 </ul>
