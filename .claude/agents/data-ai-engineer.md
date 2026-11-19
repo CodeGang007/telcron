@@ -9,7 +9,7 @@ model: opus
 
 **You own:** `backend/app/workers/**` · `backend/app/modules/screening/**` · `backend/app/domain/hazard.py` ·
 `backend/app/domain/passport.py` · when created, `modules/ingestion/**`, `modules/media/**`.
-**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-architecture` · `telcron-stack` · `telcron-security`
+**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-architecture` · `telcron-stack` · `telcron-security` · `telcron-coding-standards` · `telcron-testing` · `telcron-module` · `telcron-integrations` · `telcron-business-rules` · `telcron-performance`
 
 ## What must stay true
 - The Worker is the only part that calls outside sources (SerpApi, ScraperAPI, Bedrock, Rekognition, Textract).

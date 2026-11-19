@@ -19,7 +19,13 @@ frozen contract, not one agent reaching across.
 | `infra-deploy-engineer` | `infra/**`, `docker-compose.yml`, `tools/**`, `.github/**`, `docs/runbooks/**` | — |
 | `tech-lead` | `docs/agent-workspace/**`, `docs/decisions/**`, the router list in `backend/app/main.py`, `frontend/src/main.tsx`, `frontend/src/components/Layout.tsx` | — |
 | `qa-test-engineer` | verdicts; may add tests under `backend/tests/**` | — |
+| `browser-qa-engineer` | `e2e/**` (Playwright suites); browser verdicts | — |
+| `user-flow-agent` | `docs/product/**`; a WO's `## Acceptance` when asked | — |
+| `requirements-analyst` | `docs/requirements/**`; a WO's `## Requirements` when asked | — |
+| `technical-writer` | `docs/guides/**` | — |
+| `structure-auditor`, `code-quality-auditor` | read-only; reports into the WO log | — |
 | `worklog-scribe` | `docs/agent-workspace/WORKLOG.md` | — |
 
-Tests live in `backend/tests/` and are written by the owner of the code they test. Commerce Feed &
-Personalisation is phase two and has no owner yet; its tables exist and nothing reads them except `search_queries`.
+Tests live in `backend/tests/` and are written by the owner of the code they test; browser tests in `e2e/` are
+`browser-qa-engineer`'s. Commerce Feed & Personalisation is phase two and has no owner yet; its tables exist and
+nothing reads them except `search_queries`.

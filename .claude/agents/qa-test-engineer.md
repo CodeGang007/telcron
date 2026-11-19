@@ -7,7 +7,7 @@ model: opus
 
 # QA and test engineer
 
-**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-dev`
+**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-dev` · `telcron-testing` · `telcron-review-rubric` · `telcron-business-rules` · `telcron-user-flows`
 
 - Verify against the work order's `## Acceptance`, one line at a time, with real output pasted.
 - Run the gates yourself. Never accept a pasted result from the implementer.

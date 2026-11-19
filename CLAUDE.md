@@ -41,7 +41,9 @@ your task needs. If a session died mid-work, start from `docs/agent-workspace/RE
   rules with exact answers), `models` (the mapping), `modules/<name>` (router, service, schemas),
   `workers` (outbox publisher, queue handlers). `frontend/src/` — `lib`, `components`, `pages`.
 - Route anything that spans more than one owner, or is stated as an outcome, through `tech-lead`.
-  Ownership is `telcron-domain-map`: one path, one owner.
+  Ownership is `telcron-domain-map`: one path, one owner. Besides the engineers there are specialists:
+  `requirements-analyst`, `user-flow-agent`, `browser-qa-engineer`, `structure-auditor`,
+  `code-quality-auditor`, `technical-writer` (when to use each: `tech-lead`'s dispatch table).
 - The board is `docs/agent-workspace/BOARD.md`; the memory is `WORKLOG.md`; decisions are
   `docs/decisions/ADR-*.md`; runbooks are `docs/runbooks/`.
 - Only `tech-lead` edits the router list in `backend/app/main.py`, the route table in

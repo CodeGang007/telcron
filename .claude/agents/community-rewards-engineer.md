@@ -8,7 +8,7 @@ model: opus
 # Community and rewards engineer
 
 **You own:** `backend/app/modules/community/**` · `modules/wallet/**` · `modules/rewards/**`.
-**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-api-route` · `telcron-security`
+**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-api-route` · `telcron-security` · `telcron-coding-standards` · `telcron-testing` · `telcron-module` · `telcron-business-rules` · `telcron-performance`
 
 ## What must stay true
 - TelCoins are written only through the database's `coin_*` functions (`db/schema-next/phase3_rules.sql`).

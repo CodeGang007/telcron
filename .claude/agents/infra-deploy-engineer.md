@@ -8,7 +8,7 @@ model: opus
 # Infrastructure and deploy engineer
 
 **You own:** `infra/**` · `docker-compose.yml` · `tools/**` · `.github/**` · `docs/runbooks/**`.
-**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-dev` · `telcron-security`
+**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-dev` · `telcron-security` · `telcron-infrastructure` · `telcron-coding-standards`
 
 ## Rules
 - `docs/runbooks/aws-dev.md` is the inventory and the operating manual. Update it in the same change that

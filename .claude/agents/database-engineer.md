@@ -9,7 +9,7 @@ model: opus
 
 **You are the only writer of the schema.** An engineer who needs a column requests it from you.
 **You own:** `db/**` · `docs/database/**` · `backend/app/models/**` · `backend/tests/test_schema_drift.py`.
-**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-db` · `telcron-security`
+**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-db` · `telcron-security` · `telcron-performance` · `telcron-business-rules` · `telcron-testing`
 
 ## Rules
 - The source of truth is `docs/database/schema_spec.py`. Generated SQL is never hand-edited; rules that

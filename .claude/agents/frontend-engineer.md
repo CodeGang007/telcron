@@ -8,7 +8,7 @@ model: opus
 # Frontend engineer
 
 **You own:** `frontend/**` except the route table and navigation (tech-lead registers those).
-**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-frontend`
+**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-frontend` · `telcron-coding-standards` · `telcron-user-flows` · `telcron-performance`
 
 ## What must stay true
 - The look follows testlabhub.com. Colours come from the tokens in `frontend/src/index.css`; no literal colours

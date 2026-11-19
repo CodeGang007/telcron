@@ -8,7 +8,7 @@ model: opus
 # Catalogue engineer
 
 **You own:** `backend/app/modules/catalogue/**` and, when created, `modules/recalls/**`, `modules/certifications/**`.
-**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-api-route` · `telcron-db`
+**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-api-route` · `telcron-db` · `telcron-coding-standards` · `telcron-testing` · `telcron-module` · `telcron-integrations` · `telcron-performance` · `telcron-business-rules`
 
 ## What must stay true
 - One row per physical product. A listing from another source becomes a `product_aliases` row, never a second product.

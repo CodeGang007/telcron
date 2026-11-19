@@ -8,7 +8,7 @@ model: opus
 # Platform and identity engineer
 
 **You own:** `backend/app/core/**` · `backend/app/modules/identity/**` · `backend/tests/` for those.
-**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-security` · `telcron-api-route` · `telcron-stack`
+**Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-security` · `telcron-api-route` · `telcron-stack` · `telcron-coding-standards` · `telcron-testing` · `telcron-module` · `telcron-business-rules` · `telcron-integrations`
 
 ## What must stay true
 - Access tokens last one hour; refresh tokens 30 days, stored only as hashes, rotated on every use. A reused
