@@ -156,6 +156,7 @@ async def login(db: AsyncSession, email: str, password: str, ip: str | None,
         raise denied
     user.failed_login_count, user.locked_until, user.last_login_at = 0, None, _now()
     _, tokens = await _open_session(db, user, ip, agent)
+    await rewards.daily_check_in(db, user.id)
     # `provider` stays empty: auth_provider names outside sign-in providers only.
     db.add(AuthEvent(user_id=user.id, event_type="login_succeeded", email_attempted=email,
                      ip_address=ip, user_agent=agent))

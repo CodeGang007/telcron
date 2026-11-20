@@ -142,7 +142,7 @@ async def test_the_safety_team_releases_a_fraud_hold(client, db):
     await _queue_hold_review(db, hold.id, user_id)
     await db.commit()
     coins = (await client.get(f"{API}/coins", headers=member)).json()
-    assert (coins["pending"], coins["frozen"]) == (0, 100)
+    assert (coins["pending"], coins["frozen"]) == (0, 105)
 
     task = await task_for(client, staff, hold.reason)
     assert task["task_type"] == "fraud_hold" and task["priority"] == 1
@@ -150,4 +150,4 @@ async def test_the_safety_team_releases_a_fraud_hold(client, db):
                           json={"decision": "reject", "note": "A genuine burst of reviews."})
     assert r.status_code == 200
     coins = (await client.get(f"{API}/coins", headers=member)).json()
-    assert (coins["confirmed"], coins["frozen"]) == (100, 0)
+    assert (coins["confirmed"], coins["frozen"]) == (105, 0)

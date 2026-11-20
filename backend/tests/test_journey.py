@@ -62,12 +62,12 @@ async def test_signup_to_coins(client, db):
     me = (await client.get(f"{API}/auth/me", headers=headers)).json()
     assert me["verification_level"] == 1 and me["trust_score"] == 10.0
     coins = (await client.get(f"{API}/coins", headers=headers)).json()
-    assert coins["pending"] == 100 and coins["confirmed"] == 0
+    assert coins["pending"] == 105 and coins["confirmed"] == 0
 
     await rewards.confirm_due(db)  # what the coins handler does
     await db.commit()
     coins = (await client.get(f"{API}/coins", headers=headers)).json()
-    assert coins == {"confirmed": 100, "pending": 0, "frozen": 0, "lifetime_earned": 100,
+    assert coins == {"confirmed": 105, "pending": 0, "frozen": 0, "lifetime_earned": 105,
                      "level": {"level": 1, "title": "Novice", "next_title": "Inspector",
                                "next_at": 200}}
 
@@ -84,7 +84,7 @@ async def test_a_repeated_earn_awards_once(client, db):
     await db.commit()
     assert first is not None and int(first.amount) == 15 and again is None
     balance = await db.get(CoinBalance, user_id)
-    assert int(balance.pending_balance) == 100 + 15  # the Level 1 bonus and one photo
+    assert int(balance.pending_balance) == 100 + 5 + 15  # Level 1, the first daily sign-in, one photo
 
 
 async def test_the_ledger_cannot_be_edited_directly(db):
@@ -220,3 +220,26 @@ async def test_recalled_product_reads_recalled_with_the_recall_cited(client):
     assert view["recall_matches"][0]["verdict"] == "match"
     regulatory = next(d for d in view["hazard"]["dimensions"] if d["code"] == "safety.regulatory")
     assert regulatory["citations"] and regulatory["citations"][0]["kind"] == "recall"
+
+
+async def test_rewards_overview_and_the_store(client, db):
+    _, _, member = await verified_user(client)
+    overview = (await client.get(f"{API}/rewards", headers=member)).json()
+    assert overview["streak_days"] == 1 and overview["level"] == 1
+    assert [x["title"] for x in overview["levels"]][:2] == ["Novice", "Inspector"]
+    assert {"review", "login_streak"} <= {w["code"] for w in overview["ways_to_earn"]}
+    report = next(i for i in overview["store"] if i["code"] == "hazard_report_pdf")
+    assert report["cost"] == 50 and report["needs_product"]
+    # Pending coins cannot be spent.
+    r = await client.post(f"{API}/redemptions", headers=member, json={
+        "item_code": "hazard_report_pdf", "product": "aquablend-900", "request_id": "a"})
+    assert r.status_code == 409 and r.json()["detail"] == "not_enough_coins"
+    await rewards.confirm_due(db)
+    await db.commit()
+    r = await client.post(f"{API}/redemptions", headers=member, json={
+        "item_code": "hazard_report_pdf", "product": "aquablend-900", "request_id": "b"})
+    assert r.status_code == 201 and r.json()["status"] == "fulfilled"
+    again = await client.post(f"{API}/redemptions", headers=member, json={
+        "item_code": "hazard_report_pdf", "product": "aquablend-900", "request_id": "b"})
+    assert again.json()["id"] == r.json()["id"]  # a retried click spends once
+    assert (await client.get(f"{API}/coins", headers=member)).json()["confirmed"] == 105 - 50
