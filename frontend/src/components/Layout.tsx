@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 
 const NAV = [
   { to: '/search', label: 'Products' },
+  { to: '/recalls', label: 'Recalls' },
   { to: '/wallet', label: 'Digital Wallet' },
   { to: '/rewards', label: 'Telcron Rewards' },
   { to: '/leaderboard', label: 'Leaderboard' },
@@ -23,16 +24,20 @@ export function Layout() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const staff = !!me && (me.role === 'admin' || me.role === 'moderator');
-  const nav = staff ? [...NAV, { to: '/review-queue', label: 'Review queue' }] : NAV;
+  const nav = [
+    ...NAV,
+    ...(staff ? [{ to: '/review-queue', label: 'Review queue' }] : []),
+    ...(me?.role === 'admin' ? [{ to: '/data-sources', label: 'Data sources' }] : []),
+  ];
   const link = ({ isActive }: { isActive: boolean }) =>
-    `text-sm uppercase tracking-wide transition hover:text-brand-ink ${isActive ? 'text-brand-ink' : 'text-muted'}`;
+    `whitespace-nowrap text-xs uppercase tracking-wide transition hover:text-brand-ink ${isActive ? 'text-brand-ink' : 'text-muted'}`;
 
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-20 border-b border-line bg-white">
         <div className="container-page flex h-20 items-center justify-between gap-6">
           <Wordmark />
-          <nav aria-label="Main" className="hidden items-center gap-8 md:flex">
+          <nav aria-label="Main" className="hidden items-center gap-6 lg:flex">
             {nav.map((n) => (
               <NavLink key={n.to} to={n.to} className={link}>
                 {n.label}
@@ -42,7 +47,7 @@ export function Layout() {
           <div className="flex items-center gap-3">
             {me ? (
               <>
-                <span className="hidden text-sm text-muted sm:inline">{me.display_name}</span>
+                <span className="hidden whitespace-nowrap text-sm text-muted 2xl:inline">{me.display_name}</span>
                 <button
                   className="btn-ghost !px-4 !py-2"
                   onClick={async () => {
@@ -59,7 +64,7 @@ export function Layout() {
               </Link>
             )}
             <button
-              className="rounded-lg p-2 text-muted md:hidden"
+              className="rounded-lg p-2 text-muted lg:hidden"
               aria-label="Menu"
               aria-expanded={open}
               onClick={() => setOpen(!open)}
@@ -69,7 +74,7 @@ export function Layout() {
           </div>
         </div>
         {open && (
-          <nav aria-label="Mobile" className="container-page flex flex-col gap-4 border-t border-line py-4 md:hidden">
+          <nav aria-label="Mobile" className="container-page flex flex-col gap-4 border-t border-line py-4 lg:hidden">
             {nav.map((n) => (
               <NavLink key={n.to} to={n.to} className={link} onClick={() => setOpen(false)}>
                 {n.label}

@@ -37,6 +37,9 @@ PRODUCTS = [
        "Charges my laptop and phone together and stays cool. No issues after six months.")]),
     ("brightbuild-magnet-set", "BrightBuild Magnetic Tiles 60pc", "BrightBuild", "BB-M60",
      "household", "00850055511122", None, []),
+    # Only the ingestion tests touch this one: an imported recall names its model.
+    ("heatwave-1500-heater", "HeatWave 1500 Space Heater", "HeatWave", "HW-1500",
+     "appliances", "00850077700011", None, []),
 ]
 
 

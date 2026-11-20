@@ -124,3 +124,30 @@ test('a hazard report is confirmed by the safety team, pays the reporter and bec
   await member.goto('/review-queue');
   await expect(member.getByText('This page is for the safety team.')).toBeVisible();
 });
+
+test('an admin imports recall notices and visitors can search them', async ({ page }) => {
+  const adminPassword = setting('SEED_ADMIN_PASSWORD');
+  test.skip(!adminPassword, 'SEED_ADMIN_PASSWORD is not set');
+  await signIn(page, ADMIN_EMAIL, adminPassword!);
+  await page.goto('/data-sources');
+  await page.getByRole('button', { name: 'Import recall notices' }).click();
+  // The Worker runs the job; the page polls until it finishes.
+  const latest = page.locator('li').filter({ hasText: 'by hand' }).first();
+  await expect(latest.getByText('succeeded', { exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect(latest).toContainText(/\d+ fetched/);
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.goto('/recalls');
+  await expect(page.getByRole('heading', { name: 'Latest recall notices' })).toBeVisible();
+  const first = page.locator('li.card h2').first();
+  await expect(first).toBeVisible();
+  const word = ((await first.innerText()).match(/[A-Za-z]{6,}/) ?? ['recall'])[0];
+  await page.getByLabel('Search recall notices').fill(word);
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('heading', { name: `Recall notices about “${word}”` })).toBeVisible();
+  await expect(page.locator('li.card').first()).toContainText(new RegExp(word, 'i'));
+  // A member's pages are not an admin's: the data sources page refuses a visitor.
+  await page.goto('/data-sources');
+  await expect(page.getByText('This page is for administrators.')).toBeVisible();
+});
+

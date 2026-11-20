@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     seed_admin_password: str | None = None
     # The commit this build was made from; baked into the image, reported by /health.
     git_sha: str = "dev"
+    # A JSON file to read instead of calling the CPSC feed. For stacks that must not depend on the
+    # network (the pipeline's browser tests). Never set where real recalls are wanted.
+    cpsc_fixture: str | None = None
 
     @field_validator("database_url")
     @classmethod

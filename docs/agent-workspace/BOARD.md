@@ -7,7 +7,7 @@
 | WO-011 | Converge the backend on the designed database schema | (single session) → database-engineer, qa-test-engineer | DEF-005 | DONE-PENDING-QA — merged into `main` on 2026-11-15 at the human's instruction; gates in the WO log. Not yet reviewed by the schema's author or a second agent |
 | WO-001 | Foundation: schema, core API, worker, web app, agent workspace | (single session) → qa-test-engineer | — | DONE-PENDING-QA — its schema part is replaced by WO-011. Not independently verified |
 | WO-002 | Deploy dev to AWS (EC2: API + Worker + Redis; RDS; Lightsail web) | (single session) → security-auditor | WO-011 | DONE-PENDING-QA — live since 2026-11-16; gates in the WO log. Not reviewed by security-auditor |
-| WO-003 | Ingestion: job runner and first marketplace source | data-ai-engineer | WO-007 | BLOCKED ON HUMAN — needs SerpApi/ScraperAPI keys and the legal position on scraping |
+| WO-003 | Ingestion: recall notices from the CPSC (nightly + by hand); marketplace sources later | (single session) → qa-test-engineer | — | DONE-PENDING-QA for recalls — see the WO log |
 | WO-004 | Bedrock scorer, Titan vectors, vector retrieval, photo identification | data-ai-engineer → security-auditor | — | BLOCKED ON HUMAN — the account's Bedrock quota is zero |
 | WO-005 | Send the verification codes (email, SMS) and a resend endpoint | platform-identity-engineer → security-auditor | — | OPEN — codes are only shown on screen locally |
 | WO-006 | Safety-team queue: confirm or reject flags, accept corrections, resolve fraud holds | (single session) → qa-test-engineer, security-auditor | — | DONE-PENDING-QA — gates in the WO log |

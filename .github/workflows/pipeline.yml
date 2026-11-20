@@ -71,6 +71,7 @@ jobs:
           cp .env.example .env
           {
             echo "COIN_CONFIRM_DELAY_SECONDS=2"
+            echo "CPSC_FIXTURE=backend/tests/fixtures/cpsc_recalls.json"
             echo "SEED_ADMIN_PASSWORD=$(openssl rand -hex 16)"
           } >> .env
       - name: Database, reference data, phases 2-3, demo data

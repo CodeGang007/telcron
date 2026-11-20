@@ -7,7 +7,9 @@ import { AuthProvider } from './lib/auth';
 import { SignIn, SignUp } from './pages/Auth';
 import { Home } from './pages/Home';
 import { Leaderboard, Rewards, Wallet } from './pages/Member';
+import { DataSources } from './pages/DataSources';
 import { Product } from './pages/Product';
+import { Recalls } from './pages/Recalls';
 import { ReviewQueue } from './pages/ReviewQueue';
 import { Search } from './pages/Search';
 
@@ -31,6 +33,8 @@ createRoot(document.getElementById('root')!).render(
             <Route path="rewards" element={<Rewards />} />
             <Route path="leaderboard" element={<Leaderboard />} />
             <Route path="review-queue" element={<ReviewQueue />} />
+            <Route path="recalls" element={<Recalls />} />
+            <Route path="data-sources" element={<DataSources />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
