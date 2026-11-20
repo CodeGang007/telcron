@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 from app.core.deps import Db, OptionalUser
 
+from . import identify as identify_service
 from . import service
 
 router = APIRouter(tags=["catalogue"])
@@ -22,11 +23,8 @@ async def search_products(db: Db, user: OptionalUser, q: str = Query("", max_len
 
 @router.post("/identify")
 async def identify(data: IdentifyIn, db: Db, user: OptionalUser) -> dict[str, Any]:
-    """Barcode only. Photo identification needs the media pipeline and Titan vectors (WO-004)."""
-    results = await service.search(db, data.barcode, 1, user.id if user else None)
-    if not results:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "product_not_identified")
-    return results[0]
+    """A scanned or typed barcode -> a product with a passport. Photo identification is not built."""
+    return await identify_service.by_barcode(db, data.barcode, user.id if user else None)
 
 
 @router.get("/products/{id_or_slug}")
