@@ -1,6 +1,6 @@
 """The scorer boundary. A scorer is the ONLY thing that produces hazard scores; it is replaced
 wholesale in tests. `StubScorer` is a keyword heuristic for local development — it is not AI and
-its output must never be shown as a real assessment outside `local`. Bedrock is WO-004."""
+it is used when no model is configured, or when the model cannot answer (see llm.py)."""
 
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -87,7 +87,8 @@ class StubScorer:
 
 
 def get_scorer() -> Scorer:
-    provider = get_settings().ai_provider
-    if provider == "stub":
-        return StubScorer()
-    raise NotImplementedError(f"AI provider '{provider}' is not wired (WO-004)")
+    settings = get_settings()
+    if settings.ai_provider == "llm" and settings.llm_api_key:
+        from .llm import FallbackScorer, LlmScorer
+        return FallbackScorer(LlmScorer())
+    return StubScorer()

@@ -232,9 +232,12 @@ async def screen_product(db: AsyncSession, product_id: uuid.UUID, run_type: str,
     results = await scorer.score(
         f"{brand or ''} {product.canonical_name}. {product.description or ''}",
         [DimensionSpec(d.code, d.name, d.description) for d in dims], refs)
+    usage = getattr(scorer, "usage", {}) or {}
+    error = getattr(scorer, "error", None)
     db.add(AiInvocation(purpose="hazard_score", model_code=scorer.model_code,
                         prompt_version=scorer.prompt_version, subject_type="product",
-                        subject_id=product.id, succeeded=True,
+                        subject_id=product.id, succeeded=error is None, error=error,
+                        input_tokens=usage.get("input"), output_tokens=usage.get("output"),
                         latency_ms=int((time.monotonic() - started) * 1000)))
     offered = {r.id for r in refs}
     by_code = {r.code: r for r in results}

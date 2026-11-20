@@ -10,7 +10,7 @@
 #   [AWS_REGION=us-east-2] [LOAD_SAMPLE=1] bash deploy-host.sh
 #
 # Without BACKEND_IMAGE the image is built on this host from the commit. With it, it is pulled.
-# The app secret must hold JWT_SECRET, APP_DB_PASSWORD and SEED_ADMIN_PASSWORD.
+# The app secret must hold JWT_SECRET, APP_DB_PASSWORD and SEED_ADMIN_PASSWORD; LLM_API_KEY is optional.
 set -euo pipefail
 
 : "${GIT_REF:?}" "${API_HOST:?}" "${WEB_ORIGIN:?}" "${DB_HOST:?}" "${RDS_SECRET_ARN:?}"
@@ -55,6 +55,8 @@ app_secret=$(aws secretsmanager get-secret-value --secret-id "$APP_SECRET_ID" --
 JWT_SECRET=$(field JWT_SECRET <<<"$app_secret")
 APP_DB_PASSWORD=$(field APP_DB_PASSWORD <<<"$app_secret")
 SEED_ADMIN_PASSWORD=$(field SEED_ADMIN_PASSWORD <<<"$app_secret")
+# Optional: an API key for the hazard-scoring model. Without one the keyword placeholder scores.
+LLM_API_KEY=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("LLM_API_KEY", ""))' <<<"$app_secret")
 master=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text)
 MASTER_USER=$(field username <<<"$master")
 MASTER_PASSWORD=$(field password <<<"$master")
@@ -106,7 +108,8 @@ WEB_ORIGIN=$WEB_ORIGIN
 DATABASE_URL=postgresql://telcron_app:${APP_DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}?ssl=require
 REDIS_URL=redis://redis:6379
 JWT_SECRET=$JWT_SECRET
-AI_PROVIDER=stub
+AI_PROVIDER=$([ -n "$LLM_API_KEY" ] && echo llm || echo stub)
+LLM_API_KEY=$LLM_API_KEY
 DEV_EXPOSE_CODES=false
 EOF
 

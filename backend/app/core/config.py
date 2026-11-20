@@ -25,8 +25,12 @@ class Settings(BaseSettings):
     login_lock_minutes: int = 15
     # Local only: return verification codes in the register response instead of sending them.
     dev_expose_codes: bool = False
-    # stub | bedrock. Bedrock is not wired yet (WO-004).
+    # stub | llm. `llm` scores hazards with a model over an OpenAI-compatible API (Groq's free plan
+    # by default) and falls back to the keyword stub when it cannot answer.
     ai_provider: str = "stub"
+    llm_api_key: str | None = None
+    llm_base_url: str = "https://api.groq.com/openai/v1"
+    llm_model: str = "openai/gpt-oss-120b"
     passport_cache_seconds: int = 24 * 3600
     # Local demos only: the application seed shortens every earn rule's confirmation delay to this.
     coin_confirm_delay_seconds: int | None = None
