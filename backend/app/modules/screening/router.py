@@ -1,6 +1,5 @@
 import uuid
-from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -26,17 +25,6 @@ class ScreenOut(BaseModel):
     trust_score: float | None
 
 
-class ReviewTaskOut(BaseModel):
-    id: str
-    task_type: str
-    subject_type: str
-    subject_id: str
-    status: str
-    priority: int
-    payload: dict[str, Any]
-    created_at: datetime
-
-
 @router.post("/screenings", response_model=ScreenOut, status_code=status.HTTP_201_CREATED)
 async def screen_now(data: ScreenIn, db: Db, _: Staff) -> ScreenOut:
     """Screen a product now. Staff only until business API keys exist (WO-008, DEF-002)."""
@@ -49,11 +37,3 @@ async def screen_now(data: ScreenIn, db: Db, _: Staff) -> ScreenOut:
                      status_badge=passport.status_badge,
                      trust_score=float(passport.trust_score)
                      if passport.trust_score is not None else None)
-
-
-@router.get("/review-tasks", response_model=list[ReviewTaskOut])
-async def review_tasks(db: Db, _: Staff) -> list[ReviewTaskOut]:
-    return [ReviewTaskOut(id=str(t.id), task_type=t.task_type, subject_type=t.subject_type,
-                          subject_id=str(t.subject_id), status=t.status, priority=t.priority,
-                          payload=t.payload, created_at=t.created_at)
-            for t in await service.open_review_tasks(db)]

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { FactForm, FlagForm } from '../components/Contribute';
 import { Notice, Stars, StatusBadge } from '../components/ui';
 import { api, explain, post, type Dimension, type Passport, type ProductDetail, type Review } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -58,7 +59,7 @@ function ReviewForm({ slug, onDone }: { slug: string; onDone: () => void }) {
     }
   };
   return (
-    <form onSubmit={submit} className="card space-y-4">
+    <form onSubmit={submit} className="card space-y-4" aria-label="Write a review">
       <h3 className="font-semibold">Write a review</h3>
       <label className="block text-sm">
         Rating
@@ -219,7 +220,7 @@ export function Product() {
             ))}
           </ul>
         </div>
-        <aside>
+        <aside className="space-y-6">
           {canContribute ? (
             <ReviewForm
               slug={p.slug}
@@ -240,6 +241,8 @@ export function Product() {
               </Link>
             </div>
           )}
+          {canContribute && <FlagForm slug={p.slug} />}
+          {canContribute && <FactForm slug={p.slug} />}
         </aside>
       </section>
     </div>

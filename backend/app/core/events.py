@@ -13,6 +13,7 @@ ROUTES: dict[str, str] = {
     "ProductIngested": "screening",
     "ReviewSubmitted": "screening",
     "HazardFlagConfirmed": "screening",
+    "ProductCorrected": "screening",
     "CoinsEarned": "coins",
     "RiskEventRaised": "alerts",
 }

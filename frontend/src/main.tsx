@@ -8,6 +8,7 @@ import { SignIn, SignUp } from './pages/Auth';
 import { Home } from './pages/Home';
 import { Leaderboard, Rewards, Wallet } from './pages/Member';
 import { Product } from './pages/Product';
+import { ReviewQueue } from './pages/ReviewQueue';
 import { Search } from './pages/Search';
 
 function NotFound() {
@@ -29,6 +30,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="wallet" element={<Wallet />} />
             <Route path="rewards" element={<Rewards />} />
             <Route path="leaderboard" element={<Leaderboard />} />
+            <Route path="review-queue" element={<ReviewQueue />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

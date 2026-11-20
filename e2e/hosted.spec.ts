@@ -60,7 +60,7 @@ test('a signed-in member uses the wallet, reviews a product and is paid, on the 
     for (const slug of REVIEWABLE) {
       await page.goto(`/products/${slug}`);
       const before = await passportVersion(page);
-      await page.locator('textarea').fill(REVIEW);
+      await page.getByRole('form', { name: 'Write a review' }).locator('textarea').fill(REVIEW);
       await page.getByRole('button', { name: 'Post review' }).click();
       const outcome = page.getByText(/Review posted|already reviewed/);
       await expect(outcome).toBeVisible();

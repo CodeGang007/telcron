@@ -1,17 +1,11 @@
 // The member's journey, through the real web app, API, database, queues and Worker.
-// Needs a local stack with the demo data (`make app-db`, `make dev`), DEV_EXPOSE_CODES=true and a
-// short COIN_CONFIRM_DELAY_SECONDS. It creates a new member on every run and never reuses one.
-import { expect, test, type Page } from '@playwright/test';
+// Needs a local stack with the demo data (`make app-db`, `make dev`), DEV_EXPOSE_CODES=true, a short
+// COIN_CONFIRM_DELAY_SECONDS and SEED_ADMIN_PASSWORD. It creates new members on every run.
+import { expect, test } from '@playwright/test';
+import { ADMIN_EMAIL, newMember, passport, passportVersion, setting, signIn } from './support';
 
 const FRIDGE = '/products/northwind-chillmate-31';
-const passport = (page: Page) => page.locator('section[aria-labelledby=passport]');
-
-async function passportVersion(page: Page): Promise<number> {
-  const text = await passport(page).locator('dl').innerText();
-  const match = text.match(/v(\d+)/);
-  if (!match) throw new Error(`no passport version in: ${text}`);
-  return Number(match[1]);
-}
+const CHARGER = '/products/contoso-fastcharge-65w';
 
 test('a visitor searches and reads a passport without an account', async ({ page }) => {
   await page.goto('/');
@@ -41,25 +35,9 @@ test('a wrong password is refused with a useful message', async ({ page }) => {
 });
 
 test('a member signs up, saves a product, reviews it and is paid', async ({ page }) => {
-  const stamp = Date.now();
-
-  // Sign up and confirm both codes.
-  await page.goto('/sign-up');
-  await page.getByLabel('Name').fill('E2E Member');
-  await page.getByLabel('Email').fill(`e2e-${stamp}@example.com`);
-  await page.getByLabel('Mobile number').fill(`+1415${String(stamp).slice(-7)}`);
-  await page.getByLabel('Password').fill('a-long-password-1');
-  await page.getByRole('button', { name: 'Create account' }).click();
-  const notice = await page.getByText('Development build').innerText();
-  const codes = notice.match(/Email (\d{6}), phone (\d{6})/);
-  expect(codes, 'the local build shows both codes').not.toBeNull();
-  const inputs = page.locator('input[inputmode="numeric"]');
-  await inputs.nth(0).fill(codes![1]);
-  await inputs.nth(1).fill(codes![2]);
-  await page.getByRole('button', { name: 'Confirm and continue' }).click();
+  await newMember(page, 'E2E Member');
 
   // Level 1 pays 100 coins, pending until the fraud-review window has passed.
-  await page.waitForURL('**/rewards');
   await expect(page.getByText('Novice')).toBeVisible();
   await expect(page.getByText('100 pending')).toBeVisible();
 
@@ -69,6 +47,7 @@ test('a member signs up, saves a product, reviews it and is paid', async ({ page
   await page.getByRole('button', { name: 'Save to wallet' }).click();
   await expect(page.getByText('Saved to your Digital Wallet')).toBeVisible();
   await page
+    .getByRole('form', { name: 'Write a review' })
     .locator('textarea')
     .fill('The compressor started to overheat and there was smoke and a burning smell after a week.');
   await page.getByRole('button', { name: 'Post review' }).click();
@@ -102,4 +81,46 @@ test('a member signs up, saves a product, reviews it and is paid', async ({ page
   await page.getByRole('button', { name: 'Sign out' }).click();
   await page.goto('/rewards');
   await expect(page.getByText('Sign in to continue')).toBeVisible();
+});
+
+test('a hazard report is confirmed by the safety team, pays the reporter and becomes evidence', async ({ browser, baseURL }) => {
+  const adminPassword = setting('SEED_ADMIN_PASSWORD');
+  test.skip(!adminPassword, 'SEED_ADMIN_PASSWORD is not set: no admin to act as the safety team');
+  const marker = `Ref ${Date.now()}`;
+
+  // A member reports a hazard.
+  const member = await (await browser.newContext({ baseURL })).newPage();
+  await newMember(member, 'Flag Reporter');
+  await member.goto(CHARGER);
+  const flag = member.getByRole('form', { name: 'Report a hazard' });
+  await flag.getByLabel('Kind of hazard').selectOption({ label: 'Health & Safety' });
+  await flag.getByLabel('What happened (at least 20 characters)').fill(`The plug melted and gave me an electric shock. ${marker}`);
+  await flag.getByRole('button', { name: 'Send report' }).click();
+  await expect(member.getByText('Report sent to the safety team')).toBeVisible();
+
+  // The safety team sees it in the queue and confirms it.
+  const staff = await (await browser.newContext({ baseURL })).newPage();
+  await signIn(staff, ADMIN_EMAIL, adminPassword!);
+  await staff.getByRole('link', { name: 'Review queue' }).first().click();
+  const task = staff.locator('li.card').filter({ hasText: marker });
+  await expect(task).toContainText('Flag Reporter');
+  await task.getByLabel('Note (optional)').fill('Consistent with the photos.');
+  await task.getByRole('button', { name: 'Confirm hazard' }).click();
+  await expect(task).toHaveCount(0);
+
+  // The member sees the decision, the reviewer's note and the coins.
+  await member.goto('/rewards');
+  const mine = member.locator('section[aria-labelledby=contributions] li').filter({ hasText: marker });
+  await expect(mine.getByText('Confirmed', { exact: true })).toBeVisible();
+  await expect(mine).toContainText('Consistent with the photos.');
+  await expect(member.getByText('Hazard flag confirmed')).toBeVisible();
+
+  // The Worker re-screens the product, and the confirmed report is now cited as evidence.
+  await expect
+    .poll(async () => { await member.goto(CHARGER); return passport(member).textContent(); }, { timeout: 45_000 })
+    .toContain(marker);
+
+  // A member who is not on the safety team has no queue.
+  await member.goto('/review-queue');
+  await expect(member.getByText('This page is for the safety team.')).toBeVisible();
 });

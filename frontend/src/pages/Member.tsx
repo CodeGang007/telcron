@@ -162,13 +162,45 @@ function RewardsBody() {
   );
 }
 
+type Contributions = {
+  flags: { id: string; status: string; description: string | null; resolution_note: string | null; product_slug: string; product_name: string; created_at: string }[];
+  fact_reports: { id: string; status: string; attribute: string; proposed_value: string | null; product_slug: string; product_name: string; created_at: string }[];
+};
+const DECISION: Record<string, string> = { pending: 'Waiting for review', confirmed: 'Confirmed', accepted: 'Accepted', rejected: 'Not accepted' };
+
+function ContributionsBody() {
+  const c = useLoad(() => api<Contributions>('/contributions'), []);
+  const rows = [
+    ...(c.data?.flags ?? []).map((f) => ({ ...f, kind: 'Hazard report', text: f.description })),
+    ...(c.data?.fact_reports ?? []).map((r) => ({ ...r, kind: 'Correction', text: `${r.attribute.replace(/_/g, ' ')} → ${r.proposed_value ?? 'confirmed'}`, resolution_note: null })),
+  ].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  if (!c.data || rows.length === 0) return null;
+  return (
+    <section aria-labelledby="contributions">
+      <h2 id="contributions" className="mt-10 text-xl font-semibold">Your reports and corrections</h2>
+      <ul className="mt-3 divide-y divide-line rounded-3xl border border-line">
+        {rows.map((r) => (
+          <li key={r.id} className="px-5 py-4 text-sm">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <Link to={`/products/${r.product_slug}`} className="font-medium hover:text-action">{r.kind} · {r.product_name}</Link>
+              <span className={r.status === 'pending' ? 'text-muted' : r.status === 'rejected' ? 'text-warn' : 'font-medium text-ok'}>{DECISION[r.status] ?? r.status}</span>
+            </div>
+            <p className="mt-1 text-muted">{r.text}</p>
+            {r.resolution_note && <p className="mt-1 text-xs text-muted">Reviewer: {r.resolution_note}</p>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export function Rewards() {
   return (
     <div className="container-page py-12">
       <PageTitle eyebrow="Telcron Rewards" title="Your TelCoins">
         Coins are confirmed a few minutes after a contribution, once it has been checked. They cannot be exchanged for money.
       </PageTitle>
-      <Gate><RewardsBody /></Gate>
+      <Gate><RewardsBody /><ContributionsBody /></Gate>
     </div>
   );
 }

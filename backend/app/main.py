@@ -13,6 +13,7 @@ from app.core.redis import close_redis, get_redis
 from app.modules.catalogue.router import router as catalogue
 from app.modules.community.router import router as community
 from app.modules.identity.router import router as identity
+from app.modules.moderation.router import router as moderation
 from app.modules.rewards.router import router as rewards
 from app.modules.screening.router import router as screening
 from app.modules.wallet.router import router as wallet
@@ -38,7 +39,7 @@ app.add_middleware(CORSMiddleware, allow_origins=[get_settings().web_origin],
                    allow_methods=["*"], allow_headers=["*"])
 
 # The route table of contents. Only tech-lead edits this list.
-for router in (identity, catalogue, community, wallet, rewards, screening):
+for router in (identity, catalogue, community, wallet, rewards, screening, moderation):
     app.include_router(router, prefix="/api/v1")
 
 

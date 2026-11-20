@@ -22,6 +22,8 @@ export function Layout() {
   const { me, signOut } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const staff = !!me && (me.role === 'admin' || me.role === 'moderator');
+  const nav = staff ? [...NAV, { to: '/review-queue', label: 'Review queue' }] : NAV;
   const link = ({ isActive }: { isActive: boolean }) =>
     `text-sm uppercase tracking-wide transition hover:text-brand-ink ${isActive ? 'text-brand-ink' : 'text-muted'}`;
 
@@ -31,7 +33,7 @@ export function Layout() {
         <div className="container-page flex h-20 items-center justify-between gap-6">
           <Wordmark />
           <nav aria-label="Main" className="hidden items-center gap-8 md:flex">
-            {NAV.map((n) => (
+            {nav.map((n) => (
               <NavLink key={n.to} to={n.to} className={link}>
                 {n.label}
               </NavLink>
@@ -68,7 +70,7 @@ export function Layout() {
         </div>
         {open && (
           <nav aria-label="Mobile" className="container-page flex flex-col gap-4 border-t border-line py-4 md:hidden">
-            {NAV.map((n) => (
+            {nav.map((n) => (
               <NavLink key={n.to} to={n.to} className={link} onClick={() => setOpen(false)}>
                 {n.label}
               </NavLink>

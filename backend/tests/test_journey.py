@@ -5,50 +5,13 @@ import uuid
 
 import pytest
 from demo_catalogue import add_recall
+from helpers import API, PASSWORD, login, new_phone, product_id, signup, verified_user
 from sqlalchemy import select, text
 from sqlalchemy.exc import DBAPIError
 
-from app.models import CoinBalance, OutboxEvent, Passport, Product
+from app.models import CoinBalance, OutboxEvent, Passport
 from app.modules.rewards import service as rewards
 from app.workers.handlers import alerts, screening
-
-API = "/api/v1"
-PASSWORD = "correct-horse-battery"
-
-
-def new_phone() -> str:
-    return "+1555" + f"{uuid.uuid4().int % 10**7:07d}"
-
-
-async def signup(client, name="Tester", phone=None):
-    email = f"{uuid.uuid4().hex[:10]}@example.com"
-    r = await client.post(f"{API}/auth/register", json={
-        "email": email, "password": PASSWORD, "display_name": name,
-        "phone_e164": phone or new_phone()})
-    assert r.status_code == 201, r.text
-    return email, r.json()["dev_codes"]
-
-
-async def login(client, email):
-    r = await client.post(f"{API}/auth/login", json={"email": email, "password": PASSWORD})
-    assert r.status_code == 200, r.text
-    tokens = r.json()
-    return tokens, {"Authorization": f"Bearer {tokens['access_token']}"}
-
-
-async def verified_user(client, name="Tester"):
-    email, codes = await signup(client, name)
-    for channel in ("email", "phone"):
-        r = await client.post(f"{API}/auth/verify", json={
-            "email": email, "channel": channel, "code": codes[channel]})
-        assert r.status_code == 200, r.text
-    assert r.json()["verification_level"] == 1
-    tokens, headers = await login(client, email)
-    return email, tokens, headers
-
-
-async def product_id(db, slug) -> uuid.UUID:
-    return (await db.execute(select(Product.id).where(Product.public_slug == slug))).scalar_one()
 
 
 async def test_search_and_passport_need_no_account(client):
