@@ -8,13 +8,15 @@
 | WO-001 | Foundation: schema, core API, worker, web app, agent workspace | (single session) → qa-test-engineer | — | DONE-PENDING-QA — its schema part is replaced by WO-011. Not independently verified |
 | WO-002 | Deploy dev to AWS (EC2: API + Worker + Redis; RDS; Lightsail web) | (single session) → security-auditor | WO-011 | DONE-PENDING-QA — live since 2026-11-16; gates in the WO log. Not reviewed by security-auditor |
 | WO-003 | Ingestion: recall notices from the CPSC (nightly + by hand); marketplace sources later | (single session) → qa-test-engineer | — | DONE-PENDING-QA for recalls — see the WO log |
-| WO-004 | Bedrock scorer, Titan vectors, vector retrieval, photo identification | data-ai-engineer → security-auditor | — | BLOCKED ON HUMAN — the account's Bedrock quota is zero |
+| WO-004 | AI hazard scoring, photo identification, evals | (single session) → qa-test-engineer | — | PARTIAL — model scorer built (OpenAI-compatible, Groq's free plan) with stub fallback, not switched on (no key yet); evals in `backend/evals` gate the pipeline at 90%; barcode scanning done, photo identification not built. Bedrock blocked: account stays on the Free plan (human's decision) |
 | WO-005 | Send the verification codes (email, SMS) and a resend endpoint | platform-identity-engineer → security-auditor | — | OPEN — codes are only shown on screen locally |
 | WO-006 | Safety-team queue: confirm or reject flags, accept corrections, resolve fraud holds | (single session) → qa-test-engineer, security-auditor | — | DONE-PENDING-QA — gates in the WO log |
 | WO-007 | Media pipeline and photos on reviews and flags | data-ai-engineer | WO-002 | Deploy dev to AWS (EC2: API + Worker + Redis; RDS; Lightsail web) | (single session) → security-auditor | WO-011 | DONE-PENDING-QA — live since 2026-11-16; gates in the WO log. Not reviewed by security-auditor |
 | WO-008 | Business API: keys, rate limits, webhooks | platform-identity-engineer | DEF-002 | BLOCKED ON HUMAN — business accounts are not modelled (schema design Q8) |
 | WO-009 | Pipeline: tests on every push, release to dev from `main`, browser tests | (single session) → qa-test-engineer | WO-002 | DONE-PENDING-QA — green end to end; see the WO log |
 | WO-010 | Level 2 identity check (Textract, Rekognition) | data-ai-engineer + platform-identity-engineer → security-auditor | WO-002 | Deploy dev to AWS (EC2: API + Worker + Redis; RDS; Lightsail web) | (single session) → security-auditor | WO-011 | DONE-PENDING-QA — live since 2026-11-16; gates in the WO log. Not reviewed by security-auditor |
+
+| WO-012 | Web app redesign: open-source components, scan page, animated wallet and rewards, pagination | (single session) → qa-test-engineer | — | DONE-PENDING-QA — live; journey 7 passed |
 
 ## Defects
 
