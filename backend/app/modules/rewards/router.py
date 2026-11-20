@@ -1,10 +1,11 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.core.deps import Db, Level1User
+from app.core.paging import Offset, page
 from app.models import CoinBalance, CoinLedgerEntry, RewardLevel, User
 
 from . import service
@@ -61,10 +62,12 @@ async def get_coins(db: Db, user: Level1User) -> CoinsOut:
 
 
 @router.get("/coins/history", response_model=list[LedgerEntryOut])
-async def coin_history(db: Db, user: Level1User,
+async def coin_history(db: Db, user: Level1User, response: Response, offset: Offset = 0,
                        limit: int = Query(50, ge=1, le=100)) -> list[LedgerEntryOut]:
     rows = (await db.execute(select(CoinLedgerEntry).where(CoinLedgerEntry.user_id == user.id)
-                             .order_by(CoinLedgerEntry.created_at.desc()).limit(limit))).scalars()
+                             .order_by(CoinLedgerEntry.created_at.desc())
+                             .offset(offset).limit(limit + 1))).scalars()
+    rows = page(list(rows), limit, response)
     return [LedgerEntryOut(id=str(r.id), entry_type=r.entry_type, amount=int(r.amount),
                            status=r.status, rule_code=r.rule_code, created_at=r.created_at)
             for r in rows]

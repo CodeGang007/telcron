@@ -206,20 +206,23 @@ def job_view(job: IngestionJob) -> dict[str, Any]:
             "finished_at": job.finished_at.isoformat() if job.finished_at else None}
 
 
-async def recent_recalls(db: AsyncSession, q: str, limit: int) -> list[dict[str, Any]]:
+async def recent_recalls(db: AsyncSession, q: str, limit: int, offset: int = 0) -> list[dict[str, Any]]:
     stmt = select(Recall).where(Recall.status == "active")
     if q.strip():
         stmt = stmt.where(Recall.search_tsv.op("@@")(func.websearch_to_tsquery("english", q)))
     recalls = (await db.execute(stmt.order_by(Recall.recall_date.desc().nulls_last(),
-                                              Recall.created_at.desc()).limit(limit))
+                                              Recall.created_at.desc()).offset(offset).limit(limit))
                ).scalars().all()
     names: dict[uuid.UUID, list[str]] = {}
+    images: dict[uuid.UUID, list[str]] = {}
     if recalls:
-        for recall_id, name in (await db.execute(
-                select(RecallProduct.recall_id, RecallProduct.product_name)
+        for recall_id, name, urls in (await db.execute(
+                select(RecallProduct.recall_id, RecallProduct.product_name, RecallProduct.image_urls)
                 .where(RecallProduct.recall_id.in_([r.id for r in recalls])))).all():
             names.setdefault(recall_id, []).append(name)
+            images.setdefault(recall_id, []).extend(u for u in urls or [] if u.startswith("https://"))
     return [{"id": str(r.id), "source": r.data_source_code, "recall_number": r.recall_number,
              "title": r.title, "hazard": r.hazard, "remedy": r.remedy,
              "recall_date": r.recall_date.isoformat() if r.recall_date else None,
-             "url": r.url, "products": names.get(r.id, [])} for r in recalls]
+             "url": r.url, "products": names.get(r.id, []),
+             "image": (images.get(r.id) or [None])[0]} for r in recalls]

@@ -56,7 +56,7 @@ function refresh(): Promise<Tokens | null> {
   return refreshing;
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request(path: string, init: RequestInit = {}): Promise<Response> {
   let res = await raw(path, init, session.get()?.access_token);
   if (res.status === 401 && session.get()) {
     const next = await refresh();
@@ -66,7 +66,19 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, typeof body.detail === 'string' ? body.detail : 'request_failed');
   }
+  return res;
+}
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await request(path, init);
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+}
+
+/** One page of a list endpoint. The server says whether another page follows. */
+export async function apiPage<T>(path: string, offset: number, limit: number): Promise<{ items: T[]; hasMore: boolean }> {
+  const sep = path.includes('?') ? '&' : '?';
+  const res = await request(`${path}${sep}offset=${offset}&limit=${limit}`);
+  return { items: (await res.json()) as T[], hasMore: res.headers.get('X-Has-More') === 'true' };
 }
 
 export const post = <T>(path: string, body?: unknown) =>
@@ -86,6 +98,11 @@ const MESSAGES: Record<string, string> = {
   review_task_closed: 'Someone has already decided this one.',
   already_decided: 'This has already been decided.',
   role_not_allowed: 'Your account is not allowed to do this.',
+  invalid_barcode: 'That is not a valid barcode. Check the digits and try again.',
+  product_not_identified: 'We could not find that barcode anywhere yet. Try searching by name.',
+  lookup_unavailable: 'The product database is busy right now. Try again in a minute.',
+  identify_quota_reached: 'You have reached today\'s scan limit. It resets tomorrow.',
+  not_enough_coins: 'You do not have enough confirmed TelCoins for that yet.',
   bad_date_range: 'Choose a start date before the end date, at most a year apart.',
   phone_in_use: 'That phone number is already verified on another account.',
   verification_level_1_required: 'Confirm your email and phone to do this.',

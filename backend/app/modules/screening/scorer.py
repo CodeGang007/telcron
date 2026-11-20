@@ -42,7 +42,7 @@ class Scorer(Protocol):
 KEYWORDS: dict[str, tuple[str, ...]] = {
     "safety.regulatory": ("recall", "banned", "non-compliant", "violation", "counterfeit"),
     "safety.health_safety": ("injur", "burn", "fire", "shock", "toxic", "chok", "cut", "overheat",
-                      "smoke", "explod", "laceration"),
+                              "smoke", "explod", "laceration", "melt", "ignite", "ingestion", "death"),
     "safety.customer_issues": ("broke", "stopped working", "refund", "defective", "terrible",
                                "faulty"),
     "safety.fragility": ("crack", "fragile", "flimsy", "snapped", "leak", "loose"),
@@ -55,6 +55,10 @@ SOURCES: dict[str, tuple[str, ...]] = {
     "safety.regulatory": ("recall", "certification_check", "hazard_flag"),
 }
 DEFAULT_SOURCES = ("review", "hazard_flag", "recall")
+# What one matching piece of evidence adds to a score: an official recall says most.
+WEIGHT = {"recall": 70, "hazard_flag": 60, "review": 30}
+# Dimensions every review speaks to by not complaining; the rest need evidence to be scored at all.
+CORE = ("safety.regulatory", "safety.health_safety", "safety.customer_issues")
 
 
 class StubScorer:
@@ -73,16 +77,21 @@ class StubScorer:
             hits = [ev for ev in pool if any(w in ev.text.lower() for w in words)]
             if dim.code == "safety.regulatory":
                 hits = hits or [ev for ev in pool if ev.kind == "recall"]
+            # The strongest evidence first: recalls and confirmed reports outrank reviews.
+            hits.sort(key=lambda ev: {"recall": 0, "hazard_flag": 1}.get(ev.kind, 2))
             if hits:
-                weight = sum(40 if ev.kind in ("recall", "hazard_flag") else 20 for ev in hits)
+                weight = sum(WEIGHT.get(ev.kind, 30) for ev in hits)
                 out.append(DimensionResult(
                     dim.code, Decimal(min(100, weight)),
                     f"{len(hits)} of {len(pool)} evidence items mention this hazard.",
                     [ev.id for ev in hits[:5]]))
-            else:
+            elif dim.code in CORE:
+                # Reviews and records that would mention these hazards, and do not: low, not zero.
                 out.append(DimensionResult(
-                    dim.code, Decimal(0),
+                    dim.code, Decimal(5),
                     f"No mention in {len(pool)} evidence items.", [ev.id for ev in pool[:3]]))
+            else:
+                out.append(DimensionResult(dim.code, None, "No evidence bears on this."))
         return out
 
 

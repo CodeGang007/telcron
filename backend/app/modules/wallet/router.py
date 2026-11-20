@@ -4,11 +4,12 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 
 from app.core.deps import Db, Level1User
+from app.core.paging import Offset, page
 from app.models import Brand, Passport, Product, RiskEvent, UserRiskAlert, WalletItem
 from app.modules.catalogue.service import find_product
 
@@ -84,13 +85,15 @@ async def remove_item(item_id: uuid.UUID, db: Db, user: Level1User) -> None:
 
 
 @router.get("/alerts")
-async def list_alerts(db: Db, user: Level1User) -> list[dict[str, Any]]:
+async def list_alerts(db: Db, user: Level1User, response: Response,
+                      offset: Offset = 0) -> list[dict[str, Any]]:
     rows = (await db.execute(
         select(UserRiskAlert, RiskEvent, Product)
         .join(RiskEvent, RiskEvent.id == UserRiskAlert.risk_event_id)
         .join(Product, Product.id == RiskEvent.product_id)
         .where(UserRiskAlert.user_id == user.id)
-        .order_by(UserRiskAlert.created_at.desc()).limit(50))).all()
+        .order_by(UserRiskAlert.created_at.desc()).offset(offset).limit(21))).all()
+    rows = page(list(rows), 20, response)
     return [{"id": str(a.id), "status": a.status, "severity": e.severity,
              "event_type": e.event_type, "title": e.title, "summary": e.summary,
              "product_slug": p.public_slug, "created_at": a.created_at.isoformat()}

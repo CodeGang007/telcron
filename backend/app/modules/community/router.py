@@ -3,13 +3,14 @@
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
 from app.core.deps import Db, Level1User
 from app.core.events import audit, emit
+from app.core.paging import Offset, page
 from app.models import (
     CoinBalance,
     HazardDimension,
@@ -62,14 +63,16 @@ async def _product(db: Db, id_or_slug: str):
 
 
 @router.get("/products/{id_or_slug}/reviews", response_model=list[ReviewOut])
-async def list_reviews(id_or_slug: str, db: Db,
+async def list_reviews(id_or_slug: str, db: Db, response: Response, offset: Offset = 0,
                        limit: int = Query(20, ge=1, le=50)) -> list[ReviewOut]:
     product = await _product(db, id_or_slug)
     rows = (await db.execute(
         select(Review, User.display_name).outerjoin(User, User.id == Review.author_user_id)
         .where(Review.product_id == product.id, Review.status == "published",
                Review.deleted_at.is_(None))
-        .order_by(Review.helpful_count.desc(), Review.created_at.desc()).limit(limit))).all()
+        .order_by(Review.helpful_count.desc(), Review.created_at.desc())
+        .offset(offset).limit(limit + 1))).all()
+    rows = page(list(rows), limit, response)
     return [ReviewOut(id=str(r.id), rating=r.rating, title=r.title, body=r.body, author=name,
                       origin=r.origin, helpful_count=r.helpful_count, created_at=r.created_at)
             for r, name in rows]

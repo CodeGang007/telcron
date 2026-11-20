@@ -27,9 +27,9 @@ export function FlagForm({ slug }: { slug: string }) {
     }
   };
   return (
-    <form onSubmit={submit} className="card space-y-4" aria-label="Report a hazard">
-      <h3 className="font-semibold">Report a hazard</h3>
-      <label className="block text-sm">
+    <form onSubmit={submit} className="space-y-4" aria-label="Report a hazard">
+      <p className="text-sm text-muted">Something unsafe? The safety team checks every report. A confirmed one earns 25 TelCoins.</p>
+      <label className="block text-sm font-medium">
         Kind of hazard
         <select className="field mt-1" value={dimension} onChange={(e) => setDimension(e.target.value)}>
           <option value="">Not sure</option>
@@ -38,12 +38,12 @@ export function FlagForm({ slug }: { slug: string }) {
           ))}
         </select>
       </label>
-      <label className="block text-sm">
+      <label className="block text-sm font-medium">
         What happened (at least 20 characters)
         <textarea className="field mt-1 min-h-24" required minLength={20} maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} />
       </label>
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
-      <button className="btn-ghost" disabled={busy}>{busy ? 'Sending…' : 'Send report'}</button>
+      <button className="btn-brand w-full" disabled={busy}>{busy ? 'Sending…' : 'Send report'}</button>
     </form>
   );
 }
@@ -75,9 +75,9 @@ export function FactForm({ slug }: { slug: string }) {
     }
   };
   return (
-    <form onSubmit={submit} className="card space-y-4" aria-label="Suggest a correction">
-      <h3 className="font-semibold">Suggest a correction</h3>
-      <label className="block text-sm">
+    <form onSubmit={submit} className="space-y-4" aria-label="Suggest a correction">
+      <p className="text-sm text-muted">Spotted a wrong detail? An accepted correction earns 20 TelCoins.</p>
+      <label className="block text-sm font-medium">
         What is wrong
         <select className="field mt-1" value={attribute} onChange={(e) => setAttribute(e.target.value)}>
           {FIELDS.map((f) => (
@@ -85,12 +85,12 @@ export function FactForm({ slug }: { slug: string }) {
           ))}
         </select>
       </label>
-      <label className="block text-sm">
+      <label className="block text-sm font-medium">
         What it should say
         <input className="field mt-1" required maxLength={500} value={value} onChange={(e) => setValue(e.target.value)} />
       </label>
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
-      <button className="btn-ghost" disabled={busy}>{busy ? 'Sending…' : 'Send correction'}</button>
+      <button className="btn w-full" disabled={busy}>{busy ? 'Sending…' : 'Send correction'}</button>
     </form>
   );
 }

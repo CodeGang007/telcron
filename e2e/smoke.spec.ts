@@ -27,7 +27,7 @@ test('home, search and a passport work for a visitor', async ({ page }) => {
   const failed: string[] = [];
   page.on('response', (r) => { if (r.status() >= 500) failed.push(`${r.status()} ${r.url()}`); });
   await page.goto('/');
-  await expect(page.getByRole('heading', { level: 1 })).toContainText('product safety');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('before you buy');
   await expect(page.getByRole('heading', { name: 'Recently screened' })).toBeVisible();
   await page.getByLabel('Search by product name, brand or barcode').fill('blender');
   await page.keyboard.press('Enter');

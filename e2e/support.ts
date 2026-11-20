@@ -20,8 +20,9 @@ export const ADMIN_EMAIL = 'admin@telcron.example.com';
 export const passport = (page: Page) => page.locator('section[aria-labelledby=passport]');
 
 export async function passportVersion(page: Page): Promise<number> {
-  const text = await passport(page).locator('dl').innerText();
-  const match = text.match(/v(\d+)/);
+  await expect(passport(page)).toContainText(/Version \d+/);
+  const text = await passport(page).innerText();
+  const match = text.match(/Version (\d+)/);
   if (!match) throw new Error(`no passport version in: ${text}`);
   return Number(match[1]);
 }
@@ -52,5 +53,17 @@ export async function signIn(page: Page, email: string, password: string): Promi
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign In' }).click();
-  await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+  await expect(page.locator('header [aria-haspopup=menu]')).toBeVisible();
+}
+
+export async function signOut(page: Page): Promise<void> {
+  await page.locator('header [aria-haspopup=menu]').click();
+  await page.getByRole('menuitem', { name: 'Sign out' }).click();
+  await expect(page.locator('header').getByRole('link', { name: 'Sign in' })).toBeVisible();
+}
+
+/** The text of the full hazard report, which lists every score's evidence. */
+export async function reportText(page: Page, slug: string): Promise<string> {
+  await page.goto(`/products/${slug}/report`);
+  return (await page.locator('article').textContent()) ?? '';
 }

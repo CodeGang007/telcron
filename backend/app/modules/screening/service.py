@@ -202,7 +202,8 @@ async def screen_product(db: AsyncSession, product_id: uuid.UUID, run_type: str,
         refs.append(EvidenceRef(str(ev.id), "review", ev.excerpt or ""))
         purpose[str(ev.id)] = "hazard"
     flags = (await db.execute(select(HazardFlag).where(
-        HazardFlag.product_id == product.id, HazardFlag.status == "confirmed"))).scalars().all()
+        HazardFlag.product_id == product.id, HazardFlag.status == "confirmed")
+        .order_by(HazardFlag.reviewed_at.desc()).limit(MAX_REVIEWS))).scalars().all()
     for flag in flags:
         ev = await _evidence_for(db, EvidenceItem.hazard_flag_id, flag.id, "hazard_flag",
                                  flag.description)

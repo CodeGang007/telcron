@@ -1,9 +1,10 @@
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
 from app.core.deps import Db, OptionalUser
+from app.core.paging import Offset, page
 
 from . import identify as identify_service
 from . import service
@@ -16,9 +17,11 @@ class IdentifyIn(BaseModel):
 
 
 @router.get("/products")
-async def search_products(db: Db, user: OptionalUser, q: str = Query("", max_length=200),
+async def search_products(db: Db, user: OptionalUser, response: Response, offset: Offset = 0,
+                          q: str = Query("", max_length=200),
                           limit: int = Query(20, ge=1, le=50)) -> list[dict[str, Any]]:
-    return await service.search(db, q, limit, user.id if user else None)
+    rows = await service.search(db, q, limit + 1, user.id if user else None, offset)
+    return page(rows, limit, response)
 
 
 @router.post("/identify")
@@ -44,3 +47,16 @@ async def get_passport(id_or_slug: str, db: Db) -> dict[str, Any]:
     if view is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "passport_not_issued")
     return view
+
+
+@router.get("/stats")
+async def stats(db: Db) -> dict[str, int]:
+    """Counts for the home page. Public."""
+    from sqlalchemy import text
+    row = (await db.execute(text("""
+        select (select count(*) from products where status = 'active'),
+               (select count(*) from recalls where status = 'active'),
+               (select count(*) from passports),
+               (select count(*) from users where verification_level >= 1 and deleted_at is null),
+               (select count(*) from reviews where status = 'published')"""))).one()
+    return dict(zip(("products", "recalls", "passports", "members", "reviews"), map(int, row), strict=True))

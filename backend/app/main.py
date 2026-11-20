@@ -37,7 +37,8 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Telcron API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=[get_settings().web_origin],
-                   allow_methods=["*"], allow_headers=["*"])
+                   allow_methods=["*"], allow_headers=["*"],
+                   expose_headers=["X-Has-More"])
 
 # The route table of contents. Only tech-lead edits this list.
 for router in (identity, catalogue, community, wallet, rewards, screening, moderation, ingestion):

@@ -1,92 +1,153 @@
+import {
+  AlertOctagon,
+  BadgeCheck,
+  Bot,
+  ChevronDown,
+  FileText,
+  Flag,
+  Heart,
+  History,
+  MessageSquarePlus,
+  PencilLine,
+  ShieldCheck,
+  Star,
+  ThumbsUp,
+} from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import { toast } from 'sonner';
 import { FactForm, FlagForm } from '../components/Contribute';
-import { Notice, Stars, StatusBadge } from '../components/ui';
+import { CategoryTile, EmptyState, Notice, Pager, Skeleton, Stars, StatusBadge, TrustRing, scoreTone } from '../components/ui';
 import { api, explain, post, type Dimension, type Passport, type ProductDetail, type Review } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useLoad } from '../lib/useLoad';
+import { usePaged } from '../lib/usePaged';
 
 const VERDICT: Record<string, string> = { match: 'Matches this product', near_match: 'May match this product' };
+const CERT: Record<string, string> = { valid: 'bg-ok-tint text-ok', expired: 'bg-danger-tint text-danger', revoked: 'bg-danger-tint text-danger', not_checked: 'bg-neutral-tint text-muted' };
 
-function DimensionRow({ d }: { d: Dimension }) {
+function hazardTone(score: number) {
+  return score >= 60 ? 'var(--color-danger)' : score >= 30 ? 'var(--color-gold)' : 'var(--color-ok)';
+}
+
+function DimensionRow({ d, index }: { d: Dimension; index: number }) {
+  const [open, setOpen] = useState(false);
   const scored = d.status === 'scored' && d.score !== null;
-  const tone = !scored ? 'bg-line' : d.score! >= 60 ? 'bg-danger' : d.score! >= 30 ? 'bg-warn' : 'bg-ok';
   return (
-    <li className="border-b border-line py-4 last:border-0">
-      <div className="flex items-baseline justify-between gap-4">
-        <p className="font-medium">{d.name}</p>
-        <p className="text-sm text-muted">{scored ? `${Math.round(d.score!)} / 100` : 'Not enough evidence'}</p>
-      </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-neutral-tint" aria-hidden>
-        <div className={`h-full ${tone}`} style={{ width: `${scored ? Math.max(2, d.score!) : 0}%` }} />
-      </div>
-      {d.justification && <p className="mt-2 text-sm text-muted">{d.justification}</p>}
-      {d.citations.length > 0 && (
-        <details className="mt-2 text-sm">
-          <summary className="cursor-pointer text-action">Evidence ({d.citations.length})</summary>
-          <ul className="mt-2 space-y-2">
+    <li className="py-4">
+      <button className="w-full text-left" onClick={() => setOpen(!open)} aria-expanded={open} disabled={!d.citations.length}>
+        <div className="flex items-baseline justify-between gap-4">
+          <p className="font-medium">{d.name}</p>
+          <p className="flex items-center gap-2 text-sm text-muted">
+            {scored ? <span className="font-semibold" style={{ color: hazardTone(d.score!) }}>{Math.round(d.score!)}</span> : 'No evidence'}
+            {d.citations.length > 0 && <ChevronDown className={`size-4 transition ${open ? 'rotate-180' : ''}`} />}
+          </p>
+        </div>
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-neutral-tint" aria-hidden>
+          <motion.div
+            className="h-full rounded-full"
+            style={{ background: scored ? hazardTone(d.score!) : 'transparent' }}
+            initial={{ width: 0 }}
+            whileInView={{ width: `${scored ? Math.max(3, d.score!) : 0}%` }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.9, delay: index * 0.06, ease: [0.16, 1, 0.3, 1] }}
+          />
+        </div>
+        {d.justification && <p className="mt-2 text-sm text-muted">{d.justification}</p>}
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.ul initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-3 space-y-2 overflow-hidden">
             {d.citations.map((c) => (
-              <li key={c.id} className="rounded-xl bg-panel px-3 py-2 text-muted">
-                <span className="mr-2 text-xs font-semibold uppercase text-ink">{c.kind.replace('_', ' ')}</span>
+              <li key={c.id} className="rounded-xl border border-line bg-panel/60 px-3 py-2 text-sm text-muted">
+                <span className="mr-2 text-[10px] font-bold uppercase tracking-wider text-ink">{c.kind.replace('_', ' ')}</span>
                 {c.excerpt}
               </li>
             ))}
-          </ul>
-        </details>
-      )}
+          </motion.ul>
+        )}
+      </AnimatePresence>
     </li>
   );
 }
 
 function ReviewForm({ slug, onDone }: { slug: string; onDone: () => void }) {
   const [rating, setRating] = useState(5);
+  const [hover, setHover] = useState(0);
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
-    setMsg(null);
     try {
       const r = await post<{ coins_pending: number }>(`/products/${slug}/reviews`, { rating, body });
-      setMsg({ tone: 'ok', text: `Review posted. ${r.coins_pending} TelCoins are pending while we check it.` });
+      toast.success('Review posted', { description: `${r.coins_pending} TelCoins are pending while we check it.` });
       setBody('');
       onDone();
     } catch (err) {
-      setMsg({ tone: 'error', text: explain(err) });
+      toast.error(explain(err));
     } finally {
       setBusy(false);
     }
   };
   return (
-    <form onSubmit={submit} className="card space-y-4" aria-label="Write a review">
-      <h3 className="font-semibold">Write a review</h3>
-      <label className="block text-sm">
-        Rating
-        <select className="field mt-1" value={rating} onChange={(e) => setRating(Number(e.target.value))}>
-          {[5, 4, 3, 2, 1].map((n) => (
-            <option key={n} value={n}>
-              {n} out of 5
-            </option>
+    <form onSubmit={submit} className="space-y-4" aria-label="Write a review">
+      <div>
+        <p className="text-sm font-medium">Your rating</p>
+        <div className="mt-1 flex gap-1" onMouseLeave={() => setHover(0)}>
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button type="button" key={n} aria-label={`${n} out of 5`} onMouseEnter={() => setHover(n)} onClick={() => setRating(n)} className="transition hover:scale-110">
+              <Star className={`size-7 ${(hover || rating) >= n ? 'fill-gold text-gold' : 'text-line'}`} />
+            </button>
           ))}
-        </select>
-      </label>
-      <label className="block text-sm">
+        </div>
+      </div>
+      <label className="block text-sm font-medium">
         Your experience (at least 20 characters)
-        <textarea
-          className="field mt-1 min-h-28"
-          required
-          minLength={20}
-          maxLength={5000}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-        />
+        <textarea className="field mt-1 min-h-28 font-normal" required minLength={20} maxLength={5000} value={body} onChange={(e) => setBody(e.target.value)} placeholder="What happened when you used it?" />
       </label>
-      {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
-      <button className="btn" disabled={busy}>
-        {busy ? 'Posting…' : 'Post review'}
-      </button>
+      <button className="btn w-full" disabled={busy}>{busy ? 'Posting…' : 'Post review'}</button>
     </form>
+  );
+}
+
+const TABS = [
+  { key: 'review', label: 'Review', icon: MessageSquarePlus },
+  { key: 'flag', label: 'Report hazard', icon: Flag },
+  { key: 'fact', label: 'Correction', icon: PencilLine },
+] as const;
+
+function Contribute({ slug, onReview }: { slug: string; onReview: () => void }) {
+  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('review');
+  return (
+    <div className="card">
+      <div className="mb-5 flex gap-1 rounded-2xl bg-panel p-1">
+        {TABS.map((t) => (
+          <button key={t.key} onClick={() => setTab(t.key)} className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-semibold transition ${tab === t.key ? 'text-ink' : 'text-muted'}`}>
+            {tab === t.key && <motion.span layoutId="contribute-tab" className="absolute inset-0 rounded-xl bg-white shadow-soft" />}
+            <t.icon className="relative size-3.5" /><span className="relative">{t.label}</span>
+          </button>
+        ))}
+      </div>
+      <AnimatePresence mode="wait">
+        <motion.div key={tab} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.18 }}>
+          {tab === 'review' && <ReviewForm slug={slug} onDone={onReview} />}
+          {tab === 'flag' && <FlagForm slug={slug} />}
+          {tab === 'fact' && <FactForm slug={slug} />}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function ProductSkeleton() {
+  return (
+    <div className="container-page space-y-8 py-12">
+      <div className="flex items-center gap-5"><Skeleton className="size-24 rounded-3xl" /><div className="flex-1 space-y-3"><Skeleton className="h-4 w-32" /><Skeleton className="h-8 w-2/3" /></div></div>
+      <Skeleton className="h-72 w-full rounded-[2rem]" />
+      <Skeleton className="h-48 w-full rounded-3xl" />
+    </div>
   );
 }
 
@@ -95,154 +156,192 @@ export function Product() {
   const { me } = useAuth();
   const product = useLoad(() => api<ProductDetail>(`/products/${slug}`), [slug]);
   const passport = useLoad(() => api<Passport>(`/products/${slug}/passport`).catch(() => null), [slug]);
-  const reviews = useLoad(() => api<Review[]>(`/products/${slug}/reviews`), [slug]);
-  const [saved, setSaved] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  const reviews = usePaged<Review>(`/products/${slug}/reviews`, 5);
+  const [saved, setSaved] = useState(false);
 
-  if (product.loading) return <div className="container-page py-12"><Notice>Loading product…</Notice></div>;
+  if (product.loading) return <ProductSkeleton />;
   if (product.error || !product.data)
     return (
-      <div className="container-page py-12">
-        <Notice tone="error">We could not find that product. <Link className="underline" to="/search">Search again</Link>.</Notice>
+      <div className="container-page py-16">
+        <EmptyState icon={AlertOctagon} title="We could not find that product" action={<Link className="btn" to="/search">Search again</Link>} />
       </div>
     );
   const p = product.data;
   const pass = passport.data;
-  // A candidate the screening rejected is not a recall for this product.
-  const recalls = pass ? pass.recall_matches.filter((r) => r.verdict !== 'rejected') : [];
   const canContribute = !!me && me.verification_level >= 1;
+  const recalls = pass ? pass.recall_matches.filter((r) => r.verdict !== 'rejected') : [];
+  const stub = pass?.hazard?.model_code.startsWith('stub');
 
   const save = async () => {
     try {
       await post('/wallet/items', { product_id: p.slug });
-      setSaved({ tone: 'ok', text: 'Saved to your Digital Wallet. We will alert you if its passport changes.' });
+      setSaved(true);
+      toast.success('Saved to your Digital Wallet', { description: 'We will alert you if its passport changes.' });
     } catch (e) {
-      setSaved({ tone: 'error', text: explain(e) });
+      toast.error(explain(e));
     }
   };
 
   return (
-    <div className="container-page py-12">
-      <p className="eyebrow">{p.category}</p>
-      <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold sm:text-4xl">{p.name}</h1>
-          <p className="mt-2 text-muted">{[p.brand, p.model_number].filter(Boolean).join(' · ')}</p>
+    <div className="container-page py-10">
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-start justify-between gap-6">
+        <div className="flex items-start gap-5">
+          <CategoryTile category={p.category} size="lg" />
+          <div>
+            <p className="eyebrow">{p.category}</p>
+            <h1 className="mt-1 max-w-2xl font-display text-3xl font-extrabold tracking-tight sm:text-4xl">{p.name}</h1>
+            <p className="mt-2 text-muted">{[p.brand, p.model_number].filter(Boolean).join(' · ')}</p>
+          </div>
         </div>
-        {canContribute ? (
-          <button className="btn" onClick={save}>Save to wallet</button>
-        ) : (
-          <Link className="btn-ghost" to="/sign-in">Sign in to save</Link>
-        )}
-      </div>
-      {saved && <div className="mt-4"><Notice tone={saved.tone}>{saved.text}</Notice></div>}
+        <div className="flex gap-2">
+          {canContribute ? (
+            <motion.button whileTap={{ scale: 0.94 }} className={saved ? 'btn-ghost' : 'btn'} onClick={save} disabled={saved}>
+              <Heart className={`size-4 ${saved ? 'fill-brand-ink text-brand-ink' : ''}`} />{saved ? 'In your wallet' : 'Save to wallet'}
+            </motion.button>
+          ) : (
+            <Link className="btn-ghost" to="/sign-in"><Heart className="size-4" />Sign in to save</Link>
+          )}
+        </div>
+      </motion.div>
 
-      <section aria-labelledby="passport" className="mt-10 rounded-3xl bg-panel p-6 sm:p-10">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h2 id="passport" className="text-2xl font-semibold">Product passport</h2>
-          <StatusBadge badge={pass?.status_badge ?? null} />
+      <section aria-labelledby="passport" className="mt-10 overflow-hidden rounded-[2rem] border border-line bg-gradient-to-br from-white to-panel shadow-lift">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line px-6 py-4 sm:px-8">
+          <h2 id="passport" className="flex items-center gap-2 font-display text-xl font-bold"><ShieldCheck className="size-5 text-brand-ink" />Product passport</h2>
+          {pass ? <StatusBadge badge={pass.status_badge} size="lg" /> : <StatusBadge badge={null} />}
         </div>
-        {!pass ? (
-          <p className="mt-4 text-muted">This product has not been screened yet.</p>
+        {passport.loading ? (
+          <div className="p-8"><Skeleton className="h-40 w-full" /></div>
+        ) : !pass ? (
+          <p className="p-8 text-muted">This product has not been screened yet.</p>
         ) : (
-          <>
-            <dl className="mt-6 grid gap-4 sm:grid-cols-4">
-              {[
-                ['Trust score', pass.trust_score === null ? '—' : `${Math.round(pass.trust_score)} / 100`],
-                ['Recalls', recalls.length ? `${recalls.length} found` : 'None found'],
-                ['Hazard', pass.hazard?.label ? `${pass.hazard.label} hazard` : 'Not yet scored'],
-                ['Version', `v${pass.version} · ${new Date(pass.verified_at).toLocaleDateString()}`],
-              ].map(([k, v]) => (
-                <div key={k} className="rounded-2xl bg-white p-4">
-                  <dt className="text-xs uppercase tracking-wide text-muted">{k}</dt>
-                  <dd className="mt-1 font-semibold">{v}</dd>
-                </div>
+          <div className="grid gap-8 p-6 sm:p-8 lg:grid-cols-[auto_1fr]">
+            <div className="flex flex-col items-center gap-3">
+              <TrustRing score={pass.trust_score} size={176} />
+              <p className="text-xs text-muted">Version {pass.version} · {new Date(pass.verified_at).toLocaleDateString()}</p>
+            </div>
+            <div className="space-y-6">
+              <dl className="grid gap-3 sm:grid-cols-3">
+                {[
+                  ['Recalls', pass.recall_component, recalls.length ? `${recalls.length} found` : 'None found'],
+                  ['Certificates', pass.certification_component, p.certifications.length ? `${p.certifications.length} on record` : 'None on record'],
+                  ['Hazard', pass.hazard_component, pass.hazard?.label ? `${pass.hazard.label} hazard` : 'Not yet scored'],
+                ].map(([k, v, text]) => (
+                  <div key={k as string} className="rounded-2xl border border-line bg-white p-4">
+                    <dt className="text-[11px] font-semibold uppercase tracking-wider text-muted">{k}</dt>
+                    <dd className="mt-1 font-semibold">{text}</dd>
+                    {v !== null && (
+                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-neutral-tint">
+                        <motion.div className="h-full rounded-full" style={{ background: scoreTone(v as number) }} initial={{ width: 0 }} animate={{ width: `${v}%` }} transition={{ duration: 1 }} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </dl>
+
+              {recalls.map((r) => (
+                <motion.div key={r.recall_id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="relative overflow-hidden rounded-2xl border border-danger/30 bg-danger-tint p-5">
+                  <span className="absolute -right-6 -top-6 size-24 rounded-full bg-danger/10" />
+                  <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-danger"><AlertOctagon className="size-4" />Recall · {VERDICT[r.verdict] ?? r.verdict}</p>
+                  <p className="mt-2 font-semibold">{r.title}</p>
+                  {r.hazard && <p className="mt-2 text-sm">{r.hazard}</p>}
+                  {r.remedy && <p className="mt-2 text-sm"><span className="font-semibold">What to do:</span> {r.remedy}</p>}
+                  {r.url && <a className="mt-3 inline-block text-sm font-semibold text-danger underline" href={r.url} target="_blank" rel="noreferrer noopener">Read the official notice</a>}
+                </motion.div>
               ))}
-            </dl>
 
-            {recalls.map((r) => (
-              <div key={r.recall_id} className="mt-6 rounded-2xl border border-danger bg-danger-tint p-5">
-                <p className="text-xs font-semibold uppercase text-danger">Recall · {VERDICT[r.verdict] ?? r.verdict}</p>
-                <p className="mt-1 font-semibold">{r.title}</p>
-                {r.hazard && <p className="mt-2 text-sm">{r.hazard}</p>}
-                {r.remedy && <p className="mt-2 text-sm"><span className="font-semibold">What to do:</span> {r.remedy}</p>}
-              </div>
-            ))}
-
-            {p.certifications.length > 0 && (
-              <div className="mt-6">
-                <h3 className="font-semibold">Certificates</h3>
-                <ul className="mt-2 flex flex-wrap gap-2">
+              {p.certifications.length > 0 && (
+                <ul className="flex flex-wrap gap-2">
                   {p.certifications.map((c) => (
-                    <li key={c.identifier} className="rounded-full bg-white px-4 py-2 text-sm">
-                      {c.scheme.toUpperCase()} {c.identifier} · <span className="font-medium">{c.status.replace('_', ' ')}</span>
+                    <li key={c.scheme + c.identifier} className={`chip ${CERT[c.status] ?? 'bg-neutral-tint text-muted'}`}>
+                      <BadgeCheck className="size-3.5" />{c.scheme.toUpperCase().replace('_', ' ')} {c.identifier} · {c.status.replace('_', ' ')}
                     </li>
                   ))}
                 </ul>
-              </div>
-            )}
-
-            {pass.hazard && (
-              <div className="mt-8 rounded-2xl bg-white p-5">
-                <h3 className="font-semibold">Hazard scores</h3>
-                <p className="mt-1 text-sm text-muted">Higher means more hazardous. Each score lists the evidence it rests on.</p>
-                <ul className="mt-2">
-                  {pass.hazard.dimensions.map((d) => (
-                    <DimensionRow key={d.code} d={d} />
-                  ))}
-                </ul>
-                {pass.hazard.model_code.startsWith('stub') && (
-                  <p className="mt-4 text-xs text-muted">
-                    Development build: these scores come from a keyword placeholder, not the AI model.
-                  </p>
-                )}
-              </div>
-            )}
-          </>
+              )}
+            </div>
+          </div>
         )}
       </section>
 
-      <section aria-labelledby="reviews" className="mt-12 grid gap-8 lg:grid-cols-[1fr_22rem]">
+      {pass?.hazard && (
+        <section className="mt-8 grid gap-8 lg:grid-cols-[1.4fr_1fr]">
+          <div className="card">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="font-display text-xl font-bold">Hazard scores</h2>
+              <p className={`chip ${stub ? 'bg-neutral-tint text-muted' : 'bg-action-tint text-action'}`}>
+                <Bot className="size-3.5" />{stub ? 'Keyword placeholder, not AI' : `Scored by ${pass.hazard.model_code}`}
+              </p>
+            </div>
+            <p className="mt-1 text-sm text-muted">Higher means more hazardous. Open a score to see the evidence it rests on.</p>
+            <ul className="mt-2 divide-y divide-line">
+              {pass.hazard.dimensions.map((d, i) => <DimensionRow key={d.code} d={d} index={i} />)}
+            </ul>
+          </div>
+          <div className="card h-fit">
+            <h2 className="flex items-center gap-2 font-display text-xl font-bold"><History className="size-5 text-brand-ink" />Passport history</h2>
+            <ol className="relative mt-5 space-y-5 border-l border-line pl-6">
+              {pass.history.map((h, i) => (
+                <motion.li key={h.version} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }} className="relative">
+                  <span className={`absolute -left-[31px] top-1 size-3.5 rounded-full ring-4 ring-white ${i === 0 ? 'bg-brand-ink' : 'bg-line'}`} />
+                  <p className="text-sm font-semibold">Version {h.version} {i === 0 && <span className="chip ml-1 bg-brand-tint !py-0 text-brand-ink">current</span>}</p>
+                  <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                    <StatusBadge badge={h.status_badge} />
+                    {h.trust_score !== null && <span>trust {Math.round(h.trust_score)}</span>}
+                    <span>{new Date(h.verified_at).toLocaleString()}</span>
+                  </p>
+                </motion.li>
+              ))}
+            </ol>
+            {canContribute && (
+              <Link to="/rewards" className="mt-6 flex items-center gap-2 text-sm font-semibold text-action"><FileText className="size-4" />Get the full report with TelCoins</Link>
+            )}
+          </div>
+        </section>
+      )}
+
+      <section aria-labelledby="reviews" className="mt-12 grid gap-8 lg:grid-cols-[1fr_24rem]">
         <div>
-          <h2 id="reviews" className="text-2xl font-semibold">Reviews</h2>
-          {reviews.data?.length === 0 && <p className="mt-4 text-muted">No reviews yet. The first review earns a bonus.</p>}
-          <ul className="mt-4 space-y-4">
-            {reviews.data?.map((r) => (
-              <li key={r.id} className="card">
-                <div className="flex items-center justify-between gap-3">
-                  <Stars rating={r.rating} />
-                  <span className="text-xs text-muted">
-                    {r.author ?? 'Marketplace review'} · {new Date(r.created_at).toLocaleDateString()}
-                  </span>
-                </div>
-                {r.title && <p className="mt-2 font-semibold">{r.title}</p>}
-                <p className="mt-1 text-sm text-muted">{r.body}</p>
-              </li>
-            ))}
-          </ul>
+          <h2 id="reviews" className="font-display text-2xl font-bold">Reviews</h2>
+          {reviews.loading ? (
+            <div className="mt-4 space-y-4">{[0, 1].map((i) => <Skeleton key={i} className="h-28 w-full rounded-3xl" />)}</div>
+          ) : reviews.items.length === 0 ? (
+            <div className="mt-4"><EmptyState icon={MessageSquarePlus} title="No reviews yet">The first review of a product earns a 30 TelCoin bonus.</EmptyState></div>
+          ) : (
+            <ul className="mt-4 space-y-4">
+              <AnimatePresence initial={false}>
+                {reviews.items.map((r) => (
+                  <motion.li key={r.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="grid size-9 place-items-center rounded-full bg-panel text-xs font-bold text-muted">{(r.author ?? 'M')[0]}</span>
+                        <div>
+                          <p className="text-sm font-semibold">{r.author ?? 'Marketplace review'}</p>
+                          <p className="text-xs text-muted">{new Date(r.created_at).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <Stars rating={r.rating} />
+                    </div>
+                    {r.title && <p className="mt-3 font-semibold">{r.title}</p>}
+                    <p className="mt-1 text-sm text-muted">{r.body}</p>
+                    {r.helpful_count > 0 && <p className="mt-3 flex items-center gap-1 text-xs text-muted"><ThumbsUp className="size-3.5" />{r.helpful_count} found this helpful</p>}
+                  </motion.li>
+                ))}
+              </AnimatePresence>
+            </ul>
+          )}
+          <Pager hasMore={reviews.hasMore} loading={reviews.loadingMore} onMore={reviews.more} shown={reviews.items.length} />
         </div>
         <aside className="space-y-6">
           {canContribute ? (
-            <ReviewForm
-              slug={p.slug}
-              onDone={() => {
-                void reviews.reload();
-                // The re-screen runs in the background; pick up the new passport shortly after.
-                setTimeout(() => void passport.reload(), 2500);
-              }}
-            />
+            <Contribute slug={p.slug} onReview={() => { void reviews.reload(); setTimeout(() => void passport.reload(), 2500); }} />
           ) : (
-            <div className="card bg-brand-tint">
-              <p className="font-semibold text-brand-ink">Own this product?</p>
-              <p className="mt-2 text-sm text-muted">
-                Verified members can review it, flag hazards and earn TelCoins.
-              </p>
-              <Link to={me ? '/verify' : '/sign-up'} className="btn mt-4">
-                {me ? 'Finish verification' : 'Create your TelcronID'}
-              </Link>
+            <div className="card bg-gradient-to-br from-brand-tint to-white">
+              <p className="font-display text-lg font-bold text-brand-ink">Own this product?</p>
+              <p className="mt-2 text-sm text-muted">Verified members can review it, report hazards, suggest corrections and earn TelCoins.</p>
+              <Link to={me ? '/verify' : '/sign-up'} className="btn mt-5 w-full">{me ? 'Finish verification' : 'Create your TelcronID'}</Link>
             </div>
           )}
-          {canContribute && <FlagForm slug={p.slug} />}
-          {canContribute && <FactForm slug={p.slug} />}
+          {product.error && <Notice tone="error">{product.error}</Notice>}
         </aside>
       </section>
     </div>

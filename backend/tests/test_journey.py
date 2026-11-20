@@ -243,3 +243,12 @@ async def test_rewards_overview_and_the_store(client, db):
         "item_code": "hazard_report_pdf", "product": "aquablend-900", "request_id": "b"})
     assert again.json()["id"] == r.json()["id"]  # a retried click spends once
     assert (await client.get(f"{API}/coins", headers=member)).json()["confirmed"] == 105 - 50
+
+
+async def test_lists_are_paged(client):
+    first = await client.get(f"{API}/products", params={"limit": 2})
+    second = await client.get(f"{API}/products", params={"limit": 2, "offset": 2})
+    assert first.headers["X-Has-More"] == "true" and len(first.json()) == 2
+    assert not {p["id"] for p in first.json()} & {p["id"] for p in second.json()}
+    last = await client.get(f"{API}/products", params={"limit": 50})
+    assert last.headers["X-Has-More"] == "false"
