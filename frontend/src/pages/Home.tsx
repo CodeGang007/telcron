@@ -68,7 +68,7 @@ function PassportPreview() {
         initial={{ opacity: 0, x: 30 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ delay: 1.1 }}
-        className="glass absolute -right-10 top-10 rounded-2xl px-4 py-3 text-white shadow-2xl"
+        className="absolute -right-16 -top-16 rounded-2xl border border-white/10 bg-night/85 px-4 py-3 text-white shadow-2xl backdrop-blur-xl"
       >
         <p className="flex items-center gap-2 text-sm font-semibold"><Coins className="size-4 text-gold" />+25 TelCoins</p>
         <p className="text-xs text-white/60">Hazard report confirmed</p>
@@ -77,7 +77,7 @@ function PassportPreview() {
         initial={{ opacity: 0, x: -30 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ delay: 1.4 }}
-        className="glass absolute -bottom-6 -left-12 rounded-2xl px-4 py-3 text-white shadow-2xl"
+        className="absolute -bottom-8 -left-16 rounded-2xl border border-white/10 bg-night/85 px-4 py-3 text-white shadow-2xl backdrop-blur-xl"
       >
         <p className="flex items-center gap-2 text-sm font-semibold"><Megaphone className="size-4 text-rose-300" />Recall alert sent</p>
         <p className="text-xs text-white/60">to everyone who owns it</p>

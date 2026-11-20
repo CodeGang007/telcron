@@ -45,7 +45,9 @@ function UserMenu() {
     if (!me || me.verification_level < 1) return;
     api<{ confirmed: number }>('/coins').then((c) => setCoins(c.confirmed)).catch(() => setCoins(null));
   }, [me, location.pathname]);
-  useEffect(() => setOpen(false), [location.pathname]);
+  useEffect(() => {
+    setOpen(false);
+  }, [location.pathname]);
   useEffect(() => {
     const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
     document.addEventListener('mousedown', close);
@@ -144,7 +146,10 @@ export function Layout() {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
-  useEffect(() => window.scrollTo({ top: 0 }), [location.pathname]);
+  // Braces matter: newer Chrome returns a promise from scrollTo, which React would take for a cleanup.
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [location.pathname]);
   const dark = location.pathname === '/' && !scrolled;
 
   return (
