@@ -784,43 +784,9 @@ $phase3$;
 END $migrate$;
 
 -- migrate:down
-DROP INDEX IF EXISTS product_aliases_variant_id_fk_idx;
-DROP INDEX IF EXISTS evidence_items_hazard_flag_id_fk_idx;
-DROP TABLE IF EXISTS feature_flags CASCADE;
-DROP TABLE IF EXISTS user_devices CASCADE;
-DROP TABLE IF EXISTS notification_preferences CASCADE;
-DROP TABLE IF EXISTS notifications CASCADE;
-DROP TABLE IF EXISTS user_risk_alerts CASCADE;
-DROP TABLE IF EXISTS risk_event_media CASCADE;
-DROP TABLE IF EXISTS risk_events CASCADE;
-DROP TABLE IF EXISTS price_alerts CASCADE;
-DROP TABLE IF EXISTS price_snapshots CASCADE;
-DROP TABLE IF EXISTS feed_interactions CASCADE;
-DROP TABLE IF EXISTS search_queries CASCADE;
-DROP TABLE IF EXISTS feed_item_topics CASCADE;
-DROP TABLE IF EXISTS feed_items CASCADE;
-DROP TABLE IF EXISTS topics CASCADE;
-DROP TABLE IF EXISTS product_fact_reports CASCADE;
-DROP TABLE IF EXISTS hazard_flag_media CASCADE;
-DROP TABLE IF EXISTS hazard_flags CASCADE;
-DROP TABLE IF EXISTS reactions CASCADE;
-DROP TABLE IF EXISTS comments CASCADE;
-DROP TABLE IF EXISTS post_media CASCADE;
-DROP TABLE IF EXISTS posts CASCADE;
-DROP TABLE IF EXISTS user_badges CASCADE;
-DROP TABLE IF EXISTS badges CASCADE;
-DROP TABLE IF EXISTS user_daily_logins CASCADE;
-DROP TABLE IF EXISTS referrals CASCADE;
-DROP TABLE IF EXISTS fraud_holds CASCADE;
-DROP TABLE IF EXISTS user_entitlements CASCADE;
-DROP TABLE IF EXISTS redemptions CASCADE;
-DROP TABLE IF EXISTS redemption_items CASCADE;
-DROP TABLE IF EXISTS reward_levels CASCADE;
-DROP TABLE IF EXISTS coin_balances CASCADE;
-DROP TABLE IF EXISTS coin_ledger_entries CASCADE;
-DROP TABLE IF EXISTS coin_earn_rules CASCADE;
-DROP TABLE IF EXISTS product_watches CASCADE;
-DROP TABLE IF EXISTS qr_labels CASCADE;
-DROP TABLE IF EXISTS product_variants CASCADE;
-DROP TABLE IF EXISTS trust_score_events CASCADE;
-DROP TABLE IF EXISTS identity_verifications CASCADE;
+-- Irreversible (S-18): the phase may predate this migration; dropping it would destroy data it never made.
+-- Undoing it is a new, reviewed migration, never `dbmate rollback`.
+DO $rollback$
+BEGIN
+    RAISE EXCEPTION 'irreversible: phase 3 schema (S-18); write a new migration instead of rolling back';
+END $rollback$;

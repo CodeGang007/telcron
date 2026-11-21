@@ -203,12 +203,6 @@ def guarded_phase_migration(phase):
     tag = f"$phase{phase}$"
     assert tag not in sql, f"{tag} occurs in the phase {phase} DDL"
     body = sql[len(HEADER):]
-    names = {t.name for t in tables}
-    # FK covering indexes this phase put on tables of earlier phases outlive DROP TABLE ... CASCADE.
-    outside = [m.group(1) for m in (re.match(r"CREATE INDEX (\S+) ON (\S+) ", st) for st in fk_statements(phase))
-               if m and m.group(2) not in names]
-    down = "\n".join([f"DROP INDEX IF EXISTS {i};" for i in outside]
-                     + [f"DROP TABLE IF EXISTS {t.name} CASCADE;" for t in reversed(tables)])
     return (
         "-- migrate:up\n" + HEADER
         + f"-- Phase {phase}. Skipped as a whole when `{sentinel}` exists: the phase was applied before it\n"
@@ -218,8 +212,22 @@ def guarded_phase_migration(phase):
         + f"    RAISE NOTICE 'phase {phase} already present ({sentinel} exists): skipped';\n"
         + "    RETURN;\nEND IF;\n"
         + f"EXECUTE {tag}" + body + f"{tag};\nEND $migrate$;\n"
-        + "\n-- migrate:down\n" + down + "\n"
+        + "\n-- migrate:down\n" + irreversible_down(f"phase {phase} schema") + "\n"
     )
+
+
+def irreversible_down(what):
+    """The down-step of a promoted migration: it refuses (S-18).
+
+    Where the up-step was skipped (the phase predates the migration: `make db-next`, the dev host), a
+    down-step that dropped the phase would destroy data no migration created: the coin ledger, balances,
+    redemptions. Undoing a phase is a new, reviewed migration, never `dbmate rollback`.
+    """
+    return ("-- Irreversible (S-18): the phase may predate this migration; dropping it would destroy data it never made.\n"
+            "-- Undoing it is a new, reviewed migration, never `dbmate rollback`.\n"
+            "DO $rollback$\nBEGIN\n"
+            f"    RAISE EXCEPTION 'irreversible: {what} (S-18); write a new migration instead of rolling back';\n"
+            "END $rollback$;")
 
 
 def main():

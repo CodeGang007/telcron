@@ -3,13 +3,16 @@
 The local database and the AWS dev host got phases 2-3 outside dbmate (`make db-next`, the host's own
 block). Their first `dbmate up` after the promotion runs these migrations against a database that
 already holds everything, so running one again must succeed and change nothing.
+
+Their down-steps refuse (S-18): where the up-step was skipped, rolling back would drop the coin ledger,
+balances and redemptions that no migration created.
 """
 import pathlib
 
 import psycopg
 import pytest
 
-from conftest import ROOT, one, up_part
+from conftest import ROOT, make_product, make_user, one, up_part
 
 PROMOTED = sorted(p for p in (ROOT / "db" / "migrations").glob("20261122130*.sql"))
 
@@ -46,3 +49,23 @@ def test_a_database_with_only_part_of_a_phase_fails_loudly(db):
     with pytest.raises(psycopg.errors.DuplicateTable):
         with db.transaction():
             db.execute(up_part(PROMOTED[0].read_text()))
+
+
+def down_part(sql: str) -> str:
+    """dbmate files: keep only the migrate:down section."""
+    return sql.split("-- migrate:down", 1)[1]
+
+
+LEDGER = "SELECT (SELECT count(*) FROM coin_ledger_entries), (SELECT count(*) FROM coin_balances)"
+
+
+@pytest.mark.parametrize("path", PROMOTED, ids=lambda p: p.name)
+def test_rolling_back_a_promoted_migration_is_refused_and_changes_nothing(db, path: pathlib.Path):
+    user = make_user(db)
+    one(db, "SELECT coin_earn(%s, 'review', %s, 'product', %s)", (user, f"s18:{user}", make_product(db)))
+    before = (one(db, CATALOGUE), one(db, REFERENCE), one(db, LEDGER))
+    with pytest.raises(psycopg.errors.RaiseException, match="irreversible"):
+        with db.transaction():
+            db.execute(down_part(path.read_text()))
+    assert (one(db, CATALOGUE), one(db, REFERENCE), one(db, LEDGER)) == before
+    assert one(db, LEDGER)[0] >= 1

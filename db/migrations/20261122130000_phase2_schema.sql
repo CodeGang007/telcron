@@ -340,22 +340,9 @@ $phase2$;
 END $migrate$;
 
 -- migrate:down
-DROP INDEX IF EXISTS passports_hazard_assessment_id_fk_idx;
-DROP TABLE IF EXISTS outbox_events CASCADE;
-DROP TABLE IF EXISTS ai_invocations CASCADE;
-DROP TABLE IF EXISTS review_tasks CASCADE;
-DROP TABLE IF EXISTS chat_messages CASCADE;
-DROP TABLE IF EXISTS chat_threads CASCADE;
-DROP TABLE IF EXISTS hazard_score_citations CASCADE;
-DROP TABLE IF EXISTS hazard_dimension_scores CASCADE;
-DROP TABLE IF EXISTS hazard_assessments CASCADE;
-DROP TABLE IF EXISTS hazard_dimensions CASCADE;
-DROP TABLE IF EXISTS scoring_bands CASCADE;
-DROP TABLE IF EXISTS scoring_contexts CASCADE;
-DROP TABLE IF EXISTS evidence_embeddings CASCADE;
-DROP TABLE IF EXISTS product_embeddings CASCADE;
-DROP TABLE IF EXISTS recall_embeddings CASCADE;
-DROP TABLE IF EXISTS product_traceability CASCADE;
-DROP TABLE IF EXISTS media_embeddings CASCADE;
-DROP TABLE IF EXISTS embedding_models CASCADE;
-DROP TABLE IF EXISTS media_annotations CASCADE;
+-- Irreversible (S-18): the phase may predate this migration; dropping it would destroy data it never made.
+-- Undoing it is a new, reviewed migration, never `dbmate rollback`.
+DO $rollback$
+BEGIN
+    RAISE EXCEPTION 'irreversible: phase 2 schema (S-18); write a new migration instead of rolling back';
+END $rollback$;

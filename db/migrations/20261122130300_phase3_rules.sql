@@ -369,16 +369,9 @@ $phase3_rules$;
 END $migrate$;
 
 -- migrate:down
-DROP FUNCTION IF EXISTS telcron_fanout_risk_event CASCADE;
-DROP VIEW IF EXISTS community_feed;
-DROP FUNCTION IF EXISTS telcron_post_counters CASCADE;
-DROP FUNCTION IF EXISTS telcron_reward_level CASCADE;
-DROP FUNCTION IF EXISTS coin_redeem CASCADE;
-DROP FUNCTION IF EXISTS coin_clawback CASCADE;
-DROP FUNCTION IF EXISTS coin_spend CASCADE;
-DROP FUNCTION IF EXISTS coin_confirm_due CASCADE;
-DROP FUNCTION IF EXISTS coin_earn CASCADE;
-DROP FUNCTION IF EXISTS coin_resolve_hold CASCADE;
-DROP FUNCTION IF EXISTS coin_apply_hold CASCADE;
-DROP FUNCTION IF EXISTS coin_lock_balance CASCADE;
-DROP FUNCTION IF EXISTS telcron_ledger_transition CASCADE;
+-- Irreversible (S-18): the phase may predate this migration; dropping it would destroy data it never made.
+-- Undoing it is a new, reviewed migration, never `dbmate rollback`.
+DO $rollback$
+BEGIN
+    RAISE EXCEPTION 'irreversible: phase 3 rules (S-18); write a new migration instead of rolling back';
+END $rollback$;

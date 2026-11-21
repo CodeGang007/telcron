@@ -66,7 +66,9 @@ $phase2_rules$;
 END $migrate$;
 
 -- migrate:down
-ALTER TABLE IF EXISTS scoring_bands DROP CONSTRAINT IF EXISTS scoring_bands_no_overlap;
-DROP FUNCTION IF EXISTS telcron_create_embedding_index(text, text);
-DROP FUNCTION IF EXISTS telcron_embedding_dims_check() CASCADE;
-DROP FUNCTION IF EXISTS telcron_dimension_score_cited() CASCADE;
+-- Irreversible (S-18): the phase may predate this migration; dropping it would destroy data it never made.
+-- Undoing it is a new, reviewed migration, never `dbmate rollback`.
+DO $rollback$
+BEGIN
+    RAISE EXCEPTION 'irreversible: phase 2 rules (S-18); write a new migration instead of rolling back';
+END $rollback$;

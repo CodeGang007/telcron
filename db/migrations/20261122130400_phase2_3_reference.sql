@@ -81,4 +81,9 @@ INSERT INTO topics (code, name, sort_order) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- migrate:down
--- The rows go with their tables (20261122130000/20261122130200 down).
+-- Irreversible (S-18): the phase may predate this migration; dropping it would destroy data it never made.
+-- Undoing it is a new, reviewed migration, never `dbmate rollback`.
+DO $rollback$
+BEGIN
+    RAISE EXCEPTION 'irreversible: phase 2-3 reference rows (S-18); write a new migration instead of rolling back';
+END $rollback$;
