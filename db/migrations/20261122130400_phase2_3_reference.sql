@@ -1,4 +1,9 @@
--- Reference data for phase 2/3 tables. Idempotent. Apply after phase2/3 schema + rules.
+-- Reference data for phase 2/3 tables. Hand-written. Every statement is idempotent (ON CONFLICT DO
+-- NOTHING, CREATE INDEX IF NOT EXISTS), so it also runs on a database that already has these rows
+-- (promoted from db/schema-next/seed_reference.sql, WO-022). The one UPDATE (which text model is active,
+-- WO-015) writes nothing where that is already so.
+
+-- migrate:up
 
 -- Phase 2 — scoring configuration (Platform Architecture v2 §9, Feature TC-P1-011)
 INSERT INTO scoring_contexts (code, name, alert_threshold) VALUES
@@ -29,7 +34,8 @@ INSERT INTO embedding_models (code, modality, dimensions, is_active) VALUES
 ON CONFLICT (code) DO NOTHING;
 -- WO-015: the text model in use is the open-source bge-small, served by our embedder; Titan is not
 -- available on the account's plan. One HNSW index per table for it (no-ops once they exist).
-UPDATE embedding_models SET is_active = (code = 'bge-small-en-v1.5:384') WHERE modality = 'text';
+UPDATE embedding_models SET is_active = (code = 'bge-small-en-v1.5:384')
+ WHERE modality = 'text' AND is_active IS DISTINCT FROM (code = 'bge-small-en-v1.5:384');
 SELECT telcron_create_embedding_index(t, 'bge-small-en-v1.5:384')
 FROM unnest(ARRAY['recall_embeddings', 'product_embeddings', 'evidence_embeddings']) AS t;
 
@@ -73,3 +79,6 @@ INSERT INTO topics (code, name, sort_order) VALUES
     ('market_acceptance', 'Market Acceptance', 1), ('sustainability', 'Sustainability', 2),
     ('cyber', 'Cyber', 3), ('recalls', 'Recalls', 4), ('circularity', 'Circularity', 5), ('wireless', 'Wireless', 6)
 ON CONFLICT (code) DO NOTHING;
+
+-- migrate:down
+-- The rows go with their tables (20261122130000/20261122130200 down).

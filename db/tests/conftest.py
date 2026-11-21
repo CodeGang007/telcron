@@ -1,6 +1,7 @@
 """
-Test harness: builds a fresh database from the real migration files (+ schema-next phases),
-then gives each test its own transaction that is rolled back afterwards.
+Test harness: builds a fresh database from the real migration files (all three phases are
+migrations since WO-022) and the core reference seed, then gives each test its own transaction that
+is rolled back afterwards.
 
 Env:
   TELCRON_TEST_ADMIN_DSN  admin DSN of a throwaway Postgres (default: the `db-test` compose service)
@@ -17,9 +18,7 @@ ADMIN_DSN = os.environ.get("TELCRON_TEST_ADMIN_DSN", "postgresql://postgres:test
 TEST_DB = "telcron_test"
 
 FILES = (sorted((ROOT / "db" / "migrations").glob("*.sql"))
-         + [ROOT / "db" / "seeds" / "001_core_reference.sql"]
-         + [ROOT / "db" / "schema-next" / f for f in
-            ("phase2_schema.sql", "phase2_rules.sql", "phase3_schema.sql", "phase3_rules.sql", "seed_reference.sql")])
+         + [ROOT / "db" / "seeds" / "001_core_reference.sql"])
 
 
 def up_part(sql: str) -> str:

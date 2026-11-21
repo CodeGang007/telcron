@@ -3,7 +3,7 @@ Telcron — database design, single source of truth (v0.2).
 
 Generated from this file:
   * docs/database/telcron-erd.drawio + table catalogue in schema-design.md   (tools/build_erd.py)
-  * db/migrations/*_schema_*.sql and db/schema-next/*.sql                     (tools/build_sql.py)
+  * db/migrations/*_phase{1,2,3}_schema.sql + *_extensions_and_types.sql      (tools/build_sql.py)
 
 Every `checks` entry, unique and index here is literal PostgreSQL. Rules that cannot be expressed
 declaratively live in hand-written SQL (db/sql/*.sql) and are listed in each table's `rules`.

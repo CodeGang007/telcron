@@ -66,16 +66,11 @@ db-gen:  ## regenerate SQL + ERD + catalogue from docs/database/schema_spec.py
 up:  ## start Postgres and Redis
 	$(COMPOSE) up -d --build --wait db redis
 
-db-next:  ## apply phases 2-3 from db/schema-next to the LOCAL database (the backend needs them; skipped if present)
-	@if [ "$$($(PSQL) -Atc "select to_regclass('hazard_assessments') is not null")" = "t" ]; then \
-	  echo "phases 2-3 already applied"; \
-	else \
-	  for f in phase2_schema phase2_rules phase3_schema phase3_rules seed_reference; do \
-	    echo "applying db/schema-next/$$f.sql"; $(PSQL) -1 < db/schema-next/$$f.sql || exit 1; done; \
-	fi
+db-next:  ## retired (WO-022): phases 2-3 are migrations now, applied by `make db-migrate`
+	@echo "make db-next is retired: phases 2-3 are dbmate migrations (WO-022). Run: make db-migrate"
 
-app-db: up  ## everything the backend needs in the local database: migrate, reference data, phases 2-3, demo data
-	$(MAKE) db-migrate db-seed db-next db-sample
+app-db: up  ## everything the backend needs in the local database: migrate (all phases), reference data, demo data
+	$(MAKE) db-migrate db-seed db-sample
 	cd backend && uv run python -m app.seed
 
 eval:  ## grade the configured hazard scorer against backend/evals/cases.json

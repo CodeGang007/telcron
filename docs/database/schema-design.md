@@ -222,12 +222,22 @@ and a longer signature (`siglen=64`, 11 MB at 100k rows) brought it under 20 ms 
 
 | Phase | Tables | Unlocks | Location |
 |---|---|---|---|
-| **1 — Core (38)** | Identity (5), Catalogue (6), Media blobs/assets/identification (3), Sources (4), Recalls (4), Certifications (3), Screening/Passport (4), Wallet + video verification (4), Reviews (3), `app_settings`, `audit_log` | Sign-up/login/Google, product page, public passport, recall & certification views, wallet, reviews | `db/migrations/` — **applied locally** |
-| 2 — AI engine (14) | traceability, embeddings + models, annotations, hazard scoring (6), review queue, AI invocations, outbox | Identification/scoring pipeline, ingestion evidence, re-screen fan-out | `db/schema-next/phase2_*.sql` — tested, not applied |
-| 3 — Engagement (38) | Rewards (12), Community (7 more), Feed (5), Pricing (2), Risk & notifications (6), wallet extras, identity extras, product variants, feature flags | TelCoins, community feed, commerce feed, price alerts, risk timeline | `db/schema-next/phase3_*.sql` — tested, not applied |
+| **1 — Core (38)** | Identity (5), Catalogue (6), Media blobs/assets/identification (3), Sources (4), Recalls (4), Certifications (3), Screening/Passport (4), Wallet + video verification (4), Reviews (3), `app_settings`, `audit_log` | Sign-up/login/Google, product page, public passport, recall & certification views, wallet, reviews | `db/migrations/2026111412*` — applied |
+| 2 — AI engine (14) | traceability, embeddings + models, annotations, hazard scoring (6), review queue, AI invocations, outbox | Identification/scoring pipeline, ingestion evidence, re-screen fan-out | `db/migrations/20261122130000_phase2_schema.sql` + `…130100_phase2_rules.sql` — applied (WO-022) |
+| 3 — Engagement (38) | Rewards (12), Community (7 more), Feed (5), Pricing (2), Risk & notifications (6), wallet extras, identity extras, product variants, feature flags | TelCoins, community feed, commerce feed, price alerts, risk timeline | `db/migrations/20261122130200_phase3_schema.sql` + `…130300_phase3_rules.sql` — applied (WO-022) |
 
 FKs are emitted in the phase where both ends exist (e.g. `passports.hazard_assessment_id`'s constraint arrives
-with phase 2). To promote a phase: copy its schema + rules into a new timestamped dbmate migration.
+with phase 2).
+
+Phases 2–3 were promoted to dbmate migrations on 2026-11-22 (WO-022, decision D11). Before that they were
+applied outside dbmate (`make db-next` locally, a hand-written block on the AWS dev host), so each promoted
+migration is one guarded block that **skips, without error, a database that already has the phase**: the
+schema migrations are keyed on `hazard_assessments` / `coin_ledger_entries`, the rules on
+`telcron_dimension_score_cited()` / `coin_earn()`. A database holding only part of a phase fails loudly
+instead of being half-patched. Their reference rows are `20261122130400_phase2_3_reference.sql`
+(idempotent). `make db-gen` regenerates the two schema migrations from the spec; the rules and the
+reference rows are hand-written. A fresh database is `dbmate up` + `db/seeds/001_core_reference.sql`; there
+is no other step (`make db-next` is retired).
 
 ## 8. Feature traceability
 
