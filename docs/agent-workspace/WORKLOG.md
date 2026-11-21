@@ -92,3 +92,56 @@ its 97% is a regression baseline, not an independent quality measure.
 
 **Open**: a Groq key to switch the AI scorer on; photo identification; media uploads; Level 2 identity; email/SMS
 codes (sign-up still closed on the dev site).
+
+
+## 2026-11-22 — W1–W2 completion, run 2 (branch `week-02`, `8363c82`..`7e1efd5`)
+
+**Verified (WO-017, by agents other than the builders).** QA A and B, security, browser QA, a final gate on
+`838beea` and a last re-check on `bdc4c57` (verdicts in `docs/agent-workspace/verdicts/WO-017-*.md`). Week-1
+rows: WO-001, 009, 013, 014, 015 PASS; WO-002 and 016 PASS repo-only (nothing checked on the AWS hosts);
+WO-003 and WO-004 PARTIAL (marketplace sources to WO-003b; scorer is Groq with stub fallback); WO-011 PARTIAL
+(phases 2-3 now WO-022; DEF-007; schema author's review D14 still owed); WO-005 SUPERSEDED; WO-007/008/010 N/A.
+WO-006 and WO-012 failed first (DEF-011 S2, DEF-012, DEF-013, DEF-014); the fixes passed QA. WO-018 and WO-024
+failed first (DEF-021, DEF-020); both fixes re-checked PASS. Security: 0 Critical, 0 High, 6 Medium, 9 Low,
+2 Info; its re-review (S-18..S-21) also passed. Last re-check: QA APPROVE WITH NITS, browser all PASS,
+`npm run journey` 8 passed. Nothing is DONE; every row is DONE-PENDING-QA or lower.
+
+**Fixed (all FIXED-PENDING-QA; QA PASS in the sweep unless noted).** DEF-010, 011, 012, 013, 014, 020, 021, 022,
+023, 030, 031, 032, 033, 034, 036, 037, 038, 041, 042, 043, 044 (incl. infra: uvicorn no longer trusts
+X-Forwarded-For; S-19 network), 048, 049, 060, 070, 080 (trigram KNN search and index `products(brand_id,
+canonical_name, id)`, test that every foreign key has a serving index), 081, 100, 101. Runbook parts of DEF-040,
+046, 047 passed. S-18 (rolling back a promoted migration is refused), S-20 (self-review falls back to the
+submitter), S-21 (typed research quota) passed. DEF-090 (board vs file status lines) is closed by this entry's
+board repair; QA has not re-checked it.
+
+**Built.** WO-019 schema `e49911f` + service `2f40ce3` (redemptions: two items on sale, stuck ones refunded;
+QA and security PASS). WO-020 dependency scan finished (fails closed on High/unrated; QA PASS). WO-022 phases 2-3
+as dbmate migrations `41bdc29`; `db-next` retired. WO-023 traceability `d6dc9a9`. WO-054 raw copies to S3
+(code only, off by default; PARTIAL). WO-055 admin shell and WO-056 feature flags (CT-001) with the web hook.
+WO-057 evals at 20 cases (regression baseline only; offline harness, no live-model run).
+
+**Decided (tech-lead; the human's decisions are listed below).**
+- WO-054 departure accepted: the schema (`source_records_chk1`, exactly one of `payload` / `payload_storage_key`;
+  rows immutable) is the rule, so on a successful upload the row holds the key only, otherwise the payload stays
+  in the database. No schema change.
+- Gap calls (agree with WO-023): audit log -> W3 WO-026; first marketplace -> W3 WO-003b; independent eval
+  set -> W6 WO-038; member-photo safety DEF-024 -> W4 WO-007.
+- M1 "scraping job" = CPSC official API (OP-20, human).
+
+**Waits on the human.** Push `week-02` to `main`; DEF-040 key rotation; WO-021 sign-up on dev; DEF-006 items 1, 2,
+4; DEF-045 DB owner role; DEF-047 backups; WO-054 enabling on dev; DEF-035 reading; DEF-046/S-7r ADR. Detail in
+`RESUME-HERE.md`.
+
+**Open.** DEF-035 decision (D13 reading a or b); DEF-110 (S3: brand list still reads every product when a brand
+matches; fix with a LATERAL query on the brand path, plus a plan test; search is already under 300 ms);
+DEF-111 (S4: admin area tells staff to sign in when the API is unreachable); DEF-007 (item 1 -> WO-029);
+DEF-002 (D6; blocks WO-008); DEF-024 (W4); D14 review by the schema's author; ADR on Gemini data-sharing;
+S-7r ADR (region/secret names); a partial unique index for DEF-032 (database-engineer); `tools/dev-all.sh` needs
+`--no-proxy-headers` since DEF-044; the Playwright headless browser is not installed locally (browser QA used
+what was available); `.env.local` points the database at port 5436.
+
+**Not done.** Jira not updated (project-manager not dispatched, by instruction). Nothing was pushed; nothing on
+AWS was changed or checked live. `docs/database/db_erds.zip` is untracked and untouched.
+
+**Clean-up.** Every `tc-lane*` container and every QA/work worktree removed; `wip/wo-020-dependency-scan` is
+merged and left in place.
