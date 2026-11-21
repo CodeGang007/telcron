@@ -82,3 +82,72 @@ this scope: DEF-080 (search performance, S3) and DEF-081 (concurrent register gi
 
 Worktree left clean: HEAD 838beea, no diff, no commits added. `frontend/node_modules` was already untracked
 before this run. Throwaway DBs `qa_old` and `qa_new` were dropped, and lane Redis db 1 was flushed.
+
+## Last re-check (bdc4c57)
+qa-test-engineer, 2026-11-22. Worktree `wt-qa-last` (`wt/qa-last` @ bdc4c57 = `week-02`), lane PG :55444 / Redis :63844.
+Scope: `git diff 838beea..bdc4c57`, 8 commits. DEF-090 (tech-lead bookkeeping) was skipped as asked.
+
+Verdict: **APPROVE WITH NITS**. Two new defects, neither blocking: DEF-110 (S3) and DEF-111 (S4).
+
+| Item | Verdict | Independent proof |
+| --- | --- | --- |
+| DEF-080 search (catalogue) | PASS, with DEF-110 open | Search reverted to 838beea: `test_search.py` **4 passed**, so the tests guard answers, not the plan (DEF-110). Mutations, each red then restored: part list dropped → `test_a_fragment_inside_a_word…` failed; brand list dropped → `test_a_brand_finds…` failed; ties ordered by name → `test_pages_continue_each_other_through_ties` failed. |
+| DEF-080 index (schema) | PASS | Migration `20261122150000_products_brand_index.sql` removed → `test_spec_indexes.py` **6 failed, 1 passed**; restored → green. `make db-gen` byte-identical. |
+| DEF-081 register race | PASS | `identity/service.py` reverted → race test FAILED (IntegrityError 500). Savepoint removed → FAILED. Constraint name changed to `no_such_key` → FAILED (so the name is really read). 5 repeat runs: 5 × `1 passed`. |
+| DEF-100 auth unreachable (frontend) | PASS (code review), DEF-111 open | `lib/auth.tsx` reverted → `tsc`: `Gate.tsx(38,24)` and `Layout.tsx(141,15)` `Property 'unreachable' does not exist`. 4xx still signs out; network/5xx keeps the session; Try again is 44 px and calls `reload()`. There are no frontend unit tests, so the behaviour was not run by me. The admin area's own gate was missed: DEF-111. |
+| DEF-101 `mine` (backend) | PASS | `modules/moderation/` reverted → `test_the_queue_marks_a_reviewers_own_items_as_mine` FAILED. Mutations `mine = submitted_by == viewer` and `mine = False` → FAILED. Owner read off the row already loaded, so no extra query. |
+| DEF-101 (frontend) | PASS (code review) | `useState(!!task.mine)` hides the decisions up front, and an `own_item` 403 also hides them. Buttons are `min-h-11`. |
+| DEF-023 agent paths | PASS | `community-rewards-engineer` gains `modules/moderation/**`. `data-ai-engineer` gains ingestion, research, assistant, evals and embedder. Both match `telcron-domain-map` rows 15–16, and each path is claimed by exactly one agent file (grep). |
+
+**Search timing at 50 004 products** (`qa_last_perf` = `telcron_api_test` + 50 000 synthetic, `ANALYZE`; uvicorn, no
+embedder, HTTP, n=30 after 1 warm-up). p50 / p95:
+
+| q | bdc4c57 | service.py reverted to 838beea |
+| --- | --- | --- |
+| blender | 22.3 / 24.3 ms | 206.5 / 214.4 ms |
+| blendr | 23.2 / 25.4 | 219.0 / 228.2 |
+| power bank ultra | 53.5 / 60.6 | 344.6 / 372.0 |
+| northwind (brand) | 48.6 / 51.5 | 225.9 / 230.7 |
+| fabrikam (brand) | 41.3 / 48.7 | 220.1 / 236.7 |
+| len (fragment) | 22.6 / 29.6 | 204.2 / 212.7 |
+| zzzz (no hit) | 19.1 / 21.2 | 180.4 / 193.0 |
+
+Every query is under the 300 ms read budget, and 4–10× faster than before. EXPLAIN of the statement the service sends:
+the name and fragment lists are `Index Scan using products_i1_idx` (20 rows). The brand list is still
+`Seq Scan on products rows=50004` whenever any brand matches (`blender` matches "AquaBlend"), 38–78 ms execution.
+`products_i4_idx` is not used by the application. The LATERAL form database-engineer proposed takes 0.18–0.36 ms → **DEF-110**.
+
+**Gates (all run here, on the restored tree):**
+- backend `uv run ruff check .` → `All checks passed!` · `uv run pytest -q` → `149 passed, 4 warnings in 35.27s`
+- schema `pytest db/tests --ignore=db/tests/test_performance.py` → `101 passed in 3.86s`
+- `pytest db/tests/test_performance.py -s` → `14 passed in 61.36s`. New case "A brand's products in name order" 0.09 ms
+  (`products_i4_idx`); "Fuzzy product search (trigram)" 16.31 ms (`products_i1_idx`).
+- `cd frontend && npx tsc --noEmit` → 0 errors · `npm run build` → `✓ built in 3.63s`
+- `make db-gen` → `git status` / `git diff` empty (byte-for-byte)
+- e2e journey: not run. The brief did not ask for it, and another agent was using the shared stack on :4310.
+
+### New defects
+- **DEF-110** (S3, catalogue-engineer): the brand list of search still seq-scans `products` whenever a brand matches,
+  and no test fails if search goes back to a full scan.
+- **DEF-111** (S4, frontend-engineer): `pages/admin/AdminLayout.tsx` still says "Sign in to continue" when the API is
+  unreachable, which DEF-100 fixed only in `Gate`.
+
+### Nits
+- `frontend/src/pages/ReviewQueue.tsx:23` says ``mine`` is "Not sent by the API yet (DEF-101)". It is sent now.
+- DEF-081: no test shows that a *different* `IntegrityError` on register still raises. The mutation `if False:`
+  (catch everything) leaves all 16 identity tests green.
+- `Layout.tsx:185`: "Offline" is `text-muted` on the dark (scrolled/hero) header variant too; check the contrast. That
+  file is tech-lead's.
+- DEF-080's docstring in `_by_words` ("nothing reads the whole table") is not true until DEF-110 is fixed.
+
+### Good
+- The search keeps the old rank measure exactly (`<->>` = 1 − word_similarity), and the paging test across ties is a
+  real guard: it caught my ordering mutation.
+- `test_spec_indexes.py` turns "every FK has an index" into a standing rule with a named allow-list.
+
+### Not checked
+- DEF-100 and DEF-101 in a browser (code review and tsc only).
+- The embedder-fusion path of search (no embedder configured; `CANDIDATES` path not timed).
+
+Worktree left clean: HEAD bdc4c57, no diff, no commits. `frontend/node_modules` (symlink) was already untracked.
+Build caches, `backend/.venv` and `frontend/dist` were removed. DB `qa_last_perf` was dropped.

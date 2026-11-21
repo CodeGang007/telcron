@@ -117,3 +117,52 @@ northwind, mod1 on the lamp) and flags (C confirmed, D rejected; mod1's lamp fla
 One fraud hold, inserted by SQL and released. Two redemptions, helpful votes, the e2e suite's own members and three
 CPSC jobs. Screenshots:
 `/tmp/claude-1000/-home-silverblade-Startups-CodeGang-Projects-Telcron-Codebase/f710e93c-b080-41fd-939f-13a2583168e0/scratchpad/final/shots/`.
+
+## Last re-check (bdc4c57)
+Environment: local · branch `week-02` @ `bdc4c57` · 2026-11-22 · Personas: member L1 (member C), moderators 1 and 2, visitor
+Agent: browser-qa-engineer · New DEFs: **none** (DEF-120…129 not used)
+
+### Setup
+Same shell-only settings as above (`.env` not touched). `make app-db`:
+```
+Applying: 20261122150000_products_brand_index.sql
+Applied: 20261122150000_products_brand_index.sql in 17.045977ms
+```
+`pg_indexes`: `CREATE INDEX products_i4_idx ON public.products USING btree (brand_id, canonical_name, id)`.
+`make dev`: `/health` → `{"status":"ok","version":"dev"}`, Worker running. Playwright with the installed Chromium,
+390×844 (mobile, touch) and 1280×800.
+
+### Criteria
+| Item | Verdict | Evidence |
+|---|---|---|
+| DEF-100 API stopped | PASS | API process tree really killed (`/health` down). `/wallet` and `/rewards`, both widths: alert "Could not reach Telcron. Check your connection and try again. You are still signed in." + "Try again" (44 px), no "Sign in to continue", no spinner, header "Offline" (was "QF 90"), session still in storage, no h-scroll. API restarted → "Try again" → `GET /auth/me 200`, `/coins 200`, `/rewards 200`, header back to "QF 90", same after reload, console clean. Extra: API answering 500 (with or without CORS headers) shows the same alert ("Try again in a moment"), header "Offline", session kept |
+| DEF-101 own items | PASS | `GET /review-tasks` gives `mine: true` to moderator 1 for their lamp flag and a new own hold (inserted by SQL, no frozen coins). Moderator 1, both widths: both cards show "Your item: a colleague decides this." and 0 buttons; after reload the same; 0 API 4xx. The other 17 cards: buttons 44 px. Moderator 2, both widths: the same two cards offer "Confirm hazard / Not a hazard / Dismiss" and "Confirm fraud / Release coins / Dismiss", all 44 px on the phone, no notes. No h-scroll, console clean |
+| DEF-080 search | PASS | Browser, both widths: `blender` → acme-powerblend-1000, `northwind` → northwind-chillmate-31, `fastcharge 65w` → contoso-fastcharge-65w, `desk lamp` → unidentified-desk-lamp first (then e2e "desk fan" products by similarity), `zzqxnomatch` → empty state with a way forward. All `GET /products?q=… 200`, kept after reload, console clean |
+
+### `cd e2e && npm run journey`
+Same approach as before (`playwright test journey` through the scratchpad config pointing at the installed Chromium;
+nothing downloaded):
+```
+Running 8 tests using 1 worker
+  ✓  1 [chromium] › journey.spec.ts:10:5 › a visitor searches and reads a passport without an account (3.1s)
+  ✓  2 [chromium] › journey.spec.ts:28:5 › members-only pages offer sign-in instead of failing (941ms)
+  ✓  3 [chromium] › journey.spec.ts:33:5 › a wrong password is refused with a useful message (1.2s)
+  ✓  4 [chromium] › journey.spec.ts:41:5 › a member signs up, saves a product, reviews it and is paid (22.2s)
+  ✓  5 [chromium] › journey.spec.ts:90:5 › a hazard report is confirmed by the safety team, pays the reporter and becomes evidence (7.7s)
+  ✓  6 [chromium] › journey.spec.ts:134:5 › an admin imports recall notices and visitors can search them (3.6s)
+  ✓  7 [chromium] › journey.spec.ts:162:5 › a barcode leads straight to the product passport (2.3s)
+  ✓  8 [chromium] › journey.spec.ts:184:5 › a product no database knows is identified by a member and screened (8.3s)
+  8 passed (50.5s)
+```
+(A first invocation without the `journey` filter also ran `smoke.spec.ts`, whose HTTPS check fails locally by design;
+not a finding.)
+
+### Notes
+- Setup trap, not a product defect: `.env.local` (dated 2026-11-15) points `DATABASE_URL` at port 5436. `make` exports
+  `.env`, which wins; an API started by hand without `.env` in the environment reads `.env.local` and every request
+  is a 500 (`Connect call failed ('127.0.0.1', 5436)`). Restart the API with `set -a; . ./.env` or use `make dev`.
+- Data created: one fraud hold on moderator 1 (dismissed by moderator 2 at the end: task `dismissed`, hold
+  `released`), the journey's own members and products. Moderator 1's lamp flag is still open, for a colleague.
+- Not tested: the hazard report gating, camera scanning, the live site.
+- Screenshots: `/tmp/claude-1000/-home-silverblade-Startups-CodeGang-Projects-Telcron-Codebase/f710e93c-b080-41fd-939f-13a2583168e0/scratchpad/final/shots/recheck-*.png`.
+- `make dev-stop` run; no listener left on :4310 or :3200.
