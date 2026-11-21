@@ -2,6 +2,7 @@
 code that talks to it; replaced wholesale in tests. Its answer is a SUGGESTION for a person to check:
 in testing it named the wrong product with 0.9 confidence, so nothing it says is stored unconfirmed."""
 
+import asyncio
 import json
 from typing import Any
 
@@ -29,22 +30,39 @@ def _hinted(hints: dict[str, Any] | None) -> str:
             f"\nAn object detector says it looks like: {', '.join(hints.get('looks_like') or [])}")
 
 
+MAX_IMAGES = 3  # the provider's limit per request; the image reader still reads every photo
+RETRIES = 2
+
+
 async def read_photo(data_urls: list[str], hints: dict[str, Any] | None = None
                      ) -> dict[str, Any]:
+    """The model's reading of up to three photos. Its "thinking" is switched off: it spent the whole
+    answer budget thinking and never wrote the JSON (seen 2026-11-21). A free-plan rate limit is
+    waited out (at most 30 s) a couple of times before giving up."""
     s = get_settings()
     if not s.llm_api_key:
         raise VisionUnavailable("no model configured")
+    body = {"model": s.vision_model, "temperature": 0, "max_completion_tokens": 1500,
+            "reasoning_effort": "none", "response_format": {"type": "json_object"},
+            "messages": [{"role": "user", "content": [
+                {"type": "text", "text": PROMPT + _hinted(hints)},
+                *({"type": "image_url", "image_url": {"url": u}} for u in data_urls[:MAX_IMAGES])]}]}
     try:
         async with httpx.AsyncClient(base_url=s.llm_base_url, timeout=90) as http:
-            response = await http.post("/chat/completions", headers={
-                "Authorization": f"Bearer {s.llm_api_key}"}, json={
-                "model": s.vision_model, "temperature": 0, "max_completion_tokens": 800,
-                "response_format": {"type": "json_object"},
-                "messages": [{"role": "user", "content": [
-                    {"type": "text", "text": PROMPT + _hinted(hints)},
-                    *({"type": "image_url", "image_url": {"url": u}} for u in data_urls[:4])]}]})
-            response.raise_for_status()
-            answer = json.loads(response.json()["choices"][0]["message"]["content"])
+            for attempt in range(RETRIES + 1):
+                response = await http.post("/chat/completions", json=body, headers={
+                    "Authorization": f"Bearer {s.llm_api_key}"})
+                if response.status_code == 429 and attempt < RETRIES:
+                    try:
+                        wait = float(response.headers.get("retry-after", "10"))
+                    except ValueError:
+                        wait = 10.0
+                    await asyncio.sleep(min(wait + 0.5, 30))
+                    continue
+                if response.status_code >= 400:
+                    raise VisionUnavailable(f"HTTP {response.status_code}: {response.text[:200]}")
+                answer = json.loads(response.json()["choices"][0]["message"]["content"])
+                break
     except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
         raise VisionUnavailable(f"{type(exc).__name__}: {exc}"[:300]) from exc
     return answer if isinstance(answer, dict) else {}

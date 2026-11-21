@@ -19,6 +19,7 @@ import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { FactForm, FlagForm } from '../components/Contribute';
 import { Alternatives, StoreLinks } from '../components/Alternatives';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Assistant } from '../components/Assistant';
 import { Research } from '../components/Research';
 import { CategoryTile, EmptyState, Notice, Pager, Skeleton, Stars, StatusBadge, TrustRing, scoreTone } from '../components/ui';
@@ -321,8 +322,8 @@ export function Product() {
         )}
       </section>
 
-      <div className="mt-8"><Research slug={p.slug} onRated={rated} /></div>
-      <Assistant slug={p.slug} name={p.name} />
+      <div className="mt-8"><ErrorBoundary section="research section"><Research slug={p.slug} onRated={rated} /></ErrorBoundary></div>
+      <ErrorBoundary section="assistant"><Assistant slug={p.slug} name={p.name} /></ErrorBoundary>
 
       {pass?.hazard && (
         <section className="mt-8 grid gap-8 lg:grid-cols-[1.4fr_1fr]">
@@ -360,7 +361,7 @@ export function Product() {
         </section>
       )}
 
-      <div className="mt-8"><Alternatives slug={p.slug} category={p.category} /></div>
+      <div className="mt-8"><ErrorBoundary section="alternatives"><Alternatives slug={p.slug} category={p.category} /></ErrorBoundary></div>
 
       <section aria-labelledby="reviews" className="mt-12 grid gap-8 lg:grid-cols-[1fr_24rem]">
         <div>

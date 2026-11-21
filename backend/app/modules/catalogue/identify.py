@@ -309,9 +309,11 @@ async def suggest_from_photo(db: AsyncSession, data_urls: list[str], barcode: st
                 db.add(MediaAnnotation(blob_id=assets[i].blob_id, label=label[:120],
                                        confidence=Decimal(str(confidence)),
                                        model_code="aws-rekognition-detect-labels"))
+    vision_error = None
     try:
         answer = await vision.read_photo(data_urls, photos.hints(reading))
     except vision.VisionUnavailable as exc:
+        vision_error = str(exc)[:300]
         if not reading.lines:
             request.status, request.completed_at = "failed", datetime.now(UTC)
             request.extracted = {"error": str(exc)[:300], "from_photo": True}
@@ -319,7 +321,7 @@ async def suggest_from_photo(db: AsyncSession, data_urls: list[str], barcode: st
             raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                                 "photo_identification_unavailable") from exc
         # The model is down but the reader saw the pack: offer its largest line, unsure.
-        answer = {"name": reading.lines[0], "confidence": 0.3,
+        answer = {"name": " ".join(reading.lines[:2])[:120], "confidence": 0.3,
                   "visible_text": " | ".join(reading.lines)}
     clean = {k: (str(answer.get(k)).strip()[:200] if answer.get(k) else None)
              for k in ("brand", "name", "model")}
@@ -332,6 +334,7 @@ async def suggest_from_photo(db: AsyncSession, data_urls: list[str], barcode: st
     seen_text = str(answer.get("visible_text") or "")[:500]
     request.extracted = {**clean, "category": code, "visible_text": seen_text, "from_photo": True,
                          "photos": len(decoded), "asset_ids": [str(a.id) for a in assets],
+                         "vision_error": vision_error,
                          "reader": {"lines": reading.lines[:10], "labels": reading.labels[:10],
                                     "error": reading.error}}
     query = " ".join(v for v in (clean["brand"], clean["name"], clean["model"]) if v)[:300]

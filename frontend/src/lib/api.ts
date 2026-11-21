@@ -142,7 +142,8 @@ export type Finding = {
 };
 export type Research = {
   enabled: boolean; status: string | null; searched_at: string | null; can_request: boolean;
-  stats: { cpsc_notices: number; cpsc_new: number; pages: number; findings: number; errors: string[] } | null;
+  // A queued or running search has empty stats: every field may be missing.
+  stats: Partial<{ cpsc_notices: number; cpsc_new: number; pages: number; findings: number; errors: string[] }> | null;
   findings: Finding[];
 };
 export type Citation = { id: string; kind: string; excerpt: string | null; url: string | null };

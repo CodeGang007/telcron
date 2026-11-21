@@ -172,3 +172,25 @@ async def test_every_database_down_is_a_503(client, monkeypatch):
     monkeypatch.setattr(openfacts, "lookup", also_down)
     r = await client.post(f"{API}/identify", json={"barcode": "012345678905"})
     assert (r.status_code, r.json()["detail"]) == (503, "lookup_unavailable")
+
+
+async def test_the_vision_call_fits_the_providers_limits(monkeypatch):
+    """Seen live: the model thought until its budget ran out, and it accepts three images at most."""
+    import httpx
+
+    from app.core.config import get_settings
+    monkeypatch.setattr(get_settings(), "llm_api_key", "test")
+    sent, calls = {}, []
+
+    async def post(self, url, json=None, headers=None):
+        calls.append(1)
+        sent.update(json)
+        if len(calls) == 1:  # the free plan's per-minute limit, once
+            return httpx.Response(429, headers={"retry-after": "0"}, request=httpx.Request("POST", url))
+        return httpx.Response(200, request=httpx.Request("POST", url), json={"choices": [{"message": {
+            "content": '{"brand": "pilgrim", "name": "Peeling Solution", "confidence": 0.95}'}}]})
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    answer = await vision.read_photo([f"data:image/jpeg;base64,{i}" for i in "ABCD"])
+    assert answer["brand"] == "pilgrim" and len(calls) == 2
+    images = [p for p in sent["messages"][0]["content"] if p["type"] == "image_url"]
+    assert len(images) == 3 and sent["reasoning_effort"] == "none"

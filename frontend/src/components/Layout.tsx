@@ -18,6 +18,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { Toaster } from 'sonner';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { ErrorBoundary } from './ErrorBoundary';
 import { Logo, LogoMark } from './Logo';
 
 type Item = { to: string; label: string; icon: LucideIcon };
@@ -191,7 +192,7 @@ export function Layout() {
         <AnimatePresence mode="wait">
           <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.22, ease: 'easeOut' }}>
             <Suspense fallback={<div className="container-page py-12"><div className="skeleton h-72 w-full rounded-[2rem]" /></div>}>
-              <Outlet />
+              <ErrorBoundary key={location.pathname}><Outlet /></ErrorBoundary>
             </Suspense>
           </motion.div>
         </AnimatePresence>

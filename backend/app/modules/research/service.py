@@ -267,7 +267,8 @@ async def summary(db: AsyncSession, product: Product) -> dict[str, Any]:
         "enabled": s.research_enabled,
         "status": last.status if last else None,
         "searched_at": (last.finished_at or last.created_at).isoformat() if last else None,
-        "stats": last.stats if last else None,
+        # A queued or running search has no stats yet: say so rather than send an empty object.
+        "stats": last.stats if last and last.status not in ("queued", "running") else None,
         "can_request": s.research_enabled and cooled,
         "findings": [{"kind": a.removeprefix(PREFIX), "title": v,
                       "source": m.split("+")[0], "about_this_product": float(c or 0) >= 0.9,

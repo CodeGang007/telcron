@@ -136,8 +136,8 @@ export function Research({ slug, onRated }: { slug: string; onRated: () => void 
             : 'Not searched yet.'}
         </p>
       )}
-      {data.stats && data.stats.errors.length > 0 && !busy && (
-        <p className="mt-3 text-xs text-muted">Some sources did not answer last time: {data.stats.errors.map((e) => e.split(':')[0]).join(', ')}.</p>
+      {!busy && (data.stats?.errors?.length ?? 0) > 0 && (
+        <p className="mt-3 text-xs text-muted">Some sources did not answer last time: {(data.stats?.errors ?? []).map((e) => e.split(':')[0]).join(', ')}.</p>
       )}
     </section>
   );

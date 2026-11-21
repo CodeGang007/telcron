@@ -22,6 +22,17 @@ function NotFound() {
   return <div className="container-page py-24 text-center text-muted">That page does not exist.</div>;
 }
 
+// After a deploy, an open tab asks for page files that no longer exist: reload once to get the new
+// version instead of showing nothing.
+window.addEventListener('vite:preloadError', () => {
+  try {
+    if (sessionStorage.getItem('telcron-reloaded')) return;
+    sessionStorage.setItem('telcron-reloaded', '1');
+  } catch { /* storage blocked: still reload */ }
+  window.location.reload();
+});
+window.addEventListener('load', () => { try { sessionStorage.removeItem('telcron-reloaded'); } catch { /* ignore */ } });
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
