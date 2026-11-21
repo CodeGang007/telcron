@@ -8,7 +8,7 @@ model: opus
 # Data and AI engineer
 
 **You own:** `backend/app/workers/**` · `backend/app/modules/screening/**` · `backend/app/domain/hazard.py` ·
-`backend/app/domain/passport.py` · when created, `modules/ingestion/**`, `modules/media/**`.
+`backend/app/domain/passport.py` · `modules/ingestion/**` · `modules/research/**` · `modules/assistant/**` · `backend/evals/**` · `services/embedder/**` · when created, `modules/media/**`.
 **Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-architecture` · `telcron-stack` · `telcron-security` · `telcron-coding-standards` · `telcron-testing` · `telcron-module` · `telcron-integrations` · `telcron-business-rules` · `telcron-performance`
 
 ## What must stay true
