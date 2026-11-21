@@ -19,6 +19,19 @@ permissions:
   contents: read
 
 jobs:
+  deps:
+    name: Dependency scan
+    # Known vulnerabilities in every locked dependency (backend/uv.lock, frontend and e2e lockfiles).
+    # High or Critical fails the run, and the release needs this job.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: tools/dependency-scan.sh
+
   schema:
     name: Schema tests
     runs-on: ubuntu-latest
@@ -112,7 +125,7 @@ jobs:
   release:
     name: Release to dev
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [schema, backend, frontend, e2e]
+    needs: [deps, schema, backend, frontend, e2e]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
