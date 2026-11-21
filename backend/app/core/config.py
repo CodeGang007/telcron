@@ -80,6 +80,7 @@ class Settings(BaseSettings):
     tavily_api_key: str | None = None
     research_model: str = "openai/gpt-oss-20b"
     research_cooldown_hours: int = 24
+    research_per_user_per_day: int = 5  # DEF-049: one member cannot spend the shared allowance
     # Photos (WO-014): `none` keeps nothing; `s3` stores them in MEDIA_BUCKET with the host role.
     media_store: str = "none"
     media_bucket: str | None = None
