@@ -31,7 +31,8 @@ async def request_research(id_or_slug: str, db: Db, user: Level1User) -> dict:
     job = await service.request(db, product, user.id, trigger="admin" if user.role == "admin"
                                 else "event")
     if job is None:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "research_not_due")
+        reason = await service.blocked(db, product) or "research_not_due"
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, reason)
     return {"job_id": str(job.id), "status": job.status}
 
 

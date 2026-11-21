@@ -2,7 +2,7 @@ import { BadgeCheck, CircleCheck, Star, ExternalLink, Globe, Landmark, Loader2, 
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { api, explain, post, type Finding, type Research as ResearchT } from '../lib/api';
+import { api, explain, MESSAGES, post, type Finding, type Research as ResearchT } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { track } from '../lib/researching';
 import { Skeleton } from './ui';
@@ -99,7 +99,7 @@ export function Research({ slug, name, onRated }: { slug: string; name: string; 
         </div>
         {member && data.enabled && (
           <button className="btn-ghost btn-sm" onClick={ask} disabled={asking || busy || !data.can_request}
-            title={data.can_request ? (data.unread ? 'Read the pages that were left' : 'Search again now') : data.unread ? 'Available a quarter of an hour after the last try' : 'Searched in the last day'}>
+            title={data.can_request ? (data.unread ? 'Read the pages that were left' : 'Search again now') : data.unread ? 'Available a quarter of an hour after the last try' : MESSAGES[data.blocked ?? ''] ?? 'Searched in the last day'}>
             <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />{busy ? 'Searching…' : data.unread ? 'Read the rest' : 'Search again'}
           </button>
         )}
@@ -113,6 +113,17 @@ export function Research({ slug, name, onRated }: { slug: string; name: string; 
           </div>
           <p className="mt-2 text-xs text-action/80">This takes a minute or two. You can keep using Telcron: we tell you when it is done, and the passport updates itself.</p>
         </motion.div>
+      )}
+
+      {!busy && !data.unread && (data.blocked === 'research_daily_limit' || data.blocked === 'research_month_limit') && (
+        <p className="mt-5 flex items-start gap-2 rounded-2xl bg-warn-tint px-4 py-3 text-sm text-warn">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          {!data.status
+            ? data.blocked === 'research_daily_limit'
+              ? 'Telcron has used today’s web-search allowance, so this product is waiting its turn. It is researched automatically as soon as the allowance frees up: no need to come back and press anything.'
+              : 'Telcron has used this month’s web-search allowance. This product is researched automatically when it renews.'
+            : MESSAGES[data.blocked]}
+        </p>
       )}
 
       {!busy && data.unread > 0 && (

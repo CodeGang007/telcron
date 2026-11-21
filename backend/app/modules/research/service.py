@@ -19,7 +19,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -53,7 +53,13 @@ async def _progress(product_id: uuid.UUID, stage: str, percent: int) -> None:
     seconds and needs no history)."""
     await (await get_redis()).set(f"telcron:research:{product_id}",
                                   json.dumps({"stage": stage, "percent": percent}), ex=PROGRESS_TTL)
-DAILY_CAP = 8  # four Tavily searches a run; the free plan is 1,000 searches a month
+# The search plan (Tavily, 1,000 searches a month free) is shared by every product and the
+# marketplace; a run spends four. The real balance is asked of the provider; the daily cap only
+# stops one busy day from spending the whole month.
+DAILY_CAP = 40
+RESERVE = 40         # searches kept back for the marketplace and retries
+USAGE_KEY = "telcron:research:searches_left"
+USAGE_TTL = 600
 PREFIX = "web_"
 
 
@@ -70,6 +76,8 @@ async def _latest(db: AsyncSession, product_id: uuid.UUID) -> IngestionJob | Non
 
 RETRY_AFTER = timedelta(minutes=15)  # a run whose reading failed may be retried this soon
 MAX_REREADS = 6                      # automatic re-reads of unread pages, per product per day
+BACKLOG_DAYS = 14                    # products added this recently and never researched catch up
+BACKLOG_PER_TICK = 3
 
 
 def _unread(job: IngestionJob | None) -> list[dict[str, str]]:
@@ -89,27 +97,53 @@ def _due(last: IngestionJob | None, now: datetime) -> bool:
     return last.created_at <= now - wait
 
 
-async def request(db: AsyncSession, product: Product, user_id: uuid.UUID | None,
-                  trigger: str = "event") -> IngestionJob | None:
-    """Queue a research run, unless one is not due or today's searches are spent. When the last
-    run left pages unread (the AI allowance was spent), only those are read again: no new search,
-    so it costs nothing from the search allowance."""
-    s = get_settings()
-    if not s.research_enabled:
-        return None
-    last = await _latest(db, product.id)
+async def _searches_left() -> int | None:
+    """The search plan's balance, asked of the provider at most every ten minutes."""
+    redis = await get_redis()
+    cached = await redis.get(USAGE_KEY)
+    if cached is not None:
+        return None if cached in (b"", "") else int(cached)
+    left = await web.searches_left()
+    await redis.set(USAGE_KEY, "" if left is None else str(left), ex=USAGE_TTL)
+    return left
+
+
+async def blocked(db: AsyncSession, product: Product, last: IngestionJob | None = None
+                  ) -> str | None:
+    """Why a research run cannot start now, as an error code; None when it can.
+    research_not_due: this product was searched recently (or is being searched).
+    research_daily_limit / research_month_limit: the shared web-search allowance is spent.
+    A re-read of pages left unread costs no search, so only the first reason applies to it."""
+    if not get_settings().research_enabled:
+        return "research_disabled"
+    last = last if last is not None else await _latest(db, product.id)
     now = datetime.now(UTC)
     if not _due(last, now):
+        return "research_not_due"
+    if _unread(last):
+        return None
+    today = await db.scalar(select(func.count()).select_from(IngestionJob).where(
+        IngestionJob.data_source_code == SOURCE, IngestionJob.created_at > now - timedelta(days=1),
+        ~IngestionJob.params.has_key("reread")))
+    if today >= DAILY_CAP:
+        return "research_daily_limit"
+    left = await _searches_left()
+    if left is not None and left < web.SEARCHES_PER_RUN + RESERVE:
+        return "research_month_limit"
+    return None
+
+
+async def request(db: AsyncSession, product: Product, user_id: uuid.UUID | None,
+                  trigger: str = "event") -> IngestionJob | None:
+    """Queue a research run, unless `blocked` says why not. When the last run left pages unread
+    (the AI allowance was spent), only those are read again: no new search, so it costs nothing
+    from the search allowance."""
+    last = await _latest(db, product.id)
+    if await blocked(db, product, last):
         return None
     params: dict[str, Any] = {"product_id": str(product.id)}
     if _unread(last):
         params["reread"] = str(last.id)
-    else:
-        today = await db.scalar(select(func.count()).select_from(IngestionJob).where(
-            IngestionJob.data_source_code == SOURCE, IngestionJob.created_at > now - timedelta(days=1),
-            ~IngestionJob.params.has_key("reread")))
-        if today >= DAILY_CAP:
-            return None
     job = IngestionJob(data_source_code=SOURCE, trigger=trigger, params=params,
                        triggered_by_user_id=user_id)
     db.add(job)
@@ -326,14 +360,15 @@ async def summary(db: AsyncSession, product: Product) -> dict[str, Any]:
     if last is not None and last.status in ("queued", "running"):
         raw = await (await get_redis()).get(f"telcron:research:{product.id}")
         progress = json.loads(raw) if raw else {"stage": "Waiting its turn in the queue", "percent": 3}
-    cooled = _due(last, datetime.now(UTC))
+    reason = await blocked(db, product, last)
     return {
         "enabled": s.research_enabled,
+        "blocked": reason,
         "status": last.status if last else None,
         "searched_at": (last.finished_at or last.created_at).isoformat() if last else None,
         # A queued or running search has no stats yet: say so rather than send an empty object.
         "stats": last.stats if last and last.status not in ("queued", "running") else None,
-        "can_request": s.research_enabled and cooled,
+        "can_request": reason is None,
         "progress": progress,
         "unread": len(_unread(last)),
         "findings": [{"kind": a.removeprefix(PREFIX), "title": v,
@@ -345,7 +380,8 @@ async def summary(db: AsyncSession, product: Product) -> dict[str, Any]:
 
 async def reread_due() -> int:
     """Every 20 minutes (Worker cron): products whose last run left pages unread, read again
-    (no new search), up to MAX_REREADS times a day each."""
+    (no new search), up to MAX_REREADS times a day each; and recent products never researched
+    (added while the search allowance was spent), researched now if it allows."""
     now = datetime.now(UTC)
     queued = 0
     async with SessionLocal() as db:
@@ -365,6 +401,17 @@ async def reread_due() -> int:
                 continue
             product = await db.get(Product, uuid.UUID(pid))
             if product is not None and await request(db, product, None, trigger="schedule"):
+                queued += 1
+        # Products added while the search allowance was spent were never researched: catch up,
+        # oldest first, a few at a time, as the allowance frees up.
+        never = select(IngestionJob.id).where(
+            IngestionJob.data_source_code == SOURCE,
+            IngestionJob.params["product_id"].astext == cast(Product.id, String))
+        waiting = (await db.execute(select(Product).where(
+            Product.created_at > now - timedelta(days=BACKLOG_DAYS), ~exists(never))
+            .order_by(Product.created_at).limit(BACKLOG_PER_TICK))).scalars().all()
+        for product in waiting:
+            if await request(db, product, None, trigger="schedule"):
                 queued += 1
         await db.commit()
     return queued

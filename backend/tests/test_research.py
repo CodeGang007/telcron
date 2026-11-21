@@ -4,7 +4,7 @@ stored as cited evidence, and the product rated again from it."""
 import uuid
 
 from helpers import API, verified_user
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 
 from app.core.config import get_settings
 from app.models import IdentificationRequest, IngestionJob, ProductAlias
@@ -276,6 +276,9 @@ async def test_unread_pages_are_read_again_without_searching_again(client, db, m
     assert state["unread"] == 1 and state["can_request"] is False  # not yet: a quarter of an hour
     await db.execute(update(IngestionJob).where(IngestionJob.id == job.id).values(
         created_at=IngestionJob.created_at - timedelta(minutes=20)))
+    await db.execute(update(IngestionJob).where(  # the one queued on confirm, cancelled above
+        IngestionJob.params["product_id"].astext == pid, IngestionJob.id != job.id).values(
+        created_at=IngestionJob.created_at - timedelta(minutes=30)))
     await db.commit()
     assert (await client.get(f"{API}/products/{made['slug']}/research")).json()["can_request"]
 
@@ -289,3 +292,36 @@ async def test_unread_pages_are_read_again_without_searching_again(client, db, m
     assert retry.params["reread"] == str(job.id)
     second = await service.run(retry.id)
     assert second["findings"] == 1 and second["unread"] == 0 and len(searches) == 1  # no new search
+
+
+async def test_a_spent_search_allowance_says_so_and_catches_up_later(client, db, monkeypatch):
+    """Seen live: with the shared allowance spent, a new product was refused as 'searched
+    recently' and never researched. Now the refusal names the allowance, and the Worker's cron
+    researches the product once the allowance frees up."""
+    _, _, member = await verified_user(client)
+    made = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": f"Kettle K{uuid.uuid4().hex[:4]}", "brand": "Brewmaster",
+        "category": "household"})).json()
+    pid = (await client.get(f"{API}/products/{made['slug']}")).json()["id"]
+    await db.execute(delete(IngestionJob).where(IngestionJob.params["product_id"].astext == pid))
+    await db.commit()
+
+    async def spent():
+        return 12  # fewer than a run plus the reserve
+    monkeypatch.setattr(service, "_searches_left", spent)
+    state = (await client.get(f"{API}/products/{made['slug']}/research")).json()
+    assert state["can_request"] is False and state["blocked"] == "research_month_limit"
+    refused = await client.post(f"{API}/products/{made['slug']}/research", headers=member)
+    assert refused.status_code == 429 and refused.json()["detail"] == "research_month_limit"
+    await service.reread_due()  # still spent: the product keeps waiting
+    assert await db.scalar(select(IngestionJob.id).where(
+        IngestionJob.params["product_id"].astext == pid)) is None
+
+    async def renewed():
+        return 900
+    monkeypatch.setattr(service, "_searches_left", renewed)
+    monkeypatch.setattr(service, "BACKLOG_PER_TICK", 500)  # other tests' products wait too
+    await service.reread_due()
+    queued = await db.scalar(select(IngestionJob).where(
+        IngestionJob.params["product_id"].astext == pid))
+    assert queued is not None and queued.trigger == "schedule" and "reread" not in queued.params

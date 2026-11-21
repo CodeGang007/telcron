@@ -20,6 +20,8 @@ import httpx
 from app.core.config import get_settings
 
 TAVILY = "https://api.tavily.com/search"
+TAVILY_USAGE = "https://api.tavily.com/usage"
+SEARCHES_PER_RUN = 4
 # Government product-safety regulators: the second search looks only here.
 REGULATORS = ["cpsc.gov", "saferproducts.gov", "fda.gov", "nhtsa.gov", "ec.europa.eu",
               "productsafety.gov.au", "accc.gov.au", "recalls-rappels.canada.ca", "canada.ca",
@@ -236,6 +238,25 @@ async def _tavily(query: str, domains: list[str] | None = None, source: str = "w
     return [Hit(str(r.get("title") or r["url"])[:300], r["url"], str(r.get("content") or "")[:700],
                 source)
             for r in response.json().get("results", []) if str(r.get("url", "")).startswith("http")]
+
+
+async def searches_left() -> int | None:
+    """Searches left this month on the search plan, by the provider's own count (it includes the
+    marketplace's searches too). None when unknown: no key, or the provider did not answer."""
+    s = get_settings()
+    if not s.tavily_api_key:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            response = await http.get(TAVILY_USAGE,
+                                      headers={"Authorization": f"Bearer {s.tavily_api_key}"})
+            response.raise_for_status()
+        account = response.json()["account"]
+        if account.get("plan_limit") is None:
+            return None
+        return int(account["plan_limit"]) - int(account.get("plan_usage") or 0)
+    except (httpx.HTTPError, KeyError, TypeError, ValueError):
+        return None
 
 
 async def _browse(query: str) -> list[Hit]:
