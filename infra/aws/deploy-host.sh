@@ -153,7 +153,7 @@ esac
 compose up -d --remove-orphans
 
 say "seeded admin"
-compose run --rm -T -e SEED_ADMIN_PASSWORD="$SEED_ADMIN_PASSWORD" api python -m app.seed
+SEED_ADMIN_PASSWORD="$SEED_ADMIN_PASSWORD" compose run --rm -T -e SEED_ADMIN_PASSWORD api python -m app.seed
 
 say "health"
 for _ in $(seq 1 30); do

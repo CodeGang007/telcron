@@ -1,7 +1,7 @@
 # AWS dev environment
 
-Region `us-east-2`. The repository is public, so the account id, resource ids, IP addresses, hostnames
-and the database endpoint are **not** in this file. They are in the console, in the repository's Actions
+Region `<region>`. The repository is public, so the region, the app secret's name (`<app secret>`), the
+account id, resource ids, IP addresses, hostnames and the database endpoint are **not** in this file. They are in the console, in the repository's Actions
 variables (`DEV_WEB_URL`, `DEV_API_URL`) and in `docs/runbooks/aws-dev.local.md`, which is gitignored.
 
 The dev site has been live since 2026-11-16. Nobody holds AWS access keys: people use the console or
@@ -60,7 +60,7 @@ their releases, and anyone who can write to `release/dev` can deploy to dev. Pro
 ## Looking at it
 
 ```bash
-aws login                                   # your own sign-in; region us-east-2
+aws login                                   # your own sign-in; region <region>
 # what the backend host's agent did last
 aws ssm send-command --document-name AWS-RunShellScript --instance-ids <instance id> \
   --parameters 'commands=["journalctl -u telcron-deploy -n 60 --no-pager"]'
@@ -108,7 +108,7 @@ deploy, then run `restore-db.sh` with the newest backup. Data since 02:30 UTC th
 Every step that creates, changes or deletes something needs the human's yes (given for this plan on
 2026-11-21). Values in angle brackets are in `aws-dev.local.md` or the console.
 
-1. Add `PG_SUPERUSER_PASSWORD` (for example 64 hex characters) to the `telcron/dev/app` secret, keeping
+1. Add `PG_SUPERUSER_PASSWORD` (for example 64 hex characters) to the `<app secret>` secret, keeping
    its other fields. Never print the secret.
 2. On the old host: `systemctl disable --now telcron-deploy.timer`, so it keeps running its current
    release untouched (the new `deploy-host.sh` would refuse there anyway).
@@ -138,7 +138,7 @@ Keys for outside services (Groq, Gemini, Tavily, Gmail): `docs/runbooks/api-keys
 
 Sign-up is closed there: the application cannot send verification codes yet (WO-005), and codes are never
 shown on a deployed build. One admin exists, `admin@telcron.example.com`; its password is the
-`SEED_ADMIN_PASSWORD` field of the `telcron/dev/app` secret. The demo products are fictional.
+`SEED_ADMIN_PASSWORD` field of the `<app secret>` secret. The demo products are fictional.
 
 ## What exists
 
@@ -150,10 +150,10 @@ shown on a deployed build. One admin exists, `admin@telcron.example.com`; its pa
 | Lightsail instance, static IP | `telcron-dev-web`, `telcron-dev-web-ip` | The blueprint's own stack (nginx, MariaDB, PHP, phpMyAdmin, Varnish) is stopped and disabled |
 | RDS PostgreSQL (old) | `telcron-dev` | **Deleted 2026-11-21** (no final snapshot; the final dump is in the raw bucket under `backups/rds-final/`) |
 | Security group | `telcron-dev-backend` | 80 and 443 in. (`telcron-dev-db` deleted with RDS) |
-| IAM role and instance profile | `telcron-dev-backend` | Session Manager, ECR read, the two buckets, `telcron/dev/*` secrets, Bedrock invoke, SES send (`telcron-dev-ses-send`), Rekognition DetectText/DetectLabels (`telcron-dev-rekognition`, about $0.001 per call each, WO-014). Used by the new host too |
+| IAM role and instance profile | `telcron-dev-backend` | Session Manager, ECR read, the two buckets, the secrets under the app secret's prefix (`<app secret prefix>/*`), Bedrock invoke, SES send (`telcron-dev-ses-send`), Rekognition DetectText/DetectLabels (`telcron-dev-rekognition`, about $0.001 per call each, WO-014). Used by the new host too |
 | S3 buckets | `telcron-dev-media-<account-id>`, `telcron-dev-raw-<account-id>` | Public access blocked. Media holds members' product photos (`photos/`), served through short-lived links (WO-014); raw holds the database backups (`backups/postgres/`, 14 days; `backups/rds-final/`) |
 | ECR repository | `telcron/backend` | Holds the image of the first, manual deploy. The pipeline does not use it |
-| Secret | `telcron/dev/app` | `JWT_SECRET`, `APP_DB_PASSWORD`, `SEED_ADMIN_PASSWORD`, `PG_SUPERUSER_PASSWORD` (the host's PostgreSQL superuser); optional `LLM_API_KEY`, `MAIL_FROM`, `SMTP_PASSWORD`, `TAVILY_API_KEY`; never displayed |
+| Secret | `<app secret>` | `JWT_SECRET`, `APP_DB_PASSWORD`, `SEED_ADMIN_PASSWORD`, `PG_SUPERUSER_PASSWORD` (the host's PostgreSQL superuser); optional `LLM_API_KEY`, `GEMINI_API_KEY`, `MAIL_FROM`, `SMTP_PASSWORD`, `TAVILY_API_KEY`; never displayed |
 | Secret (old) | RDS-managed master password | Deleted with RDS |
 | Budget | `telcron-monthly` | USD 22 a month, cost budget |
 

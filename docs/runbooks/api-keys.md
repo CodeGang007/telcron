@@ -2,7 +2,8 @@
 
 Every key lives in exactly two places, never in the repository:
 
-- **Live (AWS):** a field of the Secrets Manager secret `telcron/dev/app` (region `us-east-2`). The
+- **Live (AWS):** a field of the Secrets Manager secret `<app secret>` (region `<region>`; both in the
+  gitignored `docs/runbooks/aws-dev.local.md`). The
   server reads it on every deploy (`infra/aws/deploy-host.sh`) and writes it into its env file.
 - **Your machine:** the gitignored `.env` at the repo root (`.env.example` lists the names).
 
@@ -34,10 +35,10 @@ Model names are settings, not secrets: `LLM_MODEL`, `LLM_FALLBACK_MODEL`, `VISIO
 
    ```bash
    export FIELD=GEMINI_API_KEY
-   export V="$(pbpaste)"; ~/aws-cli/aws secretsmanager get-secret-value --region us-east-2 \
-     --secret-id telcron/dev/app --query SecretString --output text \
+   export V="$(pbpaste)"; ~/aws-cli/aws secretsmanager get-secret-value --region <region> \
+     --secret-id <app secret> --query SecretString --output text \
    | python3 -c 'import json,os,sys; d=json.load(sys.stdin); d[os.environ["FIELD"]]=os.environ["V"].strip(); print(json.dumps(d))' \
-   | ~/aws-cli/aws secretsmanager put-secret-value --region us-east-2 --secret-id telcron/dev/app \
+   | ~/aws-cli/aws secretsmanager put-secret-value --region <region> --secret-id <app secret> \
      --secret-string file:///dev/stdin --query VersionId --output text; unset V
    ```
    It prints a version id.
@@ -57,7 +58,7 @@ Edit `.env`, then restart: `make dev-stop && make dev`.
 The server redeploys when the release branch moves; to re-run the current release instead:
 
 ```bash
-~/aws-cli/aws ssm send-command --region us-east-2 --document-name AWS-RunShellScript \
+~/aws-cli/aws ssm send-command --region <region> --document-name AWS-RunShellScript \
   --instance-ids <host instance id, see aws-dev.local.md> \
   --parameters 'commands=["rm -f /opt/telcron/.release /opt/telcron/.attempt && systemctl start telcron-deploy.service"]'
 ```
@@ -67,10 +68,7 @@ until it prints `deployed <commit>`.
 ## When a key leaks
 
 Revoke it at the provider first (that is what stops misuse), then replace it as above. Keys pasted into
-a chat, an issue or a commit count as leaked.
-
-## Current status (update when it changes)
-
-- `GEMINI_API_KEY` is **temporary** (borrowed from another project, 2026-11-22): replace it with a key
-  from a Telcron Google project when one exists.
-- `LLM_API_KEY`, `TAVILY_API_KEY` and the Gmail app password were shared in a chat: rotate when convenient.
+a chat, an issue or a commit count as leaked. Deleting the text does not help: a public repository's
+history keeps it, so rotation is the fix. Track a leaked key in a defect, never in this file; this
+runbook records how, not the state of any key. Each key should belong to a Telcron-owned account or
+project at its provider.
