@@ -18,7 +18,7 @@
 
 | WO-012 | Web app redesign: open-source components, scan page, animated wallet and rewards, pagination | (single session) → qa-test-engineer | — | DONE-PENDING-QA — live; journey 7 passed |
 
-| WO-013 | Sign-up codes by email (SES); Level 1 = verified email (ADR-006) | John Carter (technician) | — | IN PROGRESS — branch `wo-013-email-signup`; checklist in the WO |
+| WO-013 | Sign-up codes by email (SES); Level 1 = verified email (ADR-006) | platform-identity-engineer (single session) → security-auditor | — | IN PROGRESS — branch `wo-013-email-signup`; checklist in the WO |
 
 ## Defects
 
