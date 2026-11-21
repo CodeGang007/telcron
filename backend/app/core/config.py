@@ -24,7 +24,26 @@ class Settings(BaseSettings):
     login_max_failures: int = 5
     login_lock_minutes: int = 15
     # Local only: return verification codes in the register response instead of sending them.
+    # Refused at startup unless ENV is local or test (DEF-048).
     dev_expose_codes: bool = False
+    # Request limits on the sign-up and sign-in routes, counted in Redis (DEF-044, core/ratelimit.py).
+    # Each is the most requests per window from one client address and for one email address.
+    # Sized so a household behind one address and the browser journey (3 members a run) never meet
+    # them, while code guessing (5 tries a code, at most MAIL_PER_ADDRESS_PER_DAY codes) stays hopeless.
+    rate_limits_enabled: bool = True
+    register_per_ip_per_hour: int = 30
+    register_per_email_per_hour: int = 5
+    resend_per_ip_per_hour: int = 30
+    resend_per_email_per_hour: int = 6
+    verify_per_ip_per_hour: int = 60
+    verify_per_email_per_hour: int = 20
+    login_per_ip_per_15_minutes: int = 60
+    login_per_email_per_15_minutes: int = 20
+    # Codes and notices emailed to one address in 24 hours; beyond it nothing is sent, silently.
+    mail_per_address_per_day: int = 10
+    # Proxies whose X-Forwarded-For is believed (comma-separated addresses or CIDR ranges). Empty:
+    # the connecting address is the client. Set it to the reverse proxy's network when one is in front.
+    trusted_proxies: str = ""
     # stub | llm. `llm` scores hazards with a model over an OpenAI-compatible API (Groq's free plan
     # by default) and falls back to the keyword stub when it cannot answer.
     ai_provider: str = "stub"
@@ -64,6 +83,9 @@ class Settings(BaseSettings):
     # Photos (WO-014): `none` keeps nothing; `s3` stores them in MEDIA_BUCKET with the host role.
     media_store: str = "none"
     media_bucket: str | None = None
+    # Raw provider responses (WO-054): `none` keeps nothing; `s3` stores them in RAW_BUCKET.
+    raw_store: str = "none"
+    raw_bucket: str | None = None
     # `rekognition` reads text and labels from a photo before the vision model; `none` skips it.
     image_reader: str = "none"
     # Embeddings (WO-015): our own embedder service (services/embedder). Unset = no vectors; search
@@ -91,6 +113,13 @@ class Settings(BaseSettings):
     def _refuse_default_secret_outside_local(self) -> "Settings":
         if self.env not in ("local", "test") and self.jwt_secret == DEFAULT_JWT_SECRET:
             raise ValueError("JWT_SECRET must be set when ENV is not local")
+        return self
+
+    @model_validator(mode="after")
+    def _refuse_exposed_codes_outside_local(self) -> "Settings":
+        # Codes in the response would let anyone confirm any address: local and test stacks only.
+        if self.dev_expose_codes and self.env not in ("local", "test"):
+            raise ValueError("DEV_EXPOSE_CODES must be false when ENV is not local or test")
         return self
 
 

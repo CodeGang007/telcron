@@ -4,6 +4,7 @@ import hashlib
 import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 
 import jwt
 from argon2 import PasswordHasher
@@ -26,6 +27,17 @@ def verify_password(password_hash: str, password: str) -> bool:
         return False
     except Exception:  # malformed hash: treat as a failed login, never a 500
         return False
+
+
+@lru_cache(maxsize=1)
+def _dummy_hash() -> str:
+    return _hasher.hash(secrets.token_urlsafe(16))
+
+
+def verify_dummy(password: str) -> None:
+    """The same argon2 work as a real check, for an address with no account: without it, how long
+    a failed sign-in takes would say whether the address is registered (DEF-043)."""
+    verify_password(_dummy_hash(), password)
 
 
 def create_access_token(user_id: uuid.UUID, session_id: uuid.UUID) -> tuple[str, int]:

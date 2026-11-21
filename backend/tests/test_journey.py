@@ -142,7 +142,8 @@ async def test_lockout_after_five_bad_passwords(client):
         r = await client.post(f"{API}/auth/login", json={"email": email, "password": "wrong-pass"})
         assert r.status_code == 401
     r = await client.post(f"{API}/auth/login", json={"email": email, "password": PASSWORD})
-    assert r.status_code == 423
+    # Locked, even with the right password, and said the way a wrong password is (DEF-043).
+    assert r.status_code == 401 and r.json()["detail"] == "invalid_credentials"
 
 
 async def test_a_review_rescreens_and_the_new_score_cites_it(client, db):
@@ -285,12 +286,11 @@ async def test_the_code_is_emailed_and_a_refused_send_does_not_break_sign_up(cli
     monkeypatch.setattr(s, "mail_provider", "ses")
     monkeypatch.setattr(s, "mail_from", "Telcron <codes@example.com>")
     sent = []
-    monkeypatch.setattr(mailer, "_send_ses", lambda to, code: sent.append((to, code)))
+    monkeypatch.setattr(mailer, "_send_ses", lambda to, message: sent.append((to, message[0])))
     email, codes = await signup(client)
-    assert sent == [(email, codes["email"])]
-    assert mailer._body(codes["email"], 10)[0] == f"{codes['email']} is your Telcron code"
+    assert sent == [(email, f"{codes['email']} is your Telcron code")]
 
-    def refuse(to, code):
+    def refuse(to, message):
         raise RuntimeError("Email address is not verified (SES sandbox)")
     monkeypatch.setattr(mailer, "_send_ses", refuse)
     email, codes = await signup(client)  # still 201: the member can ask for a new code
@@ -309,14 +309,14 @@ async def test_a_refused_send_is_reported_and_not_logged_as_sent(client, db, mon
     s = get_settings()
     monkeypatch.setattr(s, "mail_provider", "ses")
     monkeypatch.setattr(s, "mail_from", "codes@example.com")
-    monkeypatch.setattr(mailer, "_send_ses", lambda to, code: None)
+    monkeypatch.setattr(mailer, "_send_ses", lambda to, message: None)
     email = f"{uuid.uuid4().hex[:10]}@example.com"
     ok = await client.post(f"{API}/auth/register", json={
         "email": email, "password": PASSWORD, "display_name": "Sent"})
     assert ok.json()["email_sent"] is True
     assert await _events(db, email) == ["otp_sent"]
 
-    def refuse(to, code):
+    def refuse(to, message):
         raise RuntimeError("Email address is not verified")
     monkeypatch.setattr(mailer, "_send_ses", refuse)
     email = f"{uuid.uuid4().hex[:10]}@example.com"
