@@ -5,7 +5,7 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import BigInteger, Float, case, cast, func, null, or_, select, text, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -74,19 +74,12 @@ async def search(db: AsyncSession, q: str, limit: int, user_id: uuid.UUID | None
     )).offset(offset).limit(limit))).all()
     if exact:
         return [_summary(r) for r in exact]
-    rank = func.greatest(func.word_similarity(q, Product.canonical_name),
-                         func.word_similarity(q, func.coalesce(Brand.name, "")))
-    words = _summary_query().where(or_(
-        Product.canonical_name.ilike(f"%{q}%"), Brand.name.ilike(f"%{q}%"), rank > 0.35))
     meaning = await _by_meaning(db, q)
     if not meaning:  # no embedder, or it is down: words alone
-        rows = (await db.execute(words.order_by(rank.desc(), Product.canonical_name)
-                                 .offset(offset).limit(limit))).all()
-        return [_summary(r) for r in rows]
+        return [_summary(r) for r in await _by_words(db, q, offset, limit)]
     # Both lists, fused by reciprocal rank: a product found by its name and by its meaning ranks
     # first; one found only by meaning ("phone that caught fire") still appears.
-    by_words = (await db.execute(words.order_by(rank.desc(), Product.canonical_name)
-                                 .limit(CANDIDATES))).all()
+    by_words = await _by_words(db, q, 0, CANDIDATES)
     score: dict[uuid.UUID, float] = {}
     for i, row in enumerate(by_words):
         score[row.id] = score.get(row.id, 0) + 1 / (RRF_K + i)
@@ -99,6 +92,58 @@ async def search(db: AsyncSession, q: str, limit: int, user_id: uuid.UUID | None
     return [_summary(rows[i]) for i in order if i in rows]
 
 
+async def _by_words(db: AsyncSession, q: str, offset: int, limit: int) -> list[Any]:
+    """Products whose name or brand is like the words, best first, read through the trigram index.
+
+    Three short lists, each cut at offset + limit rows, are merged; nothing reads the whole table.
+    - by name: a KNN walk of the GiST index `products_i1_idx`; `canonical_name <->> q` is
+      1 - word_similarity(q, name), the rank the search has always used;
+    - by brand: the products of the brands like the words (`brands` is small);
+    - by part of a word: names containing the text (`ILIKE`, served by the same index), for
+      fragments like "len" in "Blender" whose similarity is low.
+    """
+    window = offset + limit
+    none = cast(null(), BigInteger)
+    distance = Product.canonical_name.op("<->>", return_type=Float)(q)
+    contains = f"%{q}%"
+    near = (select(Product.id, func.row_number().over(order_by=distance).label("by_name"),
+                   none.label("by_brand"), none.label("by_part"))
+            .where(Product.status == "active").order_by(distance).limit(window))
+    liked = (select(Brand.id, func.word_similarity(q, Brand.name).label("rank"))
+             .where(or_(Brand.name.ilike(contains), func.word_similarity(q, Brand.name) > MATCH))
+             .subquery("liked"))
+    # Numbered after the cut, so PostgreSQL keeps only the top rows instead of sorting them all.
+    top = (select(Product.id, liked.c.rank, Product.canonical_name)
+           .join(liked, liked.c.id == Product.brand_id).where(Product.status == "active")
+           .order_by(liked.c.rank.desc(), Product.canonical_name, Product.id).limit(window)
+           .subquery("top"))
+    of_brand = select(top.c.id, none, func.row_number().over(
+        order_by=(top.c.rank.desc(), top.c.canonical_name, top.c.id)), none)
+    part = (select(Product.id, none, none, func.row_number().over(order_by=distance))
+            .where(Product.status == "active", Product.canonical_name.ilike(contains))
+            .order_by(distance).limit(window))
+    both = union_all(*(s.subquery().select() for s in (near, of_brand, part))).subquery()
+    found = (select(both.c.id, func.min(both.c.by_name).label("by_name"),
+                    func.min(both.c.by_brand).label("by_brand"),
+                    func.min(both.c.by_part).label("by_part"))
+             .group_by(both.c.id).subquery("found"))
+    name_rank = func.word_similarity(q, Product.canonical_name)
+    brand_rank = func.word_similarity(q, func.coalesce(Brand.name, ""))
+    rank = func.greatest(name_rank, brand_rank)
+    # Each product is placed by the list its rank came from, so a page's order does not depend on
+    # how far the lists were read: page n+1 continues page n exactly.
+    source = case((brand_rank > name_rank, 1), (name_rank > MATCH, 0), else_=2)
+    position = case((brand_rank > name_rank, found.c.by_brand),
+                    (name_rank > MATCH, found.c.by_name), else_=found.c.by_part)
+    stmt = (_summary_query().join(found, found.c.id == Product.id)
+            .where(or_(Product.canonical_name.ilike(contains), Brand.name.ilike(contains),
+                       rank > MATCH))
+            .order_by(rank.desc(), source, position.asc().nulls_last())
+            .offset(offset).limit(limit))
+    return list((await db.execute(stmt)).all())
+
+
+MATCH = 0.35  # word similarity above which a name or brand is about the query
 CANDIDATES = 50
 RRF_K = 60
 CLOSE = 0.38  # cosine distance under which a product is about the query (calibrated, WO-015)
