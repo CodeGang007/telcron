@@ -31,9 +31,55 @@
   --color-gold-tint: #fef3c7;
   --color-neutral-tint: #f1f3f8;
 
+  /* Accents for coins, medals, streaks and stat cards (DEF-013). */
+  --color-brand-blush: #ffe4e6;
+  --color-brand-soft: #fda4af;
+  --color-ok-glow: #34d399;
+  --color-ok-bright: #10b981;
+  --color-ok-deep: #0d9488;
+  --color-warn-bright: #ea580c;
+  --color-flame: #fb923c;
+  --color-gold-light: #fcd34d;
+  --color-gold-mid: #fbbf24;
+  --color-gold-deep: #d97706;
+  --color-gold-ink: #b45309;
+  --color-gold-dark: #451a03;
+  --color-silver-light: #cbd5e1;
+  --color-silver: #64748b;
+  --color-bronze-light: #fdba74;
+  --color-bronze: #c2410c;
+  --color-violet: #8b5cf6;
+
+  /* Category tiles: one gradient per catalogue category, plus a fallback (DEF-013). */
+  --color-cat-kitchen-from: #f43f5e;
+  --color-cat-kitchen-to: #fb923c;
+  --color-cat-cooling-from: #0ea5e9;
+  --color-cat-cooling-to: #22d3ee;
+  --color-cat-air-from: #06b6d4;
+  --color-cat-air-to: #3b82f6;
+  --color-cat-power-from: #f59e0b;
+  --color-cat-power-to: #facc15;
+  --color-cat-phone-from: #8b5cf6;
+  --color-cat-phone-to: #d946ef;
+  --color-cat-electronics-from: #6366f1;
+  --color-cat-electronics-to: #8b5cf6;
+  --color-cat-appliance-from: #f97316;
+  --color-cat-appliance-to: #f43f5e;
+  --color-cat-household-from: #10b981;
+  --color-cat-household-to: #2dd4bf;
+  --color-cat-food-from: #84cc16;
+  --color-cat-food-to: #10b981;
+  --color-cat-other-from: #64748b;
+  --color-cat-other-to: #94a3b8;
+
   --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.12);
   --shadow-lift: 0 2px 4px rgb(15 23 42 / 0.05), 0 22px 44px -18px rgb(15 23 42 / 0.28);
   --shadow-glow: 0 0 0 1px rgb(79 70 229 / 0.15), 0 12px 40px -10px rgb(79 70 229 / 0.45);
+  --shadow-brand: 0 14px 34px -10px rgb(226 55 68 / 0.75);
+  --shadow-brand-sm: 0 10px 24px -8px rgb(226 55 68 / 0.8);
+  --shadow-hairline: 0 1px 0 rgb(15 23 42 / 0.02);
+  --shadow-float: 0 20px 50px -20px rgb(0 0 0 / 0.7);
+  --shadow-deep: 0 40px 80px -20px rgb(0 0 0 / 0.6);
 
   --animate-shimmer: shimmer 1.6s linear infinite;
   --animate-float: float 7s ease-in-out infinite;
@@ -115,7 +161,7 @@ body {
     background-size: 44px 44px;
   }
   .text-gradient {
-    @apply bg-gradient-to-r from-white via-rose-100 to-rose-300 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-white via-brand-blush to-brand-soft bg-clip-text text-transparent;
   }
 }
 

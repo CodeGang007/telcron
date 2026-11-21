@@ -175,7 +175,7 @@ export function Scan() {
             {phase === 'error' && (
               <motion.div key="error" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 grid place-items-center p-8 text-center text-white">
                 <div>
-                  <CameraOff className="mx-auto size-12 text-rose-300" />
+                  <CameraOff className="mx-auto size-12 text-brand-soft" />
                   <p className="mx-auto mt-4 max-w-sm text-sm text-white/80">{error}</p>
                   <button className="btn-brand mt-6" onClick={startCamera}><Camera className="size-4" />Try the camera again</button>
                 </div>

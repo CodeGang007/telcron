@@ -72,7 +72,7 @@ export function Assistant({ slug, name }: { slug: string; name: string }) {
       <motion.button
         initial={{ opacity: 0, y: 20, scale: 0.9 }} animate={{ opacity: 1, y: 0, scale: 1 }} whileHover={{ y: -2 }} whileTap={{ scale: 0.96 }}
         onClick={() => setOpen(true)}
-        className="fixed bottom-24 right-4 z-30 flex items-center gap-2 rounded-full bg-gradient-to-br from-brand-bright to-brand-deep px-5 py-3.5 text-sm font-semibold text-white shadow-[0_14px_34px_-10px_rgb(226_55_68/0.75)] lg:bottom-8 lg:right-8"
+        className="fixed bottom-24 right-4 z-30 flex items-center gap-2 rounded-full bg-gradient-to-br from-brand-bright to-brand-deep px-5 py-3.5 text-sm font-semibold text-white shadow-brand lg:bottom-8 lg:right-8"
         aria-label={`Ask about ${name}`}
       >
         <Sparkles className="size-4" />Ask about this product

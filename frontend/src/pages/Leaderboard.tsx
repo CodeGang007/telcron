@@ -7,9 +7,9 @@ import { useLoad } from '../lib/useLoad';
 
 type Row = { rank: number; display_name: string; coins: number };
 const PODIUM = [
-  { place: 2, height: 'h-28', tone: 'from-slate-300 to-slate-500', icon: Medal },
-  { place: 1, height: 'h-40', tone: 'from-amber-300 to-amber-600', icon: Crown },
-  { place: 3, height: 'h-20', tone: 'from-orange-300 to-orange-700', icon: Medal },
+  { place: 2, height: 'h-28', tone: 'from-silver-light to-silver', icon: Medal },
+  { place: 1, height: 'h-40', tone: 'from-gold-light to-gold-deep', icon: Crown },
+  { place: 3, height: 'h-20', tone: 'from-bronze-light to-bronze', icon: Medal },
 ];
 
 export function Leaderboard() {
@@ -60,7 +60,7 @@ export function Leaderboard() {
                 <span className="grid size-9 place-items-center rounded-full bg-panel text-sm font-semibold">{r.display_name.slice(0, 1)}</span>
                 {r.display_name}
               </span>
-              <span className="font-display font-bold text-amber-600">{r.coins.toLocaleString()}</span>
+              <span className="font-display font-bold text-gold-deep">{r.coins.toLocaleString()}</span>
             </motion.li>
           ))}
         </ol>

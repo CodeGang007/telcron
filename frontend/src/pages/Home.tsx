@@ -40,7 +40,7 @@ function PassportPreview() {
       className="relative hidden lg:block"
     >
       <div className="animate-float">
-        <div className="w-[360px] rounded-[2rem] border border-white/15 bg-white p-6 text-ink shadow-[0_40px_80px_-20px_rgb(0_0_0/0.6)]">
+        <div className="w-[360px] rounded-[2rem] border border-white/15 bg-white p-6 text-ink shadow-deep">
           <div className="flex items-center justify-between">
             <p className="eyebrow">Product passport · v3</p>
             <StatusBadge badge="verified" />
@@ -81,7 +81,7 @@ function PassportPreview() {
         transition={{ delay: 1.4 }}
         className="absolute -bottom-8 -left-16 rounded-2xl border border-white/10 bg-night/85 px-4 py-3 text-white shadow-2xl backdrop-blur-xl"
       >
-        <p className="flex items-center gap-2 text-sm font-semibold"><Megaphone className="size-4 text-rose-300" />Recall alert sent</p>
+        <p className="flex items-center gap-2 text-sm font-semibold"><Megaphone className="size-4 text-brand-soft" />Recall alert sent</p>
         <p className="text-xs text-white/60">to everyone who owns it</p>
       </motion.div>
     </motion.div>
@@ -111,7 +111,7 @@ export function Home() {
         <div className="container-page relative grid items-center gap-16 pb-28 pt-36 lg:grid-cols-[1.15fr_1fr] lg:pt-40">
           <motion.div variants={stagger.container} initial="hidden" animate="show">
             <motion.p variants={stagger.item} className="glass inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium text-white/80">
-              <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px] shadow-emerald-400" />
+              <span className="size-1.5 rounded-full bg-ok-glow shadow-[0_0_10px] shadow-ok-glow" />
               Live recall data from the US Consumer Product Safety Commission
             </motion.p>
             <motion.h1 variants={stagger.item} className="mt-6 font-display text-5xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">

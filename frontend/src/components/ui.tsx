@@ -97,20 +97,20 @@ export function TrustRing({ score, size = 148, label = 'Trust score' }: { score:
 }
 
 const CATEGORY: Record<string, { icon: LucideIcon; tone: string }> = {
-  Blenders: { icon: ChefHat, tone: 'from-rose-500 to-orange-400' },
-  'Mini-fridges': { icon: Refrigerator, tone: 'from-sky-500 to-cyan-400' },
-  'Window air conditioners': { icon: Snowflake, tone: 'from-cyan-500 to-blue-500' },
-  'Power adapters': { icon: Cable, tone: 'from-amber-500 to-yellow-400' },
-  Smartphones: { icon: Smartphone, tone: 'from-violet-500 to-fuchsia-500' },
-  Electronics: { icon: Cpu, tone: 'from-indigo-500 to-violet-500' },
-  Appliances: { icon: Utensils, tone: 'from-orange-500 to-rose-500' },
-  'Household products': { icon: Bath, tone: 'from-emerald-500 to-teal-400' },
-  'Food items': { icon: Sparkles, tone: 'from-lime-500 to-emerald-500' },
+  Blenders: { icon: ChefHat, tone: 'from-cat-kitchen-from to-cat-kitchen-to' },
+  'Mini-fridges': { icon: Refrigerator, tone: 'from-cat-cooling-from to-cat-cooling-to' },
+  'Window air conditioners': { icon: Snowflake, tone: 'from-cat-air-from to-cat-air-to' },
+  'Power adapters': { icon: Cable, tone: 'from-cat-power-from to-cat-power-to' },
+  Smartphones: { icon: Smartphone, tone: 'from-cat-phone-from to-cat-phone-to' },
+  Electronics: { icon: Cpu, tone: 'from-cat-electronics-from to-cat-electronics-to' },
+  Appliances: { icon: Utensils, tone: 'from-cat-appliance-from to-cat-appliance-to' },
+  'Household products': { icon: Bath, tone: 'from-cat-household-from to-cat-household-to' },
+  'Food items': { icon: Sparkles, tone: 'from-cat-food-from to-cat-food-to' },
 };
 
 /** A product's picture stand-in: a tile with its category's icon. */
 export function CategoryTile({ category, size = 'md' }: { category: string; size?: 'sm' | 'md' | 'lg' }) {
-  const c = CATEGORY[category] ?? { icon: Package, tone: 'from-slate-500 to-slate-400' };
+  const c = CATEGORY[category] ?? { icon: Package, tone: 'from-cat-other-from to-cat-other-to' };
   const Icon = c.icon;
   const box = { sm: 'size-10 rounded-xl', md: 'size-14 rounded-2xl', lg: 'size-24 rounded-3xl' }[size];
   const ic = { sm: 'size-5', md: 'size-7', lg: 'size-11' }[size];

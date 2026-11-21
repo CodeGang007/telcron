@@ -29,6 +29,7 @@ import { toast } from 'sonner';
 import { Gate } from '../components/Gate';
 import { AnimatedNumber, PageTitle, Pager, Skeleton, stagger } from '../components/ui';
 import { api, explain, post } from '../lib/api';
+import { tokenHex } from '../lib/tokens';
 import { useLoad } from '../lib/useLoad';
 import { usePaged } from '../lib/usePaged';
 
@@ -70,7 +71,7 @@ function LevelRing({ pct, children }: { pct: number; children: React.ReactNode }
   return (
     <div className="relative grid place-items-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgb(255 255 255 / 0.15)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" className="stroke-white/15" strokeWidth={stroke} />
         <motion.circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--color-gold)" strokeWidth={stroke} strokeLinecap="round" strokeDasharray={c}
           initial={{ strokeDashoffset: c }} animate={{ strokeDashoffset: c * (1 - pct) }} transition={{ duration: 1.4, ease: [0.16, 1, 0.3, 1] }} />
       </svg>
@@ -93,8 +94,8 @@ function Hero({ o }: { o: Overview }) {
         <div>
           <p className="text-sm font-medium text-white/60">Spendable TelCoins</p>
           <p className="mt-2 flex items-center gap-3 font-display text-6xl font-extrabold tracking-tight sm:text-7xl">
-            <motion.span initial={{ rotate: -30, scale: 0.6 }} animate={{ rotate: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 200 }} className="grid size-14 place-items-center rounded-full bg-gradient-to-br from-amber-300 to-amber-600 shadow-[0_0_40px] shadow-gold/50">
-              <Coins className="size-8 text-amber-950" />
+            <motion.span initial={{ rotate: -30, scale: 0.6 }} animate={{ rotate: 0, scale: 1 }} transition={{ type: 'spring', stiffness: 200 }} className="grid size-14 place-items-center rounded-full bg-gradient-to-br from-gold-light to-gold-deep shadow-[0_0_40px] shadow-gold/50">
+              <Coins className="size-8 text-gold-dark" />
             </motion.span>
             <AnimatedNumber value={o.balance.confirmed} />
           </p>
@@ -105,7 +106,7 @@ function Hero({ o }: { o: Overview }) {
           </div>
           <div className="mt-8 grid max-w-md grid-cols-2 gap-3">
             <div className="glass rounded-2xl p-4">
-              <p className="flex items-center gap-2 text-xs text-white/60"><Flame className="size-4 text-orange-400" />Sign-in streak</p>
+              <p className="flex items-center gap-2 text-xs text-white/60"><Flame className="size-4 text-flame" />Sign-in streak</p>
               <p className="mt-1 font-display text-2xl font-bold">{o.streak_days} {o.streak_days === 1 ? 'day' : 'days'}</p>
               <p className="text-xs text-white/50">{o.streak_days >= 7 ? 'Double coins every day' : `${7 - o.streak_days} more for double coins`}</p>
             </div>
@@ -144,7 +145,8 @@ function Store({ o, onBought }: { o: Overview; onBought: () => void }) {
     setBusy(item.code);
     try {
       const r = await post<{ report: string | null }>('/redemptions', { item_code: item.code, product: product ?? null, request_id: crypto.randomUUID() });
-      void confetti({ particleCount: 140, spread: 80, origin: { y: 0.7 }, colors: ['#f59e0b', '#e23744', '#4f46e5', '#059669'] });
+      const colors = tokenHex('gold', 'brand-bright', 'action', 'ok');
+      void confetti({ particleCount: 140, spread: 80, origin: { y: 0.7 }, ...(colors.length ? { colors } : {}) });
       toast.success(`${item.name} is yours`, { description: r.report ? 'Your report is ready.' : 'It is active on your account now.', action: r.report ? { label: 'Open', onClick: () => { window.location.href = r.report!; } } : undefined });
       onBought();
     } catch (e) {
@@ -160,7 +162,7 @@ function Store({ o, onBought }: { o: Overview; onBought: () => void }) {
         const affordable = o.balance.confirmed >= item.cost;
         return (
           <motion.li key={item.code} variants={stagger.item} className="card card-hover flex flex-col">
-            <span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-violet-500 to-action text-white shadow-lg"><Icon className="size-6" /></span>
+            <span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-violet to-action text-white shadow-lg"><Icon className="size-6" /></span>
             <p className="mt-4 font-semibold">{item.name}</p>
             {item.needs_product && (
               owned.data && owned.data.length > 0 ? (
@@ -175,7 +177,7 @@ function Store({ o, onBought }: { o: Overview; onBought: () => void }) {
               )
             )}
             <div className="mt-auto flex items-center justify-between pt-5">
-              <span className="chip bg-gold-tint text-amber-700"><Coins className="size-3.5" />{item.cost.toLocaleString()}</span>
+              <span className="chip bg-gold-tint text-gold-ink"><Coins className="size-3.5" />{item.cost.toLocaleString()}</span>
               <button className="btn btn-sm" disabled={!affordable || busy === item.code || (item.needs_product && !owned.data?.length)} onClick={() => buy(item)}>
                 {busy === item.code ? 'Redeeming…' : affordable ? 'Redeem' : <><Lock className="size-3.5" />{(item.cost - o.balance.confirmed).toLocaleString()} more</>}
               </button>
@@ -232,7 +234,7 @@ function RewardsBody() {
               <motion.li key={w.code} variants={stagger.item} className="card card-hover !p-5">
                 <div className="flex items-center justify-between">
                   <span className="grid size-10 place-items-center rounded-xl bg-brand-tint text-brand-ink"><Icon className="size-5" /></span>
-                  <span className="font-display text-lg font-extrabold text-amber-600">+{w.amount}</span>
+                  <span className="font-display text-lg font-extrabold text-gold-deep">+{w.amount}</span>
                 </div>
                 <p className="mt-3 text-sm font-medium leading-snug">{w.label}</p>
               </motion.li>
@@ -252,7 +254,7 @@ function RewardsBody() {
               return (
                 <motion.li key={l.level} initial={{ opacity: 0, x: -10 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ delay: i * 0.06 }}
                   className={`flex items-center gap-4 rounded-2xl border p-4 ${l.level === o.level ? 'border-gold bg-gold-tint/60 shadow-soft' : reached ? 'border-line bg-white' : 'border-dashed border-line bg-panel/50'}`}>
-                  <span className={`grid size-11 place-items-center rounded-xl ${reached ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white' : 'bg-neutral-tint text-muted'}`}><Icon className="size-5" /></span>
+                  <span className={`grid size-11 place-items-center rounded-xl ${reached ? 'bg-gradient-to-br from-gold-mid to-gold-deep text-white' : 'bg-neutral-tint text-muted'}`}><Icon className="size-5" /></span>
                   <div className="flex-1">
                     <p className="font-semibold">{l.title} {l.level === o.level && <span className="chip ml-1 bg-gold !py-0 text-white">you</span>}</p>
                     <p className="text-xs text-muted">{l.min.toLocaleString()} coins earned{l.bonus_pct > 0 ? ` · +${l.bonus_pct}% on every earn` : ''}</p>
@@ -272,7 +274,7 @@ function RewardsBody() {
               return (
                 <motion.li key={b.code} initial={{ opacity: 0, scale: 0.8 }} whileInView={{ opacity: 1, scale: 1 }} viewport={{ once: true }} transition={{ delay: i * 0.05, type: 'spring' }}
                   className={`grid place-items-center rounded-2xl border p-4 text-center ${earned ? 'border-gold/50 bg-gradient-to-b from-gold-tint to-white shadow-soft' : 'border-line bg-panel/50'}`}>
-                  <span className={`grid size-14 place-items-center rounded-full ${earned ? 'bg-gradient-to-br from-amber-300 to-amber-600 text-white shadow-[0_0_24px] shadow-gold/40' : 'bg-neutral-tint text-muted/50'}`}>
+                  <span className={`grid size-14 place-items-center rounded-full ${earned ? 'bg-gradient-to-br from-gold-light to-gold-deep text-white shadow-[0_0_24px] shadow-gold/40' : 'bg-neutral-tint text-muted/50'}`}>
                     {earned ? <Icon className="size-7" /> : <Lock className="size-5" />}
                   </span>
                   <p className={`mt-2 text-xs font-semibold ${earned ? '' : 'text-muted'}`}>{b.name}</p>
@@ -300,13 +302,13 @@ function RewardsBody() {
             {history.items.map((e, i) => (
               <motion.li key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: Math.min(i, 8) * 0.03 }} className="flex items-center justify-between gap-4 px-5 py-4 text-sm">
                 <div className="flex items-center gap-3">
-                  <span className={`grid size-9 place-items-center rounded-full ${e.amount < 0 ? 'bg-neutral-tint text-muted' : 'bg-gold-tint text-amber-600'}`}><Coins className="size-4" /></span>
+                  <span className={`grid size-9 place-items-center rounded-full ${e.amount < 0 ? 'bg-neutral-tint text-muted' : 'bg-gold-tint text-gold-deep'}`}><Coins className="size-4" /></span>
                   <div>
                     <p className="font-medium">{RULES[e.rule_code ?? ''] ?? ENTRY[e.entry_type] ?? e.entry_type}</p>
                     <p className="text-xs text-muted">{new Date(e.created_at).toLocaleString()} · {STATUS[e.status] ?? e.status}</p>
                   </div>
                 </div>
-                <p className={`font-display font-bold ${e.amount < 0 ? 'text-muted' : 'text-amber-600'}`}>{e.amount < 0 ? '−' : '+'}{Math.abs(e.amount)}</p>
+                <p className={`font-display font-bold ${e.amount < 0 ? 'text-muted' : 'text-gold-deep'}`}>{e.amount < 0 ? '−' : '+'}{Math.abs(e.amount)}</p>
               </motion.li>
             ))}
           </ul>
