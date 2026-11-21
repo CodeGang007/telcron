@@ -70,12 +70,34 @@ def _clean_title(title: str) -> str:
                     title, maxsplit=1, flags=re.I)[0].strip()[:160]
 
 
-async def listings(product_id: str, label: str, brand: str | None, country: str) -> dict[str, Any]:
+def _key(product_id: str, country: str) -> str:
+    return f"telcron:market:{product_id}:{country}"
+
+
+async def cached_listing(product_id: str, url: str) -> dict[str, Any] | None:
+    """The listing with this address among those last shown for this product, in any country;
+    None if it was never shown. A "Check it" must name one (DEF-049)."""
+    redis = await get_redis()
+    for country in STORES:
+        cached = await redis.get(_key(product_id, country))
+        for item in (json.loads(cached).get("items") or []) if cached else []:
+            if item.get("url") == url:
+                return item
+    return None
+
+
+async def listings(product_id: str, label: str, brand: str | None, country: str,
+                   refused: str | None = None) -> dict[str, Any]:
+    """What was found for this product in this country: from the cache, else searched now. With
+    `refused` (a reason code: the caller may not start a search) only the cache is read and
+    nothing outside is called (DEF-042)."""
     country = country if country in STORES else "US"
-    key = f"telcron:market:{product_id}:{country}"
+    key = _key(product_id, country)
     redis = await get_redis()
     if cached := await redis.get(key):
         return json.loads(cached)
+    if refused:
+        return {"available": False, "items": [], "reason": refused}
     s = get_settings()
     if not s.tavily_api_key:
         return {"available": False, "items": []}

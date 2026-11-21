@@ -1,14 +1,30 @@
 """Product research (WO-014): registries and the web, read by a model that cannot invent a source,
 stored as cited evidence, and the product rated again from it."""
 
+import copy
+import hashlib
+import json
+import pathlib
+import types
 import uuid
 
+import httpx
 from helpers import API, verified_user
 from sqlalchemy import delete, select, update
 
 from app.core.config import get_settings
-from app.models import IdentificationRequest, IngestionJob, ProductAlias
+from app.core.redis import get_redis
+from app.models import (
+    IdentificationRequest,
+    IngestionJob,
+    ProductAlias,
+    Recall,
+    RecallProduct,
+    SourceRecord,
+    User,
+)
 from app.modules.catalogue import photos, upcitemdb, vision
+from app.modules.ingestion import cpsc, raw_store
 from app.modules.research import registries, service, web
 
 PAGE = web.Hit("Lumina LF-30 desk fan recalled over fire risk", "https://example.org/lf30-recall",
@@ -232,8 +248,8 @@ async def test_marketplace_listings_are_real_product_pages_and_can_be_checked(cl
     made = (await client.post(f"{API}/identify/confirm", headers=member, json={
         "name": f"Peeling Solution {uuid.uuid4().hex[:4]}", "brand": "Pilgrim",
         "category": "household"})).json()
-    found = (await client.get(f"{API}/products/{made['slug']}/marketplace",
-                              params={"country": "IN"})).json()
+    found = (await client.get(f"{API}/products/{made['slug']}/marketplace", headers=member,
+                              params={"country": "IN"})).json()  # a member starts the search
     assert "amazon.in" in seen["domains"] and "Pilgrim" not in seen["query"]
     assert [(i["store"], i["price"], i["rating"]) for i in found["items"]] == [
         ("Amazon", "₹1,450", 4.3), ("Nykaa", "Rs.599", None)]  # the search page is not a product
@@ -309,7 +325,7 @@ async def test_a_spent_search_allowance_says_so_and_catches_up_later(client, db,
     async def spent():
         return 12  # fewer than a run plus the reserve
     monkeypatch.setattr(service, "_searches_left", spent)
-    state = (await client.get(f"{API}/products/{made['slug']}/research")).json()
+    state = (await client.get(f"{API}/products/{made['slug']}/research", headers=member)).json()
     assert state["can_request"] is False and state["blocked"] == "research_month_limit"
     refused = await client.post(f"{API}/products/{made['slug']}/research", headers=member)
     assert refused.status_code == 429 and refused.json()["detail"] == "research_month_limit"
@@ -325,3 +341,225 @@ async def test_a_spent_search_allowance_says_so_and_catches_up_later(client, db,
     queued = await db.scalar(select(IngestionJob).where(
         IngestionJob.params["product_id"].astext == pid))
     assert queued is not None and queued.trigger == "schedule" and "reread" not in queued.params
+
+
+async def test_research_keeps_the_raw_copy_of_each_new_cpsc_notice(client, db, monkeypatch):
+    """WO-054: a notice research imports from CPSC is kept in the raw store like the nightly's."""
+    feed = json.loads((pathlib.Path(__file__).parent / "fixtures" / "cpsc_recalls.json")
+                      .read_text())
+    notice = copy.deepcopy(feed[2])  # Kettleworks
+    notice["RecallID"], notice["RecallNumber"] = 990400, "27-RAW-990400"
+    stored: dict[str, bytes] = {}
+
+    async def put(key: str, body: bytes) -> None:
+        stored[key] = body
+
+    async def search(title_words: str, limit: int = 20) -> list[dict]:
+        return [copy.deepcopy(notice)] if title_words == "Kettleworks" else []
+    monkeypatch.setattr(get_settings(), "raw_store", "s3")
+    monkeypatch.setattr(raw_store, "put", put)
+    monkeypatch.setattr(cpsc, "search", search)
+    _, _, member = await verified_user(client)
+    product = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": "Electric Kettle KW-12", "brand": "Kettleworks", "model": "KW-12",
+        "category": "appliances"})).json()
+    passport = (await client.get(f"{API}/products/{product['slug']}/passport")).json()
+    job = (await db.execute(select(IngestionJob).where(
+        IngestionJob.data_source_code == "web_search",
+        IngestionJob.params["product_id"].astext == passport["product_id"]))).scalars().first()
+
+    stats = await service.run(job.id)
+    assert (stats["cpsc_new"], stats["raw_copied"]) == (1, 1)
+    row = (await db.execute(select(SourceRecord).where(
+        SourceRecord.data_source_code == "cpsc", SourceRecord.ingestion_job_id == job.id))
+        ).scalar_one()
+    assert row.payload is None
+    assert hashlib.sha256(stored[row.payload_storage_key]).digest() == row.payload_sha256
+
+
+async def _new_product(client, db, member, name, brand, model=None, category="household"):
+    """A product of the member's, with the research job its confirmation queued."""
+    made = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": name, "brand": brand, "model": model, "category": category})).json()
+    pid = (await client.get(f"{API}/products/{made['slug']}")).json()["id"]
+    job = (await db.execute(select(IngestionJob).where(
+        IngestionJob.data_source_code == "web_search",
+        IngestionJob.params["product_id"].astext == pid))).scalars().first()
+    return made["slug"], pid, job
+
+
+def reader_finds(finding):
+    async def read(label, hits, audit=None, brand=None, progress=None, category=None, unread=None):
+        return [finding]
+    return read
+
+
+def test_only_the_regulators_own_hosts_are_official():
+    """DEF-041: an explicit list of hosts, no wildcard subdomains; a search result tagged
+    regulator_web is still checked by its host."""
+    def hit(url, source="regulator_web"):
+        return web.Hit("t", url, "s", source)
+    assert web.official(hit("https://www.cpsc.gov/Recalls/2027/x"))
+    assert web.official(hit("https://www.gov.uk/product-safety-alerts-reports-recalls/x"))
+    assert web.official(hit("https://recalls-rappels.canada.ca/en/alert-recall/x"))
+    assert not web.official(hit("https://shop.example.gov.uk/x"))
+    assert not web.official(hit("https://forum.canada.ca/x"))
+    assert not web.official(hit("https://cpsc.gov.example.com/x"))
+    assert web.official(hit("https://api.fda.gov/food/enforcement.json?x", "openfda"))
+
+
+async def test_a_notice_naming_only_the_brand_does_not_become_a_recall_on_the_product(
+        client, db, monkeypatch):
+    """DEF-041: a regulator's recall of another product of the same brand stays evidence. It used
+    to be stored under this product's own name and so became a near match on it."""
+    brand = f"Glowmark{uuid.uuid4().hex[:4]}"
+    _, _, member = await verified_user(client)
+    slug, _, job = await _new_product(client, db, member, "Desk Lamp", brand, "GL-77")
+    notice = web.Hit(f"{brand} Recalls Ceiling Lights Due to Fire Hazard",
+                     f"https://www.cpsc.gov/Recalls/2027/{brand.lower()}-recalls-ceiling-lights",
+                     f"{brand} is recalling ceiling lights sold nationwide; they can overheat.",
+                     "regulator_web")
+    monkeypatch.setattr(web, "read", reader_finds(web.Finding(
+        notice, "recall", f"{brand} is recalling ceiling lights sold nationwide.", True)))
+    stats = await service.run(job.id)
+    assert stats["findings"] == 1 and stats["official_recalls"] == 0
+    assert await db.scalar(select(Recall.id).where(Recall.url == notice.url)) is None
+    passport = (await client.get(f"{API}/products/{slug}/passport")).json()
+    assert passport["recall_matches"] == []
+
+
+async def test_a_notice_naming_the_product_is_stored_under_the_name_it_prints(
+        client, db, monkeypatch):
+    """DEF-041: the recall holds the notice's own product name, not ours."""
+    brand = f"Glowmark{uuid.uuid4().hex[:4]}"
+    _, _, member = await verified_user(client)
+    _, _, job = await _new_product(client, db, member, "Desk Lamp", brand)
+    notice = web.Hit(f"Product Recall: {brand} Adjustable Desk Lamp - GOV.UK",
+                     f"https://www.gov.uk/product-safety-alerts-reports-recalls/{brand.lower()}",
+                     f"The {brand} adjustable desk lamp presents a risk of electric shock.",
+                     "regulator_web")
+    monkeypatch.setattr(web, "read", reader_finds(web.Finding(
+        notice, "recall", f"The {brand} adjustable desk lamp presents a risk of electric shock.",
+        True)))
+    stats = await service.run(job.id)
+    assert stats["official_recalls"] == 1
+    named = (await db.execute(select(RecallProduct).join(
+        Recall, Recall.id == RecallProduct.recall_id).where(Recall.url == notice.url))).scalar_one()
+    assert (named.product_name, named.brand_name) == (f"{brand} Adjustable Desk Lamp", brand)
+
+
+async def test_an_anonymous_visitor_sees_cached_listings_only_and_starts_no_search(
+        client, db, monkeypatch):
+    """DEF-042: an anonymous page view never calls the search provider or the model."""
+    monkeypatch.setattr(get_settings(), "tavily_api_key", "test")
+    calls = []
+
+    async def tavily(query, domains=None, source="web_search"):
+        calls.append(query)
+        return []
+    monkeypatch.setattr(web, "_tavily", tavily)
+    _, _, member = await verified_user(client)
+    slug, _, _ = await _new_product(client, db, member, f"Hair Dryer {uuid.uuid4().hex[:4]}",
+                                    "Breezo")
+    anonymous = (await client.get(f"{API}/products/{slug}/marketplace")).json()
+    assert anonymous == {"available": False, "items": [], "reason": "not_authenticated"}
+    # A signed-in Level 0 member: sign-in needs a verified email, so the level is lowered here
+    # (Google sign-in will reach this state through the API).
+    email, _, unverified = await verified_user(client, "Level0")
+    await db.execute(update(User).where(User.email == email).values(verification_level=0))
+    await db.commit()
+    level0 = (await client.get(f"{API}/products/{slug}/marketplace", headers=unverified)).json()
+    assert level0["reason"] == "verification_level_1_required"
+    assert calls == []
+    await client.get(f"{API}/products/{slug}/marketplace", headers=member)
+    assert len(calls) == 1  # a verified member does start it
+
+
+async def test_an_anonymous_research_view_never_asks_the_provider(client, db, monkeypatch):
+    """DEF-042: reading research is open to all; only a signed-in view asks for the balance, and
+    starting a search needs sign-in."""
+    _, _, member = await verified_user(client)
+    slug, pid, _ = await _new_product(client, db, member, f"Toaster T{uuid.uuid4().hex[:4]}",
+                                      "Crispo")
+    await db.execute(delete(IngestionJob).where(IngestionJob.params["product_id"].astext == pid))
+    await db.commit()
+    asked = []
+
+    async def balance():
+        asked.append(1)
+        return 900
+    monkeypatch.setattr(service, "_searches_left", balance)
+    await (await get_redis()).delete(service.USAGE_KEY)
+    assert (await client.get(f"{API}/products/{slug}/research")).status_code == 200
+    assert asked == []
+    await client.get(f"{API}/products/{slug}/research", headers=member)
+    assert asked == [1]
+    started = await client.post(f"{API}/products/{slug}/research")
+    assert started.status_code == 401 and started.json()["detail"] == "not_authenticated"
+
+
+async def test_research_errors_reach_the_page_as_codes_only(client, db, monkeypatch):
+    """DEF-049: the provider's own words stay in the job row and the log."""
+    async def broken(title_words, limit=20):
+        raise RuntimeError("upstream said: token sk-LEAKED-123 rejected at 10.0.0.7")
+    monkeypatch.setattr(cpsc, "search", broken)
+    _, _, member = await verified_user(client)
+    slug, _, job = await _new_product(client, db, member, f"Mixer M{uuid.uuid4().hex[:4]}",
+                                      "Whiskly")
+    stats = await service.run(job.id)
+    assert "LEAKED" in stats["errors"][0]  # kept for the team
+    page = await client.get(f"{API}/products/{slug}/research")
+    assert page.json()["stats"]["errors"] == ["cpsc"]
+    assert "LEAKED" not in page.text and "10.0.0.7" not in page.text
+
+
+async def test_one_member_cannot_spend_more_than_their_daily_research_share(
+        client, db, monkeypatch):
+    """DEF-049: a per-member daily quota, refused with 429 and its own code."""
+    monkeypatch.setattr(service, "PER_USER_DAILY", 1)
+    if "research_per_user_per_day" in type(get_settings()).model_fields:
+        monkeypatch.setattr(get_settings(), "research_per_user_per_day", 1)
+    _, _, member = await verified_user(client)
+    _, _, first = await _new_product(client, db, member, f"Grill G{uuid.uuid4().hex[:4]}", "Searo")
+    assert first is not None  # the first one is researched
+    slug, _, second = await _new_product(client, db, member, f"Grill H{uuid.uuid4().hex[:4]}",
+                                         "Searo")
+    assert second is None  # past the share: left for the Worker's catch-up
+    refused = await client.post(f"{API}/products/{slug}/research", headers=member)
+    assert refused.status_code == 429 and refused.json()["detail"] == "research_user_daily_limit"
+    _, _, other = await verified_user(client, "Other")
+    assert (await client.post(f"{API}/products/{slug}/research", headers=other)).status_code == 202
+
+
+async def test_only_a_listing_telcron_showed_can_be_checked(client, db, monkeypatch):
+    """DEF-049: the title and address must be a listing shown for this product."""
+    monkeypatch.setattr(get_settings(), "tavily_api_key", "test")
+
+    async def tavily(query, domains=None, source="web_search"):
+        return [web.Hit("Kettle Pro 1.7L Stainless | Walmart",
+                        "https://www.walmart.com/ip/kettle-pro/123456", "$24.99")]
+    monkeypatch.setattr(web, "_tavily", tavily)
+    _, _, member = await verified_user(client)
+    slug, _, _ = await _new_product(client, db, member, f"Kettle K{uuid.uuid4().hex[:4]}",
+                                    "Boilwell")
+    shown = (await client.get(f"{API}/products/{slug}/marketplace", headers=member)).json()
+    url = shown["items"][0]["url"]
+    for body in ({"title": "Totally Different Brand Product", "url": url},
+                 {"title": shown["items"][0]["title"], "url": "https://www.walmart.com/ip/x/999"}):
+        r = await client.post(f"{API}/products/{slug}/marketplace/check", headers=member, json=body)
+        assert r.status_code == 404 and r.json()["detail"] == "listing_not_found"
+
+
+async def test_research_never_reaches_the_cpsc_registry(client, db, monkeypatch):
+    """DEF-070: with no route to the registry, a branded research run still has no CPSC error:
+    the client is replaced in every test (conftest), so the network is never tried."""
+    class NoRoute:
+        def __init__(self, *args, **kwargs):
+            raise httpx.ConnectError("no route to host")
+    monkeypatch.setattr(cpsc, "httpx", types.SimpleNamespace(AsyncClient=NoRoute))
+    monkeypatch.setattr(get_settings(), "cpsc_fixture", None)
+    _, _, member = await verified_user(client)
+    _, _, job = await _new_product(client, db, member, f"Heater H{uuid.uuid4().hex[:4]}", "Warmly")
+    stats = await service.run(job.id)
+    assert stats["cpsc_notices"] == 0
+    assert not [e for e in stats["errors"] if e.startswith("cpsc")]

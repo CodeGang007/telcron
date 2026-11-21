@@ -117,7 +117,11 @@ async def no_outside_research(monkeypatch):
         return photos.Reading()
     async def unknown_balance():
         return None
+    from app.modules.ingestion import cpsc
     from app.modules.research import service as research
+    # DEF-070: the CPSC client is replaced wholesale too (research looks a brand up in it).
+    monkeypatch.setattr(cpsc, "search", nothing)
+    monkeypatch.setattr(cpsc, "fetch", nothing)
     monkeypatch.setattr(web, "search", nothing)
     monkeypatch.setattr(research, "_searches_left", unknown_balance)
     monkeypatch.setattr(registries, "search", no_registry)
@@ -132,3 +136,16 @@ async def no_open_facts(monkeypatch):
     async def unknown(gtin):
         return None
     monkeypatch.setattr(openfacts, "lookup", unknown)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def fresh_rate_limits():
+    """Every test starts with empty sign-in and mail counters (core/ratelimit.py): the suite signs
+    up far more members from one address than any person could."""
+    from app.core.ratelimit import PREFIX
+    from app.core.redis import get_redis
+
+    redis = await get_redis()
+    keys = [key async for key in redis.scan_iter(match=PREFIX + "*")]
+    if keys:
+        await redis.delete(*keys)
