@@ -325,7 +325,7 @@ async def test_codes_can_be_sent_through_smtp(client, monkeypatch):
     from app.modules.identity import mailer
     s = get_settings()
     monkeypatch.setattr(s, "mail_provider", "smtp")
-    monkeypatch.setattr(s, "mail_from", "codes@example.com")
+    monkeypatch.setattr(s, "mail_from", "Telcron <codes@example.com>")
     monkeypatch.setattr(s, "smtp_password", "app-password")
     seen = {}
 

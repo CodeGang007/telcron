@@ -7,6 +7,7 @@ import asyncio
 import logging
 import smtplib
 from email.message import EmailMessage
+from email.utils import parseaddr
 
 from app.core.config import get_settings
 
@@ -50,7 +51,8 @@ def _send_smtp(to: str, code: str) -> None:
     msg.add_alternative(html, subtype="html")
     with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=15) as smtp:
         smtp.starttls()
-        smtp.login(s.smtp_user or s.mail_from or "", s.smtp_password or "")
+        # MAIL_FROM may carry a display name ("Telcron <a@b>"); the login is the bare address.
+        smtp.login(s.smtp_user or parseaddr(s.mail_from or "")[1], s.smtp_password or "")
         smtp.send_message(msg)
 
 
