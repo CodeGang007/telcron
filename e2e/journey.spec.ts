@@ -15,7 +15,9 @@ test('a visitor searches and reads a passport without an account', async ({ page
   await expect(page.getByRole('link', { name: /Acme Kitchen PowerBlend 1000/ })).toBeVisible();
   await page.getByRole('link', { name: /Acme Kitchen PowerBlend 1000/ }).click();
   await expect(passport(page).getByText('Recalled', { exact: true })).toBeVisible();
-  await expect(passport(page).getByText(/Laceration hazard/)).toBeVisible();
+  await expect(passport(page).getByText('Laceration hazard', { exact: true })).toBeVisible();
+  // The verdict says what it means for the owner, before any score.
+  await expect(passport(page).getByText('This product is recalled')).toBeVisible();
   // A page the server has never heard of still loads: the app is a single page.
   await page.goto('/products/unidentified-desk-lamp');
   await expect(passport(page).getByText('Needs information', { exact: true })).toBeVisible();

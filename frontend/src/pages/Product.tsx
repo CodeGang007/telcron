@@ -36,12 +36,13 @@ export const cleanTitle = (t: string) => t.replace(/\s+[|–-]\s+[^|–-]{2,40}$
 /** One sentence on what the passport means for someone holding this product. */
 function Verdict({ pass, recalls }: { pass: Passport; recalls: Passport['recall_matches'] }) {
   const high = (pass.hazard?.total_score ?? 0) >= 60;
+  const sentence = (t: string | null | undefined, fallback: string) => (t ? (/[.!?]$/.test(t.trim()) ? t.trim() : `${t.trim()}.`) : fallback);
   const match = recalls.find((r) => r.verdict === 'match');
   const near = recalls.find((r) => r.verdict === 'near_match');
   const [tone, title, text] = match
-    ? ['danger', 'This product is recalled', `${match.hazard || 'An official recall notice names this product.'} Stop using it and follow the notice's remedy.`]
+    ? ['danger', 'This product is recalled', `${sentence(match.hazard, 'An official recall notice names this product.')} Stop using it and follow the notice's remedy.`]
     : near
-      ? ['danger', 'Official recall notices may cover this product', `${near.hazard || 'A recall names this brand and a product like it.'} Check the notices below against your model and serial number.`]
+      ? ['danger', 'Official recall notices may cover this product', `${sentence(near.hazard, 'A recall names this brand and a product like it.')} Check the notices below against your model and serial number.`]
       : pass.status_badge === 'certification_issue'
         ? ['warn', 'A certificate problem was found', 'One of its certificates has expired or been revoked. See the details below.']
         : high
