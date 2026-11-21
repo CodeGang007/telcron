@@ -28,6 +28,7 @@ export function Research({ slug, onRated }: { slug: string; onRated: () => void 
   const { me } = useAuth();
   const [data, setData] = useState<ResearchT | null>(null);
   const [asking, setAsking] = useState(false);
+  const [all, setAll] = useState(false);
   const busy = data?.status === 'queued' || data?.status === 'running';
 
   useEffect(() => {
@@ -94,7 +95,7 @@ export function Research({ slug, onRated }: { slug: string; onRated: () => void 
 
       {findings.length > 0 ? (
         <ul className="mt-5 space-y-3">
-          {findings.map((f, i) => {
+          {(all ? findings : findings.slice(0, 4)).map((f, i) => {
             const k = KIND[f.kind];
             return (
               <motion.li key={f.url + f.kind} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} className="rounded-2xl border border-line p-4">
@@ -104,11 +105,16 @@ export function Research({ slug, onRated }: { slug: string; onRated: () => void 
                 </div>
                 <p className="mt-2 text-sm">{f.finding}</p>
                 <a href={f.url} target="_blank" rel="noreferrer noopener" className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-action hover:underline">
-                  {f.title.length > 90 ? f.title.slice(0, 90) + '…' : f.title} <span className="font-normal text-muted">· {host(f.url)}</span><ExternalLink className="size-3" />
+                  {(() => { const t = f.title.replace(/\s+[|–-]\s+[^|–-]{2,40}$/, ''); return t.length > 90 ? t.slice(0, 90) + '…' : t; })()} <span className="font-normal text-muted">· {host(f.url)}</span><ExternalLink className="size-3" />
                 </a>
               </motion.li>
             );
           })}
+          {findings.length > 4 && (
+            <li><button onClick={() => setAll(!all)} className="w-full rounded-2xl border border-dashed border-line py-2.5 text-sm font-semibold text-action transition hover:bg-panel">
+              {all ? 'Show fewer' : `Show all ${findings.length} findings`}
+            </button></li>
+          )}
         </ul>
       ) : !busy && (
         <p className="mt-5 rounded-2xl bg-panel px-4 py-3 text-sm text-muted">

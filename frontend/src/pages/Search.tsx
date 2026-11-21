@@ -1,4 +1,4 @@
-import { PackageSearch, ScanLine, Search as SearchIcon } from 'lucide-react';
+import { PackagePlus, PackageSearch, ScanLine, Search as SearchIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { ProductCard } from '../components/ProductCard';
@@ -33,6 +33,12 @@ export function Search() {
           </motion.div>
         )}
         <Pager hasMore={results.hasMore} loading={results.loadingMore} onMore={results.more} shown={results.items.length} />
+        {q && !results.loading && !results.hasMore && results.items.length > 0 && (
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-dashed border-line bg-panel/60 px-6 py-5">
+            <p className="text-sm"><span className="font-semibold">Not the one you meant?</span> <span className="text-muted">Scan its barcode or photograph it: we add it, research it and issue its passport.</span></p>
+            <Link to="/scan" className="btn btn-sm"><PackagePlus className="size-4" />Add a product</Link>
+          </div>
+        )}
       </div>
     </div>
   );

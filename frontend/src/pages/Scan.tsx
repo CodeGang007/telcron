@@ -1,6 +1,6 @@
 import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
-import { Camera, CameraOff, Hash, ImageUp, Keyboard, Loader2, ScanLine, Sparkles } from 'lucide-react';
+import { Bot, Camera, CameraOff, Hash, ImageUp, Keyboard, Landmark, Loader2, PackagePlus, ScanLine, ShieldCheck, Sparkles } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -100,8 +100,28 @@ export function Scan() {
   return (
     <div className="container-page py-12">
       <PageTitle eyebrow="Scan" title="Scan a barcode" icon={ScanLine}>
-        Point your camera at the barcode on the box. We find the product, check it against recall notices and certificates, and show you its passport.
+        Point your camera at the barcode on the box. We find the product, search official recall registries and the web for anything about its safety, and show you its passport.
       </PageTitle>
+
+      {phase !== 'unknown' && (
+        <ol className="mb-8 grid gap-3 sm:grid-cols-4" aria-label="What happens next">
+          {[
+            [ScanLine, 'Identify', 'Barcode, photos or details'],
+            [Landmark, 'Research', 'Recall registries and the web, every claim sourced'],
+            [ShieldCheck, 'Passport', 'Trust score and hazard scores with evidence'],
+            [Bot, 'Ask', 'Questions answered from that evidence'],
+          ].map(([Icon, title, text], i) => {
+            const I = Icon as typeof ScanLine;
+            return (
+              <motion.li key={title as string} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
+                className="flex items-start gap-3 rounded-2xl border border-line bg-white px-4 py-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-brand-tint text-brand-ink"><I className="size-4" /></span>
+                <span><span className="block text-sm font-semibold">{i + 1}. {title as string}</span><span className="text-xs text-muted">{text as string}</span></span>
+              </motion.li>
+            );
+          })}
+        </ol>
+      )}
 
       {phase === 'unknown' ? (
         <IdentifyNew barcode={unknown} onCancel={() => { setUnknown(null); setPhase('idle'); }} />
@@ -184,14 +204,22 @@ export function Scan() {
           <label className="card card-hover flex cursor-pointer items-center gap-4">
             <span className="grid size-12 place-items-center rounded-2xl bg-action-tint text-action"><ImageUp className="size-6" /></span>
             <span>
-              <span className="block font-semibold">Use a photo instead</span>
-              <span className="text-sm text-muted">Pick a clear picture of the barcode.</span>
+              <span className="block font-semibold">Photo of the barcode</span>
+              <span className="text-sm text-muted">Pick a clear picture of the barcode instead of using the camera.</span>
             </span>
             <input type="file" accept="image/*" className="sr-only" onChange={(e) => e.target.files?.[0] && void fromPhoto(e.target.files[0])} />
           </label>
 
+          <button type="button" onClick={() => { setUnknown(null); setPhase('unknown'); }} className="card card-hover flex w-full items-center gap-4 text-left">
+            <span className="grid size-12 place-items-center rounded-2xl bg-gold-tint text-gold"><PackagePlus className="size-6" /></span>
+            <span>
+              <span className="block font-semibold">No barcode?</span>
+              <span className="text-sm text-muted">Photograph the product from a few sides and we identify it.</span>
+            </span>
+          </button>
+
           {error && phase !== 'error' && <Notice tone="error">{error}</Notice>}
-          <p className="text-xs text-muted">New products are looked up in UPCitemdb and the Open Food, Beauty and Products Facts databases. If none knows it, you can identify it from a photo.</p>
+          <p className="text-xs text-muted">Barcodes are looked up in UPCitemdb and the Open Food, Beauty and Products Facts databases. If none knows it, you identify it from photos and we research it.</p>
         </div>
       </div>
       )}

@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   BadgeCheck,
+  Bot,
   Coins,
   FileSearch,
   Megaphone,
@@ -24,10 +25,10 @@ type Stats = { products: number; recalls: number; passports: number; members: nu
 type RecallLite = { id: string; title: string; recall_date: string | null; hazard: string | null; image: string | null; url: string | null };
 
 const STEPS = [
-  { icon: ScanLine, title: 'Scan or search', body: 'Point your camera at a barcode, or search by name. No account needed.' },
-  { icon: FileSearch, title: 'Read the passport', body: 'Recalls, certificates and seven hazard scores, each linked to its evidence.' },
-  { icon: Wallet, title: 'Save what you own', body: 'Your Digital Wallet watches every product and alerts you when something changes.' },
-  { icon: Coins, title: 'Contribute and earn', body: 'Verified reviews and confirmed hazard reports earn TelCoins, levels and badges.' },
+  { icon: ScanLine, title: 'Scan, search or snap', body: 'A barcode, a name, or photos of the pack. Search understands what you mean, not just exact names.' },
+  { icon: FileSearch, title: 'We research it', body: 'Official recall registries in the US, UK, EU, Canada and more, plus the web. Every claim links to its source.' },
+  { icon: Bot, title: 'Ask anything', body: 'The product assistant answers from that evidence only, and says so when it does not know.' },
+  { icon: ShieldCheck, title: 'Choose safer, stay alerted', body: 'Verified alternatives ranked by safety and reviews; your wallet alerts you when something changes.' },
 ];
 
 function PassportPreview() {
@@ -158,7 +159,7 @@ export function Home() {
       <section className="container-page py-24">
         <div className="mx-auto max-w-2xl text-center">
           <p className="eyebrow">How it works</p>
-          <h2 className="mt-3 font-display text-4xl font-extrabold tracking-tight">From barcode to verdict in seconds</h2>
+          <h2 className="mt-3 font-display text-4xl font-extrabold tracking-tight">From a barcode to a verdict you can check</h2>
         </div>
         <motion.ol variants={stagger.container} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }} className="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
           {STEPS.map((s, i) => (

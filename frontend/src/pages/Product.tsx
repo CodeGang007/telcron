@@ -30,6 +30,36 @@ import { usePaged } from '../lib/usePaged';
 const VERDICT: Record<string, string> = { match: 'Matches this product', near_match: 'May match this product' };
 const CERT: Record<string, string> = { valid: 'bg-ok-tint text-ok', expired: 'bg-danger-tint text-danger', revoked: 'bg-danger-tint text-danger', not_checked: 'bg-neutral-tint text-muted' };
 
+/** "Samsung Recalls X | CPSC.gov" -> "Samsung Recalls X": the site name is shown with the link. */
+export const cleanTitle = (t: string) => t.replace(/\s+[|–-]\s+[^|–-]{2,40}$/, '').trim();
+
+/** One sentence on what the passport means for someone holding this product. */
+function Verdict({ pass, recalls }: { pass: Passport; recalls: Passport['recall_matches'] }) {
+  const high = (pass.hazard?.total_score ?? 0) >= 60;
+  const match = recalls.find((r) => r.verdict === 'match');
+  const near = recalls.find((r) => r.verdict === 'near_match');
+  const [tone, title, text] = match
+    ? ['danger', 'This product is recalled', `${match.hazard || 'An official recall notice names this product.'} Stop using it and follow the notice's remedy.`]
+    : near
+      ? ['danger', 'Official recall notices may cover this product', `${near.hazard || 'A recall names this brand and a product like it.'} Check the notices below against your model and serial number.`]
+      : pass.status_badge === 'certification_issue'
+        ? ['warn', 'A certificate problem was found', 'One of its certificates has expired or been revoked. See the details below.']
+        : high
+          ? ['warn', 'Serious hazards are reported', 'Sources describe a high hazard on at least one dimension. Open the hazard scores to see the evidence.']
+          : pass.status_badge === 'verified'
+            ? ['ok', 'No recall found, checks passed', 'No recall notice matches it, and nothing we found shows a serious hazard. We keep checking.']
+            : ['neutral', 'Not enough is known yet', 'We have not found enough evidence to rate it. Research runs when a product is added; reviews and reports help too.'];
+  const style = { danger: 'border-danger/30 bg-danger-tint text-danger', warn: 'border-warn/30 bg-warn-tint text-warn', ok: 'border-ok/30 bg-ok-tint text-ok', neutral: 'border-line bg-panel text-muted' }[tone as 'danger'];
+  const Icon = tone === 'ok' ? BadgeCheck : AlertOctagon;
+  return (
+    <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} role={tone === 'danger' ? 'alert' : undefined}
+      className={`flex items-start gap-3 border-b px-6 py-4 sm:px-8 ${style}`}>
+      <Icon className="mt-0.5 size-5 shrink-0" />
+      <div><p className="font-semibold">{title}</p><p className="mt-0.5 text-sm text-ink/80">{text}</p></div>
+    </motion.div>
+  );
+}
+
 function hazardTone(score: number) {
   return score >= 60 ? 'var(--color-danger)' : score >= 30 ? 'var(--color-gold)' : 'var(--color-ok)';
 }
@@ -226,6 +256,7 @@ export function Product() {
           <h2 id="passport" className="flex items-center gap-2 font-display text-xl font-bold"><ShieldCheck className="size-5 text-brand-ink" />Product passport</h2>
           {pass ? <StatusBadge badge={pass.status_badge} size="lg" /> : <StatusBadge badge={null} />}
         </div>
+        {pass && <Verdict pass={pass} recalls={recalls} />}
         {passport.loading ? (
           <div className="p-8"><Skeleton className="h-40 w-full" /></div>
         ) : !pass ? (
@@ -268,7 +299,7 @@ export function Product() {
                 <motion.div key={r.recall_id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="relative overflow-hidden rounded-2xl border border-danger/30 bg-danger-tint p-5">
                   <span className="absolute -right-6 -top-6 size-24 rounded-full bg-danger/10" />
                   <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-danger"><AlertOctagon className="size-4" />Recall · {VERDICT[r.verdict] ?? r.verdict}</p>
-                  <p className="mt-2 font-semibold">{r.title}</p>
+                  <p className="mt-2 font-semibold">{cleanTitle(r.title)}</p>
                   {r.hazard && <p className="mt-2 text-sm">{r.hazard}</p>}
                   {r.remedy && <p className="mt-2 text-sm"><span className="font-semibold">What to do:</span> {r.remedy}</p>}
                   {r.url && <a className="mt-3 inline-block text-sm font-semibold text-danger underline" href={r.url} target="_blank" rel="noreferrer noopener">Read the official notice</a>}
