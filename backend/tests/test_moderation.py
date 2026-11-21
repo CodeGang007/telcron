@@ -283,3 +283,26 @@ async def test_staff_cannot_decide_a_task_they_submitted_of_an_unlisted_type(cli
     r = await client.post(f"{API}/review-tasks/{task.id}/resolve", headers=colleague,
                           json={"decision": "dismiss"})
     assert r.status_code == 200 and r.json()["status"] == "dismissed"
+
+
+async def test_the_queue_marks_a_reviewers_own_items_as_mine(client, db):
+    """DEF-101: the queue says which tasks are the viewer's own, so it offers them no decision."""
+    _, own = await staff_user(client, db, name="Own Items")
+    _, colleague = await staff_user(client, db, name="Colleague Three")
+    flag = {"description": "The plug sparks when it is pushed into the socket (own flag)."}
+    assert (await client.post(f"{API}/products/{SLUG}/flags", headers=own, json=flag)
+            ).status_code == 201
+    reason = "Twenty rewarded actions in three minutes (own hold, mine flag)"
+    await hold_coins(client, db, own, reason)
+
+    for text_ in (flag["description"], reason):
+        assert (await task_for(client, own, text_))["mine"] is True, text_
+        assert (await task_for(client, colleague, text_))["mine"] is False, text_
+
+    # Claim and resolve describe the task to the colleague who decides it: not theirs.
+    task = await task_for(client, colleague, reason)
+    claim = await client.post(f"{API}/review-tasks/{task['id']}/claim", headers=colleague)
+    assert claim.status_code == 200 and claim.json()["mine"] is False
+    r = await client.post(f"{API}/review-tasks/{task['id']}/resolve", headers=colleague,
+                          json={"decision": "reject"})
+    assert r.status_code == 200 and r.json()["mine"] is False

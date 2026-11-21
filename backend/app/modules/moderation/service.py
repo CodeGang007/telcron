@@ -53,18 +53,22 @@ async def _product_summary(db: AsyncSession, product_id: uuid.UUID) -> dict[str,
     return {"slug": row.public_slug, "name": row.canonical_name}
 
 
-async def describe(db: AsyncSession, task: ReviewTask) -> dict[str, Any]:
-    """A task with enough of its subject for a reviewer to decide without leaving the queue."""
+async def describe(db: AsyncSession, task: ReviewTask, viewer: User) -> dict[str, Any]:
+    """A task with enough of its subject for a reviewer to decide without leaving the queue.
+    `mine` says the viewer has a stake in it (DEF-101), so the queue offers no decision that can only
+    be refused as `own_item`. The owner is read off the subject row loaded here, by the same column
+    `_subject_owner` uses, so a list costs no query beyond the description itself."""
     subject: dict[str, Any] = {}
+    row: Any = None
     if task.task_type == "hazard_flag":
-        flag = await db.get(HazardFlag, task.subject_id)
+        flag = row = await db.get(HazardFlag, task.subject_id)
         reporter = await db.get(User, flag.reporter_user_id)
         subject = {"description": flag.description, "dimension_code": flag.dimension_code,
                    "status": flag.status, "reporter": reporter.display_name,
                    "reporter_trust": float(reporter.trust_score),
                    "product": await _product_summary(db, flag.product_id)}
     elif task.task_type == "fact_report":
-        report = await db.get(ProductFactReport, task.subject_id)
+        report = row = await db.get(ProductFactReport, task.subject_id)
         reporter = await db.get(User, report.reporter_user_id)
         subject = {"attribute": report.attribute, "current_value": report.current_value,
                    "proposed_value": report.proposed_value,
@@ -72,22 +76,26 @@ async def describe(db: AsyncSession, task: ReviewTask) -> dict[str, Any]:
                    "reporter": reporter.display_name,
                    "product": await _product_summary(db, report.product_id)}
     elif task.task_type == "fraud_hold":
-        hold = await db.get(FraudHold, task.subject_id)
+        hold = row = await db.get(FraudHold, task.subject_id)
         member = await db.get(User, hold.user_id)
         subject = {"reason": hold.reason, "rule_triggered": hold.rule_triggered,
                    "status": hold.status, "member": member.display_name}
     elif task.payload.get("product_id"):
         subject = {"product": await _product_summary(db, uuid.UUID(task.payload["product_id"]))}
+    if task.task_type in SUBJECT_OWNER:
+        owner = getattr(row, SUBJECT_OWNER[task.task_type][1].key) if row is not None else None
+    else:
+        owner = task.submitted_by_user_id
     return {"id": str(task.id), "task_type": task.task_type, "status": task.status,
             "priority": task.priority, "created_at": task.created_at.isoformat(),
-            "resolution": task.resolution, "subject": subject}
+            "resolution": task.resolution, "mine": owner == viewer.id, "subject": subject}
 
 
-async def list_tasks(db: AsyncSession, limit: int) -> list[dict[str, Any]]:
+async def list_tasks(db: AsyncSession, viewer: User, limit: int) -> list[dict[str, Any]]:
     tasks = (await db.execute(select(ReviewTask).where(ReviewTask.status.in_(OPEN))
                               .order_by(ReviewTask.priority, ReviewTask.created_at)
                               .limit(limit))).scalars().all()
-    return [await describe(db, t) for t in tasks]
+    return [await describe(db, t, viewer) for t in tasks]
 
 
 # The member a task's subject belongs to: the reporter of a flag or correction, the holder of a

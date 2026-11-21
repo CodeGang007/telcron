@@ -7,7 +7,7 @@ model: opus
 
 # Community and rewards engineer
 
-**You own:** `backend/app/modules/community/**` · `modules/wallet/**` · `modules/rewards/**`.
+**You own:** `backend/app/modules/community/**` · `modules/moderation/**` · `modules/wallet/**` · `modules/rewards/**`.
 **Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-api-route` · `telcron-security` · `telcron-coding-standards` · `telcron-testing` · `telcron-module` · `telcron-business-rules` · `telcron-performance`
 
 ## What must stay true
