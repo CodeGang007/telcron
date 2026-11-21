@@ -1,7 +1,7 @@
 """One screening: gather evidence, judge recall candidates, score the hazard dimensions, check
 every citation, issue a passport version.
 
-The database enforces the invariants (db/migrations/*_rules.sql, db/schema-next/*_rules.sql):
+The database enforces the invariants (db/migrations/*_rules.sql, all three phases):
 a screening completes exactly once; a match verdict cites a matching candidate; a scored
 dimension cites evidence; assessments and passports are insert-only; a passport's version is the
 next one and its badge agrees with its screening. This module orders its writes to satisfy those

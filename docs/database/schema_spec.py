@@ -7,6 +7,8 @@ Generated from this file:
 
 Every `checks` entry, unique and index here is literal PostgreSQL. Rules that cannot be expressed
 declaratively live in hand-written SQL (db/sql/*.sql) and are listed in each table's `rules`.
+A check changed after its phase was applied is a `Revised`: the spec states the rule the database
+enforces now, while the applied phase migration keeps being generated with the text it was applied with.
 
 Target: PostgreSQL 18 · extensions citext, pg_trgm, btree_gist, postgis, vector.
 Phases: 1 = core (created now) · 2 = AI engine · 3 = engagement. FKs are emitted in the phase in
@@ -88,6 +90,17 @@ class T:
     @property
     def append_only(self):
         return self.immutable is not None
+
+
+class Revised(str):
+    """A CHECK changed by a later hand-written migration. Its value is the rule the database enforces
+    now (catalogue, ERD); `applied` is the text the frozen phase migration was generated with; `by` is
+    the migration that made the change. db/tests/test_spec_checks.py holds all three to account."""
+
+    def __new__(cls, now, *, applied, by):
+        obj = super().__new__(cls, now)
+        obj.applied, obj.by = applied, by
+        return obj
 
 
 def ID():
@@ -241,9 +254,10 @@ TABLES = [
       uniques=[U("phone_e164", where="phone_verified_at IS NOT NULL")],
       checks=["verification_level BETWEEN 0 AND 3",
               "trust_score BETWEEN 0 AND 100",
-              "verification_level = 0 OR (email_verified_at IS NOT NULL AND phone_verified_at IS NOT NULL)",
-              # Relaxed to email only by migration 20261121120000_level1_email_only (ADR-006);
-              # phase 1 is applied, so the change lives in that migration, not here.
+              # Level 1 needs a verified email only (ADR-006).
+              Revised("verification_level = 0 OR email_verified_at IS NOT NULL",
+                      applied="verification_level = 0 OR (email_verified_at IS NOT NULL AND phone_verified_at IS NOT NULL)",
+                      by="20261121120000_level1_email_only.sql"),
               "phone_verified_at IS NULL OR phone_e164 IS NOT NULL",
               "phone_e164 IS NULL OR phone_e164 ~ '^\\+[1-9][0-9]{6,14}$'",
               "(status = 'deleted') = (deleted_at IS NOT NULL)"],

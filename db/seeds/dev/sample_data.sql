@@ -77,6 +77,10 @@ BEGIN
     INSERT INTO recall_product_identifiers (recall_product_id, identifier_type, value, value_normalized) VALUES
         (rp, 'model_number', 'PB-1000', 'PB1000'), (rp, 'gtin', '012345000017', '00012345000017');
 
+    -- Passports are what backend/app/domain/passport.py `build()` returns for these inputs. No hazard
+    -- assessment exists for any demo product, so hazard_component is NULL (never 0, never 100) and the
+    -- trust score is the weighted mean of recall (0.4) and certification (0.2) alone (DEF-010).
+
     -- Blender: screening = match → passport Recalled
     INSERT INTO screenings (product_id, run_type, corpus_synced_at, model_code, prompt_version)
     VALUES (p_blender, 'initial', now(), 'nova-lite', 'adjudicate-v1') RETURNING id INTO s;
@@ -86,7 +90,7 @@ BEGIN
                           rationale = 'Model number and GTIN match the recall notice.' WHERE id = s;
     INSERT INTO passports (product_id, version, tier, status_badge, trust_score, recall_component, certification_component,
                            hazard_component, screening_id, formula_version)
-    VALUES (p_blender, 1, 2, 'recalled', 12, 0, 70, 100, s, 'trust-v1') RETURNING id INTO pp;
+    VALUES (p_blender, 1, 2, 'recalled', 23.33, 0, 70, NULL, s, 'provisional-0') RETURNING id INTO pp;
     INSERT INTO evidence_items (kind, recall_id, url, excerpt)
     VALUES ('recall', r_blender, 'https://www.cpsc.gov/Recalls', 'The blade assembly can detach from the jar base during use.')
     RETURNING id INTO ev;
@@ -102,7 +106,7 @@ BEGIN
     UPDATE screenings SET status = 'completed', verdict = 'no_match_found', candidates_considered = 5, completed_at = now() WHERE id = s;
     INSERT INTO passports (product_id, version, tier, status_badge, trust_score, recall_component, certification_component,
                            hazard_component, screening_id, formula_version)
-    VALUES (p_fridge, 1, 2, 'verified', 96, 100, 85, 100, s, 'trust-v1') RETURNING id INTO pp;
+    VALUES (p_fridge, 1, 2, 'verified', 95.00, 100, 85, NULL, s, 'provisional-0') RETURNING id INTO pp;
     INSERT INTO evidence_items (kind, certification_check_id, url) VALUES ('certification_check', chk, 'https://data.energystar.gov')
     RETURNING id INTO ev;
     INSERT INTO passport_evidence (passport_id, evidence_id, purpose) VALUES (pp, ev, 'certification');
@@ -115,7 +119,7 @@ BEGIN
     UPDATE screenings SET status = 'completed', verdict = 'no_match_found', candidates_considered = 4, completed_at = now() WHERE id = s;
     INSERT INTO passports (product_id, version, tier, status_badge, trust_score, recall_component, certification_component,
                            hazard_component, screening_id, formula_version)
-    VALUES (p_charger, 1, 2, 'certification_issue', 60, 100, 0, 100, s, 'trust-v1') RETURNING id INTO pp;
+    VALUES (p_charger, 1, 2, 'certification_issue', 66.67, 100, 0, NULL, s, 'provisional-0') RETURNING id INTO pp;
     INSERT INTO evidence_items (kind, certification_check_id, url) VALUES ('certification_check', chk, 'https://apps.fcc.gov/oetcf/eas')
     RETURNING id INTO ev;
     INSERT INTO passport_evidence (passport_id, evidence_id, purpose) VALUES (pp, ev, 'certification');
@@ -124,7 +128,7 @@ BEGIN
     INSERT INTO identification_requests (user_id, input_type, text_query, status, confidence, escalated, resolved_product_id, completed_at)
     VALUES (v_demo, 'text', 'desk lamp', 'needs_input', 0.41, true, NULL, now());
     INSERT INTO passports (product_id, version, tier, status_badge, formula_version)
-    VALUES (p_unknown, 1, 0, 'needs_information', 'trust-v1');
+    VALUES (p_unknown, 1, 0, 'needs_information', 'provisional-0');
 
     -- demo user's wallet, labels and a review
     INSERT INTO wallet_items (user_id, product_id, add_method, status, nickname)
@@ -145,4 +149,30 @@ BEGIN
 
     INSERT INTO audit_log (actor_type, action, entity_type, metadata)
     VALUES ('system', 'seed.demo_data', 'database', '{"note": "fictional demo data"}');
+END $$;
+
+-- DEF-010 correction for databases that loaded the earlier demo data, whose passports carried a
+-- hazard component of 100 with no hazard assessment behind it. Passports are append-only, so this
+-- issues the next version: same screening, badge and evidence, hazard_component NULL, trust score
+-- recomputed without it. Idempotent: once the current passport is corrected nothing matches.
+DO $$
+DECLARE
+    old record;
+    new_id uuid;
+BEGIN
+    FOR old IN
+        SELECT pp.* FROM products pr JOIN passports pp ON pp.id = pr.current_passport_id
+         WHERE pr.public_slug IN ('acme-powerblend-1000', 'contoso-fastcharge-65w', 'northwind-chillmate-31')
+           AND pp.formula_version = 'trust-v1'
+           AND pp.hazard_component IS NOT NULL AND pp.hazard_assessment_id IS NULL
+    LOOP
+        INSERT INTO passports (product_id, version, tier, status_badge, trust_score, recall_component,
+                               certification_component, hazard_component, screening_id, formula_version)
+        VALUES (old.product_id, old.version + 1, old.tier, old.status_badge,
+                round((old.recall_component * 0.4 + old.certification_component * 0.2) / 0.6, 2),
+                old.recall_component, old.certification_component, NULL, old.screening_id, 'provisional-0')
+        RETURNING id INTO new_id;
+        INSERT INTO passport_evidence (passport_id, evidence_id, purpose)
+        SELECT new_id, evidence_id, purpose FROM passport_evidence WHERE passport_id = old.id;
+    END LOOP;
 END $$;

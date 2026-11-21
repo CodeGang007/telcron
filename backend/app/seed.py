@@ -1,7 +1,7 @@
 """Local conveniences on top of the database's own seeds. Idempotent.
 
 Reference data (sources, categories, hazard dimensions, earn rules, levels) and the fictional
-demo products are the database's: `make db-seed`, `make db-next` and `make db-sample`. This
+demo products are the database's: `make db-migrate`, `make db-seed` and `make db-sample`. This
 script adds only what the application needs to be usable on a developer's machine or the dev
 environment, and does nothing at all unless ENV is local or dev.
 """
