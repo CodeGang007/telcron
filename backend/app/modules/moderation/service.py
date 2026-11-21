@@ -90,33 +90,61 @@ async def list_tasks(db: AsyncSession, limit: int) -> list[dict[str, Any]]:
     return [await describe(db, t) for t in tasks]
 
 
-async def _locked_task(db: AsyncSession, task_id: uuid.UUID) -> ReviewTask:
+# The member a task's subject belongs to: the reporter of a flag or correction, the holder of a
+# frozen balance. Task types whose subject is a product or an assessment belong to nobody.
+SUBJECT_OWNER = {
+    "hazard_flag": (HazardFlag, HazardFlag.reporter_user_id),
+    "fact_report": (ProductFactReport, ProductFactReport.reporter_user_id),
+    "fraud_hold": (FraudHold, FraudHold.user_id),
+}
+
+
+async def _subject_owner(db: AsyncSession, task: ReviewTask) -> uuid.UUID | None:
+    if task.task_type not in SUBJECT_OWNER:
+        return None
+    model, owner = SUBJECT_OWNER[task.task_type]
+    return await db.scalar(select(owner).where(model.id == task.subject_id))
+
+
+async def _locked_task(db: AsyncSession, task_id: uuid.UUID, staff: User) -> ReviewTask:
+    """The open task, locked, provided the reviewer has no stake in it. Nobody decides a task about
+    their own contribution or their own coins (DEF-011): 403, not 404, because the task is in the
+    queue the reviewer has just read; hiding it would not hide anything."""
     task = (await db.execute(select(ReviewTask).where(ReviewTask.id == task_id).with_for_update())
             ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "review_task_not_found")
     if task.status not in OPEN:
         raise HTTPException(status.HTTP_409_CONFLICT, "review_task_closed")
+    if await _subject_owner(db, task) == staff.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "own_item")
     return task
 
 
 async def claim(db: AsyncSession, task_id: uuid.UUID, staff: User) -> ReviewTask:
-    task = await _locked_task(db, task_id)
+    task = await _locked_task(db, task_id, staff)
     task.status, task.assigned_to_user_id = "in_progress", staff.id
     return task
 
 
-async def _resolve_flag(db: AsyncSession, task: ReviewTask, staff: User, confirm: bool,
+async def _resolve_flag(db: AsyncSession, task: ReviewTask, staff: User, decision: str,
                         note: str | None) -> None:
     flag = (await db.execute(select(HazardFlag).where(HazardFlag.id == task.subject_id)
                              .with_for_update())).scalar_one()
-    if flag.reporter_user_id == staff.id:
-        raise HTTPException(status.HTTP_409_CONFLICT, "own_contribution")
     if flag.status != "pending":
+        if decision == "dismiss":
+            return
         raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")
+    confirm = decision == "confirm"
     flag.status = "confirmed" if confirm else "rejected"
+    if decision == "dismiss":
+        note = note or "Closed by the safety team without a finding."
     flag.reviewed_by_user_id, flag.reviewed_at, flag.resolution_note = staff.id, _now(), note
     await db.flush()
+    if decision == "dismiss":
+        # Closed without a finding: the flag stops being pending (so its reporter may flag the
+        # product again), pays nothing and costs no trust. `flag_status` has no `dismissed`.
+        return
     await _adjust_trust(db, flag.reporter_user_id,
                         "hazard_flag_confirmed" if confirm else "hazard_flag_rejected",
                         "hazard_flag", flag.id)
@@ -139,16 +167,19 @@ async def _resolve_flag(db: AsyncSession, task: ReviewTask, staff: User, confirm
     emit(db, "hazard_flag", flag.id, "HazardFlagConfirmed", {"product_id": str(product.id)})
 
 
-async def _resolve_fact(db: AsyncSession, task: ReviewTask, staff: User, accept: bool) -> None:
+async def _resolve_fact(db: AsyncSession, task: ReviewTask, staff: User, decision: str) -> None:
     report = (await db.execute(select(ProductFactReport).where(
         ProductFactReport.id == task.subject_id).with_for_update())).scalar_one()
-    if report.reporter_user_id == staff.id:
-        raise HTTPException(status.HTTP_409_CONFLICT, "own_contribution")
     if report.status != "pending":
+        if decision == "dismiss":
+            return
         raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")
+    accept = decision == "confirm"
     report.status = "accepted" if accept else "rejected"
     report.reviewed_by_user_id, report.reviewed_at = staff.id, _now()
     await db.flush()
+    if decision == "dismiss":
+        return  # closed without a finding: rejected, no trust penalty, no coins
     await _adjust_trust(db, report.reporter_user_id,
                         "fact_report_accepted" if accept else "fact_report_rejected",
                         "product_fact_report", report.id)
@@ -179,20 +210,31 @@ async def _resolve_fact(db: AsyncSession, task: ReviewTask, staff: User, accept:
                        subject_id=product.id, idempotency_key=f"fact_verification:{report.id}")
 
 
+async def _resolve_hold(db: AsyncSession, task: ReviewTask, staff: User, decision: str) -> None:
+    hold = (await db.execute(select(FraudHold).where(FraudHold.id == task.subject_id)
+                             .with_for_update())).scalar_one()
+    if hold.status != "open":
+        if decision == "dismiss":
+            return
+        raise HTTPException(status.HTTP_409_CONFLICT, "already_decided")
+    await db.execute(RESOLVE_HOLD, {"hold": hold.id, "is_fraud": decision == "confirm",
+                                    "actor": staff.id})
+    await db.refresh(hold)  # the function changed the row behind the session
+
+
 async def resolve(db: AsyncSession, task_id: uuid.UUID, staff: User, decision: str,
                   note: str | None) -> ReviewTask:
     """`confirm` upholds the subject (a real hazard, a correct fact, real fraud); `reject` does the
-    opposite; `dismiss` closes the task without a finding."""
-    task = await _locked_task(db, task_id)
-    if decision != "dismiss":
-        confirm = decision == "confirm"
-        if task.task_type == "hazard_flag":
-            await _resolve_flag(db, task, staff, confirm, note)
-        elif task.task_type == "fact_report":
-            await _resolve_fact(db, task, staff, confirm)
-        elif task.task_type == "fraud_hold":
-            await db.execute(RESOLVE_HOLD, {"hold": task.subject_id, "is_fraud": confirm,
-                                            "actor": staff.id})
+    opposite; `dismiss` closes the task without a finding. Without a finding nothing stays open
+    (DEF-012): a flag or correction is rejected with no trust penalty, and a fraud hold is released,
+    because only a finding of fraud forfeits coins."""
+    task = await _locked_task(db, task_id, staff)
+    if task.task_type == "hazard_flag":
+        await _resolve_flag(db, task, staff, decision, note)
+    elif task.task_type == "fact_report":
+        await _resolve_fact(db, task, staff, decision)
+    elif task.task_type == "fraud_hold":
+        await _resolve_hold(db, task, staff, decision)
     task.status = "dismissed" if decision == "dismiss" else "resolved"
     task.resolution = f"{decision}: {note}" if note else decision
     task.resolved_at = _now()

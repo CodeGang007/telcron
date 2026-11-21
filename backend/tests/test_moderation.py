@@ -98,7 +98,7 @@ async def test_staff_cannot_decide_their_own_flag(client, db):
     task = await task_for(client, staff, flag["description"])
     r = await client.post(f"{API}/review-tasks/{task['id']}/resolve", headers=staff,
                           json={"decision": "confirm"})
-    assert r.status_code == 409 and r.json()["detail"] == "own_contribution"
+    assert r.status_code == 403 and r.json()["detail"] == "own_item"
 
 
 async def test_an_accepted_correction_changes_the_product_and_pays(client, db):
@@ -130,17 +130,28 @@ async def test_an_accepted_correction_changes_the_product_and_pays(client, db):
     assert await events_for(db, "ProductCorrected", await product_id(db, slug))
 
 
-async def test_the_safety_team_releases_a_fraud_hold(client, db):
-    _, _, member = await verified_user(client, "Held")
-    _, staff = await staff_user(client, db)
+async def hold_coins(client, db, member, reason: str) -> FraudHold:
+    """Freeze the member's pending coins under an open hold with a review task, as the rapid-fire
+    rule does (reaching 20 earns in 5 minutes through the API would take a page of setup)."""
     user_id = (await me(client, member))["id"]
-    hold = FraudHold(user_id=user_id, reason="Unusually many rewarded actions in 5 minutes",
-                     rule_triggered="rapid_fire")
+    hold = FraudHold(user_id=user_id, reason=reason, rule_triggered="rapid_fire")
     db.add(hold)
     await db.flush()
     await db.execute(text("select coin_apply_hold(cast(:h as uuid))"), {"h": hold.id})
     await _queue_hold_review(db, hold.id, user_id)
     await db.commit()
+    return hold
+
+
+async def coins_of(client, headers) -> tuple[int, int, int]:
+    coins = (await client.get(f"{API}/coins", headers=headers)).json()
+    return coins["confirmed"], coins["pending"], coins["frozen"]
+
+
+async def test_the_safety_team_releases_a_fraud_hold(client, db):
+    _, _, member = await verified_user(client, "Held")
+    _, staff = await staff_user(client, db)
+    hold = await hold_coins(client, db, member, "Unusually many rewarded actions in 5 minutes")
     coins = (await client.get(f"{API}/coins", headers=member)).json()
     assert (coins["pending"], coins["frozen"]) == (0, 105)
 
@@ -151,3 +162,99 @@ async def test_the_safety_team_releases_a_fraud_hold(client, db):
     assert r.status_code == 200
     coins = (await client.get(f"{API}/coins", headers=member)).json()
     assert (coins["confirmed"], coins["frozen"]) == (105, 0)
+
+
+async def test_a_moderator_cannot_release_their_own_fraud_hold(client, db):
+    """DEF-011: the person a fraud hold was applied to never decides it, by any action."""
+    _, own = await staff_user(client, db, name="Held Moderator")
+    _, colleague = await staff_user(client, db, name="Colleague")
+    reason = "Twenty rewarded actions in four minutes (own hold)"
+    hold = await hold_coins(client, db, own, reason)
+    before = await coins_of(client, own)
+    assert before == (0, 0, 105)
+
+    task = await task_for(client, own, reason)
+    claim = await client.post(f"{API}/review-tasks/{task['id']}/claim", headers=own)
+    assert claim.status_code == 403 and claim.json()["detail"] == "own_item"
+    for decision in ("reject", "confirm", "dismiss"):
+        r = await client.post(f"{API}/review-tasks/{task['id']}/resolve", headers=own,
+                              json={"decision": decision})
+        assert r.status_code == 403 and r.json()["detail"] == "own_item", decision
+    assert await coins_of(client, own) == before
+    await db.refresh(hold)
+    assert hold.status == "open"
+    assert (await task_for(client, colleague, reason))["status"] == "open"
+
+    # A colleague can still decide it.
+    r = await client.post(f"{API}/review-tasks/{task['id']}/resolve", headers=colleague,
+                          json={"decision": "reject"})
+    assert r.status_code == 200
+    assert await coins_of(client, own) == (105, 0, 0)
+
+
+async def test_staff_cannot_decide_their_own_correction(client, db):
+    _, staff = await staff_user(client, db, name="Editor Too")
+    fix = {"attribute": "colour_name", "proposed_value": "Slate grey (own correction)"}
+    assert (await client.post(f"{API}/products/{SLUG}/fact-reports", headers=staff,
+                              json=fix)).status_code == 201
+    task = await task_for(client, staff, fix["proposed_value"])
+    assert (await client.post(f"{API}/review-tasks/{task['id']}/claim",
+                              headers=staff)).status_code == 403
+    r = await client.post(f"{API}/review-tasks/{task['id']}/resolve", headers=staff,
+                          json={"decision": "confirm"})
+    assert r.status_code == 403 and r.json()["detail"] == "own_item"
+    product = (await client.get(f"{API}/products/{SLUG}")).json()
+    assert product["specifications"].get("colour_name") != fix["proposed_value"]
+
+
+async def test_dismissing_a_fraud_hold_releases_the_coins(client, db):
+    """DEF-012: without a finding of fraud the frozen coins are the member's."""
+    _, _, member = await verified_user(client, "Dismissed Hold")
+    _, staff = await staff_user(client, db)
+    reason = "A burst of rewarded actions (to be dismissed)"
+    hold = await hold_coins(client, db, member, reason)
+    assert await coins_of(client, member) == (0, 0, 105)
+    task = await task_for(client, staff, reason)
+    r = await client.post(f"{API}/review-tasks/{task['id']}/resolve", headers=staff,
+                          json={"decision": "dismiss"})
+    assert r.status_code == 200 and r.json()["status"] == "dismissed"
+    assert r.json()["subject"]["status"] == "released"
+    assert await coins_of(client, member) == (105, 0, 0)
+    await db.refresh(hold)
+    assert hold.status == "released" and hold.resolved_at is not None
+
+
+async def test_dismissing_a_flag_closes_it_without_a_penalty(client, db):
+    """DEF-012: a dismissed flag leaves `pending`, so its reporter can flag the product again."""
+    _, _, reporter = await verified_user(client, "Dismissed Flag")
+    _, staff = await staff_user(client, db)
+    flag = {"description": "The plug gets warm after an hour; not sure it is a hazard (dismiss)."}
+    assert (await client.post(f"{API}/products/{SLUG}/flags", headers=reporter,
+                              json=flag)).status_code == 201
+    task = await task_for(client, staff, flag["description"])
+    r = await client.post(f"{API}/review-tasks/{task['id']}/resolve", headers=staff,
+                          json={"decision": "dismiss"})
+    assert r.status_code == 200 and r.json()["status"] == "dismissed"
+    mine = (await client.get(f"{API}/contributions", headers=reporter)).json()["flags"]
+    assert mine[0]["status"] == "rejected"
+    assert (await me(client, reporter))["trust_score"] == 10.0
+    history = (await client.get(f"{API}/coins/history", headers=reporter)).json()
+    assert not [e for e in history if e["rule_code"] == "hazard_flag_confirmed"]
+    again = {"description": "Now the casing is discoloured near the pins as well (dismiss 2)."}
+    assert (await client.post(f"{API}/products/{SLUG}/flags", headers=reporter,
+                              json=again)).status_code == 201
+
+
+async def test_dismissing_a_correction_closes_it_without_a_penalty(client, db):
+    _, _, member = await verified_user(client, "Dismissed Fix")
+    _, staff = await staff_user(client, db)
+    fix = {"attribute": "cable_length", "proposed_value": "1.8 m (to be dismissed)"}
+    assert (await client.post(f"{API}/products/{SLUG}/fact-reports", headers=member,
+                              json=fix)).status_code == 201
+    task = await task_for(client, staff, fix["proposed_value"])
+    r = await client.post(f"{API}/review-tasks/{task['id']}/resolve", headers=staff,
+                          json={"decision": "dismiss"})
+    assert r.status_code == 200 and r.json()["subject"]["status"] == "rejected"
+    assert (await me(client, member))["trust_score"] == 10.0
+    product = (await client.get(f"{API}/products/{SLUG}")).json()
+    assert product["specifications"].get("cable_length") != fix["proposed_value"]
