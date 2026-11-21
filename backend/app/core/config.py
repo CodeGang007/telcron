@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     # Used when the main model's daily token allowance is spent (each model has its own on the
     # free plan): research reading, hazard scoring and the assistant keep working.
     llm_fallback_model: str = "openai/gpt-oss-20b"
+    # Last in line when both Groq models are spent for the day: Google's cheapest Gemini model
+    # (an alias that follows the current Flash-Lite), through its OpenAI-compatible interface.
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-flash-lite-latest"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai"
     passport_cache_seconds: int = 24 * 3600
     # Local demos only: the application seed shortens every earn rule's confirmation delay to this.
     coin_confirm_delay_seconds: int | None = None

@@ -55,9 +55,11 @@ MAX_WAIT_SECONDS = 30.0
 
 
 def daily_limit(response: httpx.Response) -> bool:
-    """A 429 for the day's allowance (not the minute's): waiting minutes will not help."""
-    return response.status_code == 429 and ("per day" in response.text or "(TPD)" in response.text
-                                            or "(RPD)" in response.text)
+    """A refusal for the day's allowance (not the minute's): waiting minutes will not help."""
+    if response.status_code != 429:
+        return False
+    text = response.text
+    return "per day" in text or "(TPD)" in text or "(RPD)" in text or "PerDay" in text
 
 
 def wait_for(response: httpx.Response) -> float:
@@ -69,32 +71,56 @@ def wait_for(response: httpx.Response) -> float:
         return (int(found.group(1) or 0) * 60 + float(found.group(2))) if found else 20.0
 
 
+def providers(first_model: str | None = None) -> list[tuple[str, str, str]]:
+    """(base URL, key, model) in the order to try: Groq's main model, Groq's second model (each
+    has its own daily allowance on the free plan), then Gemini Flash-Lite."""
+    s = get_settings()
+    out: list[tuple[str, str, str]] = []
+    if s.llm_api_key:
+        for model in dict.fromkeys(m for m in (first_model or s.llm_model, s.llm_fallback_model) if m):
+            out.append((s.llm_base_url, s.llm_api_key, model))
+    if s.gemini_api_key:
+        out.append((s.gemini_base_url, s.gemini_api_key, s.gemini_model))
+    return out
+
+
 async def chat(body: dict[str, Any], max_wait: float = MAX_WAIT_SECONDS,
                seconds: float = 60, retries: int = RETRIES) -> dict[str, Any]:
-    """One chat completion on the main model, falling back to the second model when the main one's
-    daily allowance is spent; a per-minute limit is waited out (up to `max_wait` a time)."""
-    s = get_settings()
-    models = list(dict.fromkeys(m for m in (body.get("model") or s.llm_model,
-                                            s.llm_fallback_model) if m))
-    async with httpx.AsyncClient(base_url=s.llm_base_url, timeout=seconds) as http:
-        for model in models:
+    """One chat completion, down the provider list: a provider whose daily allowance is spent (or
+    that is overloaded) hands over to the next; a per-minute limit is waited out (up to `max_wait`
+    a time). The answer says which model wrote it (`model`)."""
+    chain = providers(body.get("model"))
+    if not chain:
+        raise ScorerError("no model configured")
+    last_error = "no answer"
+    async with httpx.AsyncClient(timeout=seconds) as http:
+        for n, (base, key, model) in enumerate(chain):
             sent = {**body, "model": model}
-            if model != models[0]:
-                # The fallback is a reasoning model too: keep its thinking short and leave room
-                # for the answer, or it writes no JSON at all (seen 2026-11-22).
+            if n:
+                # Later models are reasoning models too: keep the thinking short and leave room
+                # for the answer, or they write no JSON at all (seen 2026-11-22).
                 sent["reasoning_effort"] = body.get("reasoning_effort", "low")
                 sent["max_completion_tokens"] = max(body.get("max_completion_tokens", 0), 2500)
             for attempt in range(retries + 1):
-                response = await http.post("/chat/completions", json=sent,
-                                           headers={"Authorization": f"Bearer {s.llm_api_key}"})
-                if daily_limit(response):
-                    break  # this model is done for today: try the next
+                response = await http.post(f"{base}/chat/completions", json=sent,
+                                           headers={"Authorization": f"Bearer {key}"})
+                if response.status_code == 503 and attempt < retries:
+                    await asyncio.sleep(3 * (attempt + 1))  # "high demand": usually passes soon
+                    continue
+                if daily_limit(response) or response.status_code in (503, 404):
+                    last_error = f"{model}: HTTP {response.status_code}"
+                    break  # spent for today, still overloaded or retired: the next provider
                 if response.status_code == 429 and attempt < retries:
                     await asyncio.sleep(min(wait_for(response) + 0.5, max_wait))
                     continue
+                if response.status_code == 429:
+                    last_error = f"{model}: rate limited"
+                    break
                 response.raise_for_status()
-                return response.json()
-    raise ScorerError("every model's daily allowance is spent")
+                answer = response.json()
+                answer.setdefault("model", model)
+                return answer
+    raise ScorerError(f"every model's allowance is spent or unavailable ({last_error})")
 
 
 async def complete(messages: list[dict[str, str]]) -> dict[str, Any]:

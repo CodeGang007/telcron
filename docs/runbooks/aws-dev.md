@@ -128,6 +128,8 @@ Every step that creates, changes or deletes something needs the human's yes (giv
    `telcron-dev-db` security group, and the role's RDS-master-secret permission. Update this file and
    `aws-dev.local.md`.
 
+Keys for outside services (Groq, Gemini, Tavily, Gmail): `docs/runbooks/api-keys.md`.
+
 ## Signing in to the dev site
 
 Sign-up is closed there: the application cannot send verification codes yet (WO-005), and codes are never

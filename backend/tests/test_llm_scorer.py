@@ -105,3 +105,26 @@ async def test_a_spent_daily_allowance_moves_to_the_fallback_model(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "post", post)
     answer = await llm.complete([{"role": "user", "content": "hi"}])
     assert answer["choices"] and used == [s.llm_model, s.llm_fallback_model]  # no waiting first
+
+
+async def test_when_both_groq_models_are_spent_gemini_answers(monkeypatch):
+    import httpx
+
+    from app.core.config import get_settings
+    from app.modules.screening import llm
+    s = get_settings()
+    monkeypatch.setattr(s, "llm_api_key", "groq")
+    monkeypatch.setattr(s, "gemini_api_key", "gemini")
+    asked = []
+
+    async def post(self, url, json=None, headers=None):
+        asked.append((url.split("/v1")[0][-12:], json["model"]))
+        req = httpx.Request("POST", url)
+        if "groq" in url:
+            return httpx.Response(429, request=req, text="Rate limit reached on tokens per day (TPD)")
+        assert headers["Authorization"] == "Bearer gemini" and json["reasoning_effort"] == "low"
+        return httpx.Response(200, request=req, json={"choices": [{"message": {"content": "{}"}}]})
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    answer = await llm.complete([{"role": "user", "content": "hi"}])
+    assert [m for _, m in asked] == [s.llm_model, s.llm_fallback_model, s.gemini_model]
+    assert answer["model"] == s.gemini_model  # the record says which model really answered
