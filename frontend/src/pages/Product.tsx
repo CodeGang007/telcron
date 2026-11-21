@@ -1,29 +1,15 @@
-import {
-  AlertOctagon,
-  BadgeCheck,
-  Bot,
-  ChevronDown,
-  FileText,
-  Flag,
-  Heart,
-  History,
-  MessageSquarePlus,
-  PencilLine,
-  ShieldCheck,
-  Star,
-  ThumbsUp,
-} from 'lucide-react';
+import { AlertOctagon, BadgeCheck, Bot, ChevronDown, FileText, Heart, History, RefreshCw, ShieldCheck } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useCallback, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { FactForm, FlagForm } from '../components/Contribute';
 import { Alternatives, StoreLinks } from '../components/Alternatives';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Assistant } from '../components/Assistant';
 import { Research } from '../components/Research';
-import { CategoryTile, EmptyState, Notice, Pager, Skeleton, Stars, StatusBadge, TrustRing, scoreTone } from '../components/ui';
-import { api, apiUrl, explain, post, type Dimension, type Passport, type ProductDetail, type Review } from '../lib/api';
+import { ContributeTabs, ReviewList } from '../components/Reviews';
+import { CategoryTile, EmptyState, Skeleton, StatusBadge, TrustRing, scoreTone } from '../components/ui';
+import { ApiError, api, apiUrl, explain, post, type Dimension, type Passport, type ProductDetail, type Review } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useLoad } from '../lib/useLoad';
 import { usePaged } from '../lib/usePaged';
@@ -108,75 +94,6 @@ function DimensionRow({ d, index }: { d: Dimension; index: number }) {
   );
 }
 
-function ReviewForm({ slug, onDone }: { slug: string; onDone: () => void }) {
-  const [rating, setRating] = useState(5);
-  const [hover, setHover] = useState(0);
-  const [body, setBody] = useState('');
-  const [busy, setBusy] = useState(false);
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const r = await post<{ coins_pending: number }>(`/products/${slug}/reviews`, { rating, body });
-      toast.success('Review posted', { description: `${r.coins_pending} TelCoins are pending while we check it.` });
-      setBody('');
-      onDone();
-    } catch (err) {
-      toast.error(explain(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <form onSubmit={submit} className="space-y-4" aria-label="Write a review">
-      <div>
-        <p className="text-sm font-medium">Your rating</p>
-        <div className="mt-1 flex gap-1" onMouseLeave={() => setHover(0)}>
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button type="button" key={n} aria-label={`${n} out of 5`} onMouseEnter={() => setHover(n)} onClick={() => setRating(n)} className="transition hover:scale-110">
-              <Star className={`size-7 ${(hover || rating) >= n ? 'fill-gold text-gold' : 'text-line'}`} />
-            </button>
-          ))}
-        </div>
-      </div>
-      <label className="block text-sm font-medium">
-        Your experience (at least 20 characters)
-        <textarea className="field mt-1 min-h-28 font-normal" required minLength={20} maxLength={5000} value={body} onChange={(e) => setBody(e.target.value)} placeholder="What happened when you used it?" />
-      </label>
-      <button className="btn w-full" disabled={busy}>{busy ? 'Posting…' : 'Post review'}</button>
-    </form>
-  );
-}
-
-const TABS = [
-  { key: 'review', label: 'Review', icon: MessageSquarePlus },
-  { key: 'flag', label: 'Report hazard', icon: Flag },
-  { key: 'fact', label: 'Correction', icon: PencilLine },
-] as const;
-
-function Contribute({ slug, onReview }: { slug: string; onReview: () => void }) {
-  const [tab, setTab] = useState<(typeof TABS)[number]['key']>('review');
-  return (
-    <div className="card">
-      <div className="mb-5 flex gap-1 rounded-2xl bg-panel p-1">
-        {TABS.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)} className={`relative flex flex-1 items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-semibold transition ${tab === t.key ? 'text-ink' : 'text-muted'}`}>
-            {tab === t.key && <motion.span layoutId="contribute-tab" className="absolute inset-0 rounded-xl bg-white shadow-soft" />}
-            <t.icon className="relative size-3.5" /><span className="relative">{t.label}</span>
-          </button>
-        ))}
-      </div>
-      <AnimatePresence mode="wait">
-        <motion.div key={tab} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.18 }}>
-          {tab === 'review' && <ReviewForm slug={slug} onDone={onReview} />}
-          {tab === 'flag' && <FlagForm slug={slug} />}
-          {tab === 'fact' && <FactForm slug={slug} />}
-        </motion.div>
-      </AnimatePresence>
-    </div>
-  );
-}
-
 function ProductSkeleton() {
   return (
     <div className="container-page space-y-8 py-12">
@@ -193,19 +110,38 @@ export function Product() {
   const product = useLoad(() => api<ProductDetail>(`/products/${slug}`), [slug]);
   const passport = useLoad(() => api<Passport>(`/products/${slug}/passport`).catch(() => null), [slug]);
   const reviews = usePaged<Review>(`/products/${slug}/reviews`, 5);
+  const canContribute = !!me && me.verification_level >= 1;
+  // Whether this product is already in the member's wallet, read from the wallet itself so the
+  // button is right on every visit, not only after a save in this tab (DEF-030).
+  const wallet = useLoad(
+    () => (canContribute ? api<{ product_id: string; slug: string }[]>('/wallet/items') : Promise.resolve([])),
+    [canContribute, slug],
+  );
   const [saved, setSaved] = useState(false);
+  const id = product.data?.id;
+  useEffect(() => {
+    setSaved(!!wallet.data?.some((w) => w.slug === slug || w.product_id === id));
+  }, [wallet.data, slug, id]);
   const rated = useCallback(() => { void passport.reload(); void product.reload(); }, [passport.reload, product.reload]);
 
   if (product.loading) return <ProductSkeleton />;
-  if (product.error || !product.data)
+  if (product.notFound)
     return (
       <div className="container-page py-16">
         <EmptyState icon={AlertOctagon} title="We could not find that product" action={<Link className="btn" to="/search">Search again</Link>} />
       </div>
     );
+  if (!product.data)
+    return (
+      <div className="container-page py-16">
+        <EmptyState icon={AlertOctagon} title="This product could not be loaded"
+          action={<button className="btn" onClick={() => void product.reload()}><RefreshCw className="size-4" />Try again</button>}>
+          {product.error ?? 'Could not reach Telcron. Try again in a moment.'}
+        </EmptyState>
+      </div>
+    );
   const p = product.data;
   const pass = passport.data;
-  const canContribute = !!me && me.verification_level >= 1;
   // One card per notice, however many addresses or copies it was found under.
   const noticeKey = (t: string) => t.toLowerCase().replace(/\s*\|.*$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
   const recalls = pass
@@ -219,6 +155,8 @@ export function Product() {
       setSaved(true);
       toast.success('Saved to your Digital Wallet', { description: 'We will alert you if its passport changes.' });
     } catch (e) {
+      // Saved in another tab or before the wallet list loaded: the server is the truth.
+      if (e instanceof ApiError && e.code === 'already_in_wallet') setSaved(true);
       toast.error(explain(e));
     }
   };
@@ -367,38 +305,11 @@ export function Product() {
       <section aria-labelledby="reviews" className="mt-12 grid gap-8 lg:grid-cols-[1fr_24rem]">
         <div>
           <h2 id="reviews" className="font-display text-2xl font-bold">Reviews</h2>
-          {reviews.loading ? (
-            <div className="mt-4 space-y-4">{[0, 1].map((i) => <Skeleton key={i} className="h-28 w-full rounded-3xl" />)}</div>
-          ) : reviews.items.length === 0 ? (
-            <div className="mt-4"><EmptyState icon={MessageSquarePlus} title="No reviews yet">The first review of a product earns a 30 TelCoin bonus.</EmptyState></div>
-          ) : (
-            <ul className="mt-4 space-y-4">
-              <AnimatePresence initial={false}>
-                {reviews.items.map((r) => (
-                  <motion.li key={r.id} layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="card">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <span className="grid size-9 place-items-center rounded-full bg-panel text-xs font-bold text-muted">{(r.author ?? 'M')[0]}</span>
-                        <div>
-                          <p className="text-sm font-semibold">{r.author ?? 'Marketplace review'}</p>
-                          <p className="text-xs text-muted">{new Date(r.created_at).toLocaleDateString()}</p>
-                        </div>
-                      </div>
-                      <Stars rating={r.rating} />
-                    </div>
-                    {r.title && <p className="mt-3 font-semibold">{r.title}</p>}
-                    <p className="mt-1 text-sm text-muted">{r.body}</p>
-                    {r.helpful_count > 0 && <p className="mt-3 flex items-center gap-1 text-xs text-muted"><ThumbsUp className="size-3.5" />{r.helpful_count} found this helpful</p>}
-                  </motion.li>
-                ))}
-              </AnimatePresence>
-            </ul>
-          )}
-          <Pager hasMore={reviews.hasMore} loading={reviews.loadingMore} onMore={reviews.more} shown={reviews.items.length} />
+          <ReviewList reviews={reviews} />
         </div>
         <aside className="space-y-6">
           {canContribute ? (
-            <Contribute slug={p.slug} onReview={() => { void reviews.reload(); setTimeout(() => void passport.reload(), 2500); }} />
+            <ContributeTabs slug={p.slug} onReview={() => { void reviews.reload(); setTimeout(() => void passport.reload(), 2500); }} />
           ) : (
             <div className="card bg-gradient-to-br from-brand-tint to-white">
               <p className="font-display text-lg font-bold text-brand-ink">Own this product?</p>
@@ -406,7 +317,6 @@ export function Product() {
               <Link to={me ? '/verify' : '/sign-up'} className="btn mt-5 w-full">{me ? 'Finish verification' : 'Create your TelcronID'}</Link>
             </div>
           )}
-          {product.error && <Notice tone="error">{product.error}</Notice>}
         </aside>
       </section>
     </div>

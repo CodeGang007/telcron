@@ -1,22 +1,20 @@
 import {
   ArrowRight,
-  BadgeCheck,
   Bot,
-  Coins,
   FileSearch,
   Megaphone,
   ScanLine,
   ShieldCheck,
-  Sparkles,
   Trophy,
   Users,
   Wallet,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
+import { PassportPreview } from '../components/PassportPreview';
 import { ProductCard } from '../components/ProductCard';
 import { SearchBox } from '../components/SearchBox';
-import { AnimatedNumber, CardSkeletons, StatusBadge, TrustRing, stagger } from '../components/ui';
+import { AnimatedNumber, CardSkeletons, stagger } from '../components/ui';
 import { api, type ProductSummary } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useLoad } from '../lib/useLoad';
@@ -30,63 +28,6 @@ const STEPS = [
   { icon: Bot, title: 'Ask anything', body: 'The product assistant answers from that evidence only, and says so when it does not know.' },
   { icon: ShieldCheck, title: 'Choose safer, stay alerted', body: 'Verified alternatives ranked by safety and reviews; your wallet alerts you when something changes.' },
 ];
-
-function PassportPreview() {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 30, rotate: -2 }}
-      animate={{ opacity: 1, y: 0, rotate: -2 }}
-      transition={{ duration: 0.8, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
-      className="relative hidden lg:block"
-    >
-      <div className="animate-float">
-        <div className="w-[360px] rounded-[2rem] border border-white/15 bg-white p-6 text-ink shadow-deep">
-          <div className="flex items-center justify-between">
-            <p className="eyebrow">Product passport · v3</p>
-            <StatusBadge badge="verified" />
-          </div>
-          <p className="mt-3 font-display text-lg font-bold leading-snug">Northwind ChillMate Mini Fridge</p>
-          <div className="mt-5 flex items-center gap-5">
-            <TrustRing score={92} size={112} />
-            <ul className="space-y-2 text-sm">
-              <li className="flex items-center gap-2"><BadgeCheck className="size-4 text-ok" />No recalls found</li>
-              <li className="flex items-center gap-2"><ShieldCheck className="size-4 text-ok" />ENERGY STAR valid</li>
-              <li className="flex items-center gap-2"><Sparkles className="size-4 text-gold" />Low hazard</li>
-            </ul>
-          </div>
-          <div className="mt-5 space-y-2.5">
-            {[['Regulatory', 6], ['Health & safety', 18], ['Customer issues', 31]].map(([name, v], i) => (
-              <div key={name}>
-                <div className="flex justify-between text-xs text-muted"><span>{name}</span><span>{v}</span></div>
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-neutral-tint">
-                  <motion.div className="h-full rounded-full bg-ok" initial={{ width: 0 }} animate={{ width: `${v}%` }} transition={{ delay: 0.9 + i * 0.15, duration: 0.9 }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-      <motion.div
-        initial={{ opacity: 0, x: 30 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: 1.1 }}
-        className="absolute -right-16 -top-16 rounded-2xl border border-white/10 bg-night/85 px-4 py-3 text-white shadow-2xl backdrop-blur-xl"
-      >
-        <p className="flex items-center gap-2 text-sm font-semibold"><Coins className="size-4 text-gold" />+25 TelCoins</p>
-        <p className="text-xs text-white/60">Hazard report confirmed</p>
-      </motion.div>
-      <motion.div
-        initial={{ opacity: 0, x: -30 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: 1.4 }}
-        className="absolute -bottom-8 -left-16 rounded-2xl border border-white/10 bg-night/85 px-4 py-3 text-white shadow-2xl backdrop-blur-xl"
-      >
-        <p className="flex items-center gap-2 text-sm font-semibold"><Megaphone className="size-4 text-brand-soft" />Recall alert sent</p>
-        <p className="text-xs text-white/60">to everyone who owns it</p>
-      </motion.div>
-    </motion.div>
-  );
-}
 
 export function Home() {
   const { me } = useAuth();
@@ -128,7 +69,7 @@ export function Home() {
               <Link to="/recalls" className="inline-flex items-center gap-1.5 text-sm font-medium text-white/70 hover:text-white">Latest recalls <ArrowRight className="size-4" /></Link>
             </motion.div>
           </motion.div>
-          <div className="flex justify-center"><PassportPreview /></div>
+          <div className="flex justify-center"><PassportPreview products={recent.loading ? null : (recent.data ?? [])} /></div>
         </div>
       </section>
 
@@ -149,7 +90,7 @@ export function Home() {
             <motion.div key={s.k} variants={stagger.item} className="bg-white p-6">
               <dt className="flex items-center gap-2 text-xs font-medium text-muted"><s.icon className="size-4 text-brand-ink" />{s.label}</dt>
               <dd className="mt-2 font-display text-3xl font-extrabold tracking-tight">
-                {stats.data ? <AnimatedNumber value={stats.data[s.k as keyof Stats]} /> : <span className="skeleton inline-block h-8 w-20" />}
+                {stats.data ? <AnimatedNumber value={stats.data[s.k as keyof Stats]} /> : stats.error ? <span title={stats.error}>—</span> : <span className="skeleton inline-block h-8 w-20" />}
               </dd>
             </motion.div>
           ))}

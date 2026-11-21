@@ -33,8 +33,10 @@ export function Recalls() {
       </form>
       <div className="mt-10">
         {recalls.loading && <CardSkeletons count={4} className="space-y-4" />}
-        {recalls.error && <Notice tone="error">{recalls.error}</Notice>}
-        {!recalls.loading && recalls.items.length === 0 && (
+        {recalls.error && (
+          <Notice tone="error">{recalls.error} <button className="font-semibold underline" onClick={() => void recalls.reload()}>Try again</button></Notice>
+        )}
+        {!recalls.loading && !recalls.error && recalls.items.length === 0 && (
           <EmptyState icon={Megaphone} title={q ? `No notice mentions “${q}”` : 'No recall notices yet'}>
             {q ? 'Try a product type or a hazard.' : 'An administrator can import them from the data sources page.'}
           </EmptyState>

@@ -4,13 +4,13 @@ import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Gate } from '../components/Gate';
-import { AnimatedNumber, CardSkeletons, EmptyState, PageTitle, Pager, StatusBadge, scoreTone } from '../components/ui';
-import { api, explain } from '../lib/api';
+import { AnimatedNumber, CardSkeletons, EmptyState, Notice, PageTitle, Pager, StatusBadge, scoreTone } from '../components/ui';
+import { api, explain, post } from '../lib/api';
 import { useLoad } from '../lib/useLoad';
 import { usePaged } from '../lib/usePaged';
 
 type WalletItem = {
-  id: string; slug: string; name: string; brand: string | null; nickname: string | null;
+  id: string; product_id: string; slug: string; name: string; brand: string | null; nickname: string | null;
   status: string; status_badge: string | null; trust_score: number | null; passport_changed: boolean; created_at: string;
 };
 type Alert = { id: string; severity: string; event_type: string; title: string; summary: string | null; product_slug: string; created_at: string };
@@ -39,12 +39,14 @@ function ItemCard({ item, onRemove }: { item: WalletItem; onRemove: (i: WalletIt
       {alarming && <span className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-danger to-warn" />}
       <div className="flex items-start justify-between gap-3">
         <StatusBadge badge={item.status_badge} />
+        {/* Always visible and finger-sized: a phone has no hover to reveal it (DEF-038). */}
         <button
           onClick={() => onRemove(item)}
-          className="rounded-full p-2 text-muted opacity-0 transition hover:bg-danger-tint hover:text-danger focus:opacity-100 group-hover:opacity-100"
-          aria-label={`Remove ${item.name}`}
+          className="-mr-2 -mt-2 grid size-11 shrink-0 place-items-center rounded-full text-muted transition hover:bg-danger-tint hover:text-danger focus-visible:bg-danger-tint focus-visible:text-danger"
+          aria-label={`Remove ${item.name} from your wallet`}
+          title="Remove from wallet"
         >
-          <Trash2 className="size-4" />
+          <Trash2 className="size-5" />
         </button>
       </div>
       <Link to={`/products/${item.slug}`} className="mt-4 block font-display text-lg font-bold leading-snug hover:text-brand-ink">{item.nickname ?? item.name}</Link>
@@ -78,14 +80,26 @@ function WalletBody() {
     setRemoved((s) => new Set(s).add(item.id));
     try {
       await api(`/wallet/items/${item.id}`, { method: 'DELETE' });
-      toast.success('Removed from your wallet', { description: item.name });
+      toast.success('Removed from your wallet', { description: item.name, duration: 8000, action: { label: 'Undo', onClick: () => void undo(item) } });
     } catch (e) {
       setRemoved((s) => { const n = new Set(s); n.delete(item.id); return n; });
       toast.error(explain(e));
     }
   };
+  // Undo saves the product again (a new wallet item, same product), then reads the wallet back.
+  const undo = async (item: WalletItem) => {
+    try {
+      await post('/wallet/items', { product_id: item.product_id, ...(item.nickname ? { nickname: item.nickname } : {}) });
+      toast.success('Back in your wallet', { description: item.name });
+      await items.reload();
+    } catch (e) {
+      toast.error(explain(e));
+    }
+  };
 
   if (items.loading) return <CardSkeletons count={3} />;
+  if (items.error)
+    return <Notice tone="error">{items.error} <button className="font-semibold underline" onClick={() => void items.reload()}>Try again</button></Notice>;
   return (
     <>
       <motion.dl initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08 } } }} className="mb-10 grid gap-4 sm:grid-cols-3">
@@ -134,7 +148,8 @@ function WalletBody() {
 
         <aside aria-labelledby="alerts-title">
           <h2 id="alerts-title" className="flex items-center gap-2 font-display text-xl font-bold"><BellRing className="size-5 text-brand-ink" />Risk alerts</h2>
-          {alerts.items.length === 0 && !alerts.loading ? (
+          {alerts.error && <div className="mt-4"><Notice tone="error">{alerts.error}</Notice></div>}
+          {alerts.items.length === 0 && !alerts.loading && !alerts.error ? (
             <div className="mt-4 rounded-3xl border border-dashed border-line p-6 text-center text-sm text-muted">
               <ShieldCheck className="mx-auto mb-2 size-8 text-ok" />No alerts. We watch your saved products for you.
             </div>

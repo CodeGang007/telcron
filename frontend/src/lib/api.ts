@@ -100,7 +100,7 @@ export const MESSAGES: Record<string, string> = {
   wallet_full: 'Your wallet is full. Remove a product to save another.',
   flag_pending: 'You already have a report on this product waiting for review.',
   report_pending: 'You already have a correction to that field waiting for review.',
-  own_contribution: 'You cannot decide on your own contribution. Leave it for a colleague.',
+  own_item: 'You cannot decide on your own item. Leave it for a colleague.',
   review_task_closed: 'Someone has already decided this one.',
   already_decided: 'This has already been decided.',
   role_not_allowed: 'Your account is not allowed to do this.',
@@ -129,7 +129,10 @@ export const MESSAGES: Record<string, string> = {
   research_user_daily_limit: 'You have started today\'s share of web searches. You can ask again tomorrow.',
   listing_not_found: 'That listing has changed since it was shown. Reload the page and try again.',
   not_authenticated: 'Sign in to continue.',
+  own_review: 'You cannot vote on your own review.',
+  review_not_found: 'That review is no longer published. Reload the page to see the current reviews.',
 };
+const UNREACHABLE = 'Could not reach Telcron. Check your connection and try again.';
 /** "in 3 minutes" for a Retry-After in seconds, rounded up; "in a moment" under a minute. */
 function inMinutes(seconds: number) {
   const m = Math.ceil(seconds / 60);
@@ -137,10 +140,15 @@ function inMinutes(seconds: number) {
 }
 
 export const explain = (e: unknown) => {
-  if (!(e instanceof ApiError)) return 'Cannot reach Telcron. Check your connection and try again.';
+  if (!(e instanceof ApiError)) return UNREACHABLE;
   if (e.code === 'rate_limited' && e.retryAfter) return `Too many tries from here. Try again ${inMinutes(e.retryAfter)}.`;
+  // A 5xx (or a gateway's HTML page) is the service failing, never a statement about the data (DEF-036).
+  if (e.status >= 500 && !(e.code in MESSAGES)) return 'Could not reach Telcron. Try again in a moment.';
   return MESSAGES[e.code] ?? 'Something went wrong. Try again.';
 };
+
+/** True only when the server answered 404: the thing asked for does not exist (or is not yours). */
+export const isNotFound = (e: unknown) => e instanceof ApiError && e.status === 404;
 
 export type ProductSummary = {
   id: string;
@@ -220,6 +228,9 @@ export type Review = {
   origin: string;
   helpful_count: number;
   created_at: string;
+  /** Not sent by the API yet (see DEF-031): whether the caller wrote it / already voted it helpful. */
+  mine?: boolean;
+  voted?: boolean;
 };
 export type Me = {
   id: string;

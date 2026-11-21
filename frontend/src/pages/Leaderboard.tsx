@@ -1,7 +1,7 @@
 import { Crown, Medal, Trophy } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
-import { EmptyState, PageTitle, Skeleton } from '../components/ui';
+import { EmptyState, Notice, PageTitle, Skeleton } from '../components/ui';
 import { api } from '../lib/api';
 import { useLoad } from '../lib/useLoad';
 
@@ -22,6 +22,7 @@ export function Leaderboard() {
         Ranked by TelCoins confirmed this month. Resets on the first of every month.
       </PageTitle>
       {rows.loading && <Skeleton className="h-72 w-full rounded-[2rem]" />}
+      {rows.error && <Notice tone="error">{rows.error} <button className="font-semibold underline" onClick={() => void rows.reload()}>Try again</button></Notice>}
       {rows.data?.length === 0 && (
         <EmptyState icon={Trophy} title="No confirmed contributions yet this month" action={<Link to="/search" className="btn">Find a product to review</Link>}>
           Yours could be the first.

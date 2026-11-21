@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api, post, session, type Me, type Tokens } from './api';
+import { ApiError, api, post, session, type Me, type Tokens } from './api';
+import { onCoinsChanged } from './coins';
 
 type Auth = {
   me: Me | null;
@@ -22,8 +23,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       setMe(await api<Me>('/auth/me'));
-    } catch {
-      setMe(null);
+    } catch (e) {
+      // The server refusing the session signs the member out; a dropped connection or a 5xx does not.
+      if (e instanceof ApiError && e.status < 500) setMe(null);
     } finally {
       setLoading(false);
     }
@@ -35,7 +37,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!session.get()) setMe(null);
     };
     window.addEventListener('telcron:session', onChange);
-    return () => window.removeEventListener('telcron:session', onChange);
+    // The header's coin chip reads /coins whenever `me` changes; a fresh `me` after a spend or an
+    // earn makes it read the new balance without Layout knowing about coin events (DEF-034).
+    const offCoins = onCoinsChanged(() => void reload());
+    // Coins confirmed while the tab was in the background show when the member comes back.
+    const onVisible = () => { if (document.visibilityState === 'visible' && session.get()) void reload(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('telcron:session', onChange);
+      offCoins();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [reload]);
 
   const signIn = async (email: string, password: string) => {

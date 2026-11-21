@@ -27,9 +27,10 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Gate } from '../components/Gate';
-import { AnimatedNumber, PageTitle, Pager, Skeleton, stagger } from '../components/ui';
+import { AnimatedNumber, Notice, PageTitle, Pager, Skeleton, stagger } from '../components/ui';
 import { api, explain, post } from '../lib/api';
 import { tokenHex } from '../lib/tokens';
+import { coinsChanged } from '../lib/coins';
 import { useLoad } from '../lib/useLoad';
 import { usePaged } from '../lib/usePaged';
 
@@ -219,6 +220,8 @@ function RewardsBody() {
   const overview = useLoad(() => api<Overview>('/rewards'), []);
   const history = usePaged<Entry>('/coins/history', 8);
   const o = overview.data;
+  if (overview.error && !o)
+    return <Notice tone="error">{overview.error} <button className="font-semibold underline" onClick={() => void overview.reload()}>Try again</button></Notice>;
   if (overview.loading || !o) return <div className="space-y-6"><Skeleton className="h-80 w-full rounded-[2rem]" /><Skeleton className="h-40 w-full rounded-3xl" /></div>;
 
   return (
@@ -288,7 +291,7 @@ function RewardsBody() {
       <section className="mt-14">
         <h2 className="flex items-center gap-2 font-display text-2xl font-bold"><ShoppingBag className="size-6 text-action" />Spend your TelCoins</h2>
         <p className="mt-1 text-sm text-muted">Only confirmed coins can be spent.</p>
-        <div className="mt-5"><Store o={o} onBought={() => { void overview.reload(); void history.reload(); }} /></div>
+        <div className="mt-5"><Store o={o} onBought={() => { void overview.reload(); void history.reload(); coinsChanged(); }} /></div>
       </section>
 
       <Contributions />

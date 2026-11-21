@@ -33,3 +33,18 @@ Overall: **SECURITY-PASS with findings** — no Critical, no High; five Medium t
 Not checked: anything live in AWS (security groups, IAM JSON, bucket settings, secret policy); GitHub branch
 protection; restore/replay scripts beyond a skim; frontend rendering of external URLs (`rel`, scheme); Caddy's
 X-Forwarded-For handling on the host; coin idempotency beyond the Level 1 award.
+
+## Re-review, 2026-11-22, `week-02` @ d24b3b5 (diff 706b0f8..HEAD; uncommitted frontend ignored)
+Overall **SECURITY-PASS with findings** (no S1/S2). WO-019 PASS · WO-022 PASS-WITH-FINDINGS (S-18) · DEF-011/012
+PASS · DEF-043/044/048 PASS (private docker subnet acceptable in a public repo) · DEF-041/042/049/070 PASS ·
+WO-054/WO-056 PASS · DEF-040/046/047 PASS-WITH-FINDINGS (S-7r).
+Closed by evidence: S-2, S-3, S-4, S-5, S-9, S-11, S-12, S-13, S-14, S-15; S-1 text removed (rotation = human);
+S-16 masked (Gemini ADR owed); S-17 field list fixed. Waiting on the human: S-6 (DEF-045), S-8, S-10 (DEF-006).
+
+| Id | Sev | File:line | Issue | Owner |
+| --- | --- | --- | --- | --- |
+| S-18 | S3 | `db/migrations/20261122130200_phase3_schema.sql:786-830`, `…130000_phase2_schema.sql:342-361` | `dbmate rollback` drops the ledger, balances and redemptions even where the up-step was skipped (dev) | database-engineer |
+| S-19 | S4 | `infra/aws/compose.yml:156-160` | No `ip_range`: Docker may give Caddy's pinned `.10` to another container first | infra-deploy-engineer |
+| S-20 | S4 | `backend/app/modules/moderation/service.py:96-100` | Future task types not covered by the self-review check | community-rewards-engineer |
+| S-21 | S4 | `backend/app/modules/research/service.py:123-127` | `research_per_user_per_day` read by `getattr`; no typed setting | platform-identity-engineer |
+| S-7r | S4 | `deploy-host.sh:28`, `setup-backend-host.sh:105`, `core/config.py:96`, `RESUME-HERE.md:9`, `aws-dev.md` | Secret name, region, IAM role names still tracked (not credentials) | human (ADR) |

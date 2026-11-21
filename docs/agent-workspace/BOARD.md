@@ -36,10 +36,10 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | WO-022 | Phases 2–3 as migrations | database-engineer | D11 | DONE-PENDING-QA — `41bdc29` (+ deploy-host lines, same push) |
 | WO-023 | Requirements traceability; W1–W2 deliverables check | requirements-analyst | — | DONE-PENDING-QA — `d6dc9a9`; tech-lead review: gap calls agree with the W1–W2 table; M1 "scraping job" = CPSC official API (OP-20, human) |
 | WO-024 | Agent skills and agents current | tech-lead | WO-022 | DONE-PENDING-QA — `2212f24`; QA in WO-017 · **QA FAIL → DEF-020 (fixed, re-check)** |
-| WO-054 | Raw copies outside the database (S3) for ingestion — code only; enabling on dev waits on the human | data-ai-engineer | — | OPEN |
-| WO-055 | Admin shell | frontend-engineer → tech-lead | — | OPEN |
-| WO-056 | Feature flags (CT-001) | platform-identity-engineer, frontend-engineer | — | OPEN |
-| WO-057 | AI test set at 20 products (regression baseline) | data-ai-engineer | — | OPEN |
+| WO-054 | Raw copies outside the database (S3) for ingestion — code only; enabling on dev waits on the human | data-ai-engineer | — | PARTIAL — code DONE-PENDING-QA (off by default); enabling on dev BLOCKED ON HUMAN |
+| WO-055 | Admin shell | frontend-engineer → tech-lead | — | DONE-PENDING-QA |
+| WO-056 | Feature flags (CT-001) | platform-identity-engineer, frontend-engineer | — | DONE-PENDING-QA |
+| WO-057 | AI test set at 20 products (regression baseline) | data-ai-engineer | — | DONE-PENDING-QA |
 
 ## Defects
 
@@ -52,28 +52,37 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | DEF-005 | Two schemas for one database; wrong enum values | database-engineer | S2 | CLOSED — QA PASS 2026-11-22 |
 | DEF-006 | AWS dev: budget alarm notifies nobody; Lightsail 22; app role superuser; image built on host | infra-deploy-engineer | S3 | OPEN — WO-020 |
 | DEF-007 | Three things the backend wants that the schema lacks | database-engineer | S3 | OPEN — item 1 → WO-029 (W3) |
-| DEF-010 | Demo passports score 100 with no assessment | database-engineer | S3 | OPEN — fixing (wt/db-fix) |
-| DEF-011 | Moderator can release a fraud hold on own coins | community-rewards-engineer | S2 | OPEN |
-| DEF-012 | Dismiss leaves holds frozen and flags pending | community-rewards-engineer | S3 | OPEN |
-| DEF-013 | 56 literal colours in components | frontend-engineer | S3 | OPEN |
-| DEF-014 | Reload drops the paged list depth | frontend-engineer | S4 | OPEN |
+| DEF-010 | Demo passports score 100 with no assessment | database-engineer | S3 | FIXED-PENDING-QA |
+| DEF-011 | Moderator can release a fraud hold on own coins | community-rewards-engineer | S2 | FIXED-PENDING-QA |
+| DEF-012 | Dismiss leaves holds frozen and flags pending | community-rewards-engineer | S3 | FIXED-PENDING-QA |
+| DEF-013 | 56 literal colours in components | frontend-engineer | S3 | FIXED-PENDING-QA |
+| DEF-014 | Reload drops the paged list depth | frontend-engineer | S4 | FIXED-PENDING-QA |
 | DEF-020 | Skills say Level 1 needs a phone code; D16 not recorded | tech-lead | S3 | FIXED-PENDING-QA |
 | DEF-021 | Board and WO files disagree; no WO-018 file | tech-lead | S4 | FIXED-PENDING-QA |
-| DEF-022 | Malformed assistant thread_id → 500 | data-ai-engineer | S4 | OPEN |
+| DEF-022 | Malformed assistant thread_id → 500 | data-ai-engineer | S4 | FIXED-PENDING-QA |
 | DEF-023 | Domain map lacks owners for research, assistant, moderation, evals, embedder, .claude | tech-lead | S4 | FIXED-PENDING-QA |
 | DEF-024 | Member photos stored without safety check or location removal | catalogue-engineer | S3 | RESCHEDULED — W4 by plan (WO-007) |
-| DEF-060 | Spec still requires phone for Level 1 (users_chk3) | database-engineer | S4 | OPEN — fixing (wt/db-fix) |
+| DEF-060 | Spec still requires phone for Level 1 (users_chk3) | database-engineer | S4 | FIXED-PENDING-QA |
+| DEF-030 | Product page forgets a saved product after reload | frontend-engineer | S3 | OPEN — fixing |
+| DEF-031 | No helpful-vote control in the web app | frontend-engineer | S3 | OPEN — fixing |
+| DEF-032 | Each re-screen opens a duplicate evidence task | data-ai-engineer | S3 | FIXED-PENDING-QA (DB index proposed, database-engineer, later) |
+| DEF-033 | Data sources page mislabels research runs | frontend-engineer | S4 | OPEN — fixing |
+| DEF-034 | Header coin balance stale after spending | frontend-engineer | S4 | OPEN — fixing |
+| DEF-035 | Paid hazard report is free at the same URL | tech-lead → community-rewards + frontend | S3 | BLOCKED ON HUMAN — D13 reading |
+| DEF-036 | Unreachable API shown as 'not found' | frontend-engineer | S3 | OPEN — fixing |
+| DEF-037 | Home page shows an invented passport | frontend-engineer | S4 | OPEN — fixing |
+| DEF-038 | Wallet Remove invisible on phones | frontend-engineer | S3 | OPEN — fixing |
 | DEF-040 | Runbook says provider keys leaked, not rotated | infra-deploy-engineer + human | S3 | FIXED-PENDING-QA (runbook); key rotation BLOCKED ON HUMAN |
-| DEF-041 | Research recall carries the product's own name (false near-match) | data-ai-engineer | S3 | OPEN — WO-017 security |
-| DEF-042 | Anonymous GET starts Tavily/LLM calls in the API | data-ai-engineer | S3 | OPEN — WO-017 security |
+| DEF-041 | Research recall carries the product's own name (false near-match) | data-ai-engineer | S3 | FIXED-PENDING-QA |
+| DEF-042 | Anonymous GET starts Tavily/LLM calls in the API | data-ai-engineer | S3 | FIXED-PENDING-QA |
 | DEF-043 | Register/sign-in reveal whether an address has an account | platform-identity-engineer | S3 | FIXED-PENDING-QA |
 | DEF-044 | No rate limits on register, verify, resend, sign-in | platform-identity-engineer | S3 | FIXED-PENDING-QA |
 | DEF-045 | Runtime DB role owns the database | infra-deploy-engineer | S3 | PREPARED — BLOCKED ON HUMAN |
 | DEF-046 | Region/secret name in tracked docs | infra-deploy-engineer | S4 | FIXED-PENDING-QA (runbooks); scripts/config decision BLOCKED ON HUMAN |
 | DEF-047 | Backups deletable by host; seed password on command line; actions by tag | infra-deploy-engineer | S4 | FIXED-PENDING-QA (S-9, S-11); backups BLOCKED ON HUMAN |
 | DEF-048 | DEV_EXPOSE_CODES unguarded; address logged | platform-identity-engineer | S4 | FIXED-PENDING-QA |
-| DEF-049 | Research error text to anonymous; no per-user quota; market check | data-ai-engineer | S4 | OPEN — WO-017 security |
-| DEF-070 | Research tests reach saferproducts.gov over the network | data-ai-engineer | S4 | OPEN |
+| DEF-049 | Research error text to anonymous; no per-user quota; market check | data-ai-engineer | S4 | FIXED-PENDING-QA |
+| DEF-070 | Research tests reach saferproducts.gov over the network | data-ai-engineer | S4 | FIXED-PENDING-QA |
 
 ## Decisions
 D1, D4, D7, D8, D11, D13, D16 decided 2026-11-21 (`docs/plan/PLAN.md` §3). Open: D2, D3, D5, D6, D9, D10, D12,

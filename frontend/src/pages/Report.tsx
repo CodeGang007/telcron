@@ -1,7 +1,7 @@
 import { Printer } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { LogoMark } from '../components/Logo';
-import { Skeleton } from '../components/ui';
+import { Notice, Skeleton } from '../components/ui';
 import { api, type Passport, type ProductDetail } from '../lib/api';
 import { useLoad } from '../lib/useLoad';
 
@@ -14,6 +14,13 @@ export function Report() {
   if (product.loading || passport.loading) return <div className="container-page py-12"><Skeleton className="h-96 w-full" /></div>;
   const p = product.data;
   const pass = passport.data;
+  const failed = [product, passport].find((r) => r.error && !r.notFound);
+  if (failed)
+    return (
+      <div className="container-page py-12">
+        <Notice tone="error">{failed.error} <button className="font-semibold underline" onClick={() => { void product.reload(); void passport.reload(); }}>Try again</button></Notice>
+      </div>
+    );
   if (!p || !pass) return <div className="container-page py-12 text-muted">This product has no passport yet.</div>;
   return (
     <div className="container-page max-w-3xl py-12 print:max-w-none print:py-0">

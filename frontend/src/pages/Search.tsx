@@ -17,8 +17,11 @@ export function Search() {
       <SearchBox key={q} initial={q} />
       <div className="mt-10">
         {results.loading && <CardSkeletons />}
-        {results.error && <Notice tone="error">{results.error}</Notice>}
-        {!results.loading && results.items.length === 0 && (
+        {results.error && (
+          <Notice tone="error">{results.error} <button className="font-semibold underline" onClick={() => void results.reload()}>Try again</button></Notice>
+        )}
+        {/* "No product matches" only when the search answered with nothing; a failed request is not an answer (DEF-036). */}
+        {!results.loading && !results.error && results.items.length === 0 && (
           <EmptyState
             icon={PackageSearch}
             title={`No product matches “${q}”`}
