@@ -7,7 +7,7 @@ PSQL := $(COMPOSE) exec -T db psql -U $${POSTGRES_USER:-telcron} -d $${POSTGRES_
 PYTEST := uv run -q --no-project --with 'psycopg[binary]>=3.2' --with 'pytest>=8' pytest
 
 .PHONY: help db-up db-down db-migrate db-rollback db-status db-seed db-sample db-reset db-psql db-nuke \
-        db-test db-test-perf db-gen db-erd-png up db-next app-db api-test eval dev dev-stop
+        db-test db-test-perf db-gen db-erd-png up db-next app-db api-test eval eval-research dev dev-stop
 
 help:  ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36m%-14s\033[0m %s\n", $$1, $$2}'
@@ -80,6 +80,9 @@ app-db: up  ## everything the backend needs in the local database: migrate, refe
 
 eval:  ## grade the configured hazard scorer against backend/evals/cases.json
 	cd backend && uv run python -m evals.run
+
+eval-research:  ## grade the research reader against backend/evals/research_cases.json (needs LLM_API_KEY)
+	cd backend && uv run python -m evals.research
 
 api-test:  ## backend lint and tests (the tests build their own database from db/ inside the local Postgres)
 	cd backend && uv run ruff check . && uv run pytest -q

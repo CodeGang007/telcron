@@ -101,6 +101,26 @@ async def db():
 
 
 @pytest_asyncio.fixture(autouse=True)
+async def no_outside_research(monkeypatch):
+    """No test reaches a search engine, a registry or an image reader; a test that wants one
+    replaces these."""
+    from app.modules.catalogue import photos
+    from app.modules.research import registries, web
+
+    async def nothing(*args, **kwargs):
+        return []
+
+    async def no_registry(words, category, limit=5):
+        return [], []
+
+    async def unread(body):
+        return photos.Reading()
+    monkeypatch.setattr(web, "search", nothing)
+    monkeypatch.setattr(registries, "search", no_registry)
+    monkeypatch.setattr(photos, "read", unread)
+
+
+@pytest_asyncio.fixture(autouse=True)
 async def no_open_facts(monkeypatch):
     """No test reaches the real Open Facts databases; a test that wants them replaces this."""
     from app.modules.catalogue import openfacts

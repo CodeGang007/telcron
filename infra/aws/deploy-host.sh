@@ -10,7 +10,7 @@
 #   [AWS_REGION=us-east-2] [LOAD_SAMPLE=1] bash deploy-host.sh
 #
 # Without BACKEND_IMAGE the image is built on this host from the commit. With it, it is pulled.
-# The app secret must hold JWT_SECRET, APP_DB_PASSWORD and SEED_ADMIN_PASSWORD; LLM_API_KEY, MAIL_FROM and SMTP_PASSWORD are optional.
+# The app secret must hold JWT_SECRET, APP_DB_PASSWORD and SEED_ADMIN_PASSWORD; LLM_API_KEY, MAIL_FROM, SMTP_PASSWORD and TAVILY_API_KEY are optional.
 set -euo pipefail
 
 : "${GIT_REF:?}" "${API_HOST:?}" "${WEB_ORIGIN:?}" "${DB_HOST:?}" "${RDS_SECRET_ARN:?}"
@@ -62,6 +62,12 @@ MAIL_FROM=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("MAIL_FR
 # Optional: an SMTP app password for MAIL_FROM (Gmail). With it codes go by SMTP, else by SES.
 # Spaces are dropped: Google shows the app password in groups of four.
 SMTP_PASSWORD=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("SMTP_PASSWORD", "").replace(" ", ""))' <<<"$app_secret")
+# Optional: a Tavily key for product research's web search (WO-014).
+TAVILY_API_KEY=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("TAVILY_API_KEY", ""))' <<<"$app_secret")
+# Product photos go to the private media bucket (created with the host, named after the account);
+# Rekognition reads them. Both use the host's IAM role: no keys.
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+MEDIA_BUCKET=${MEDIA_BUCKET:-telcron-dev-media-$ACCOUNT_ID}
 MAIL_PROVIDER=log
 if [ -n "$MAIL_FROM" ]; then MAIL_PROVIDER=$([ -n "$SMTP_PASSWORD" ] && echo smtp || echo ses); fi
 master=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text)
@@ -121,6 +127,10 @@ DEV_EXPOSE_CODES=false
 MAIL_PROVIDER=$MAIL_PROVIDER
 MAIL_FROM=$MAIL_FROM
 SMTP_PASSWORD=$SMTP_PASSWORD
+TAVILY_API_KEY=$TAVILY_API_KEY
+MEDIA_STORE=s3
+MEDIA_BUCKET=$MEDIA_BUCKET
+IMAGE_READER=rekognition
 EOF
 
 say "start"

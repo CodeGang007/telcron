@@ -47,6 +47,17 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str | None = None  # defaults to MAIL_FROM
     smtp_password: str | None = None
+    # Product research (WO-014): live recall databases and a web search. TAVILY_API_KEY selects
+    # Tavily; without it the LLM provider's built-in browser search is used, sparingly.
+    research_enabled: bool = True
+    tavily_api_key: str | None = None
+    research_model: str = "openai/gpt-oss-20b"
+    research_cooldown_hours: int = 24
+    # Photos (WO-014): `none` keeps nothing; `s3` stores them in MEDIA_BUCKET with the host role.
+    media_store: str = "none"
+    media_bucket: str | None = None
+    # `rekognition` reads text and labels from a photo before the vision model; `none` skips it.
+    image_reader: str = "none"
     aws_region: str = "us-east-2"
     # Level 1 needs a verified phone too. Off until an SMS route exists (ADR-006).
     level1_requires_phone: bool = False

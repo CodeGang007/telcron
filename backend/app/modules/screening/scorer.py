@@ -52,11 +52,13 @@ KEYWORDS: dict[str, tuple[str, ...]] = {
 }
 # Which evidence kinds a dimension may be scored from.
 SOURCES: dict[str, tuple[str, ...]] = {
-    "safety.regulatory": ("recall", "certification_check", "hazard_flag"),
+    "safety.regulatory": ("recall", "certification_check", "hazard_flag", "web_document"),
 }
-DEFAULT_SOURCES = ("review", "hazard_flag", "recall")
+DEFAULT_SOURCES = ("review", "hazard_flag", "recall", "web_document")
 # What one matching piece of evidence adds to a score: an official recall says most.
-WEIGHT = {"recall": 70, "hazard_flag": 60, "review": 30}
+WEIGHT = {"recall": 70, "hazard_flag": 60, "web_document": 40, "review": 30}
+# A web finding that reports no problem ("no_issue_found: no recall listed") is not a hit.
+CLEAR = ("no_issue_found:", "certification:", "general:")
 # Dimensions every review speaks to by not complaining; the rest need evidence to be scored at all.
 CORE = ("safety.regulatory", "safety.health_safety", "safety.customer_issues")
 
@@ -74,7 +76,8 @@ class StubScorer:
                 out.append(DimensionResult(dim.code, None, "No evidence available."))
                 continue
             words = KEYWORDS.get(dim.code, ())
-            hits = [ev for ev in pool if any(w in ev.text.lower() for w in words)]
+            hits = [ev for ev in pool if any(w in ev.text.lower() for w in words)
+                    and not ev.text.startswith(CLEAR)]
             if dim.code == "safety.regulatory":
                 hits = hits or [ev for ev in pool if ev.kind == "recall"]
             # The strongest evidence first: recalls and confirmed reports outrank reviews.

@@ -1,4 +1,7 @@
-const BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:4310') + '/api/v1';
+const ORIGIN = import.meta.env.VITE_API_URL ?? 'http://localhost:4310';
+const BASE = ORIGIN + '/api/v1';
+/** A path the API returns (such as a product photo) as a full URL. */
+export const apiUrl = (path: string) => ORIGIN + path;
 const KEY = 'telcron.session';
 
 export type Tokens = { access_token: string; refresh_token: string };
@@ -102,6 +105,8 @@ const MESSAGES: Record<string, string> = {
   photo_identification_unavailable: 'Reading photos is not available right now. Type the details instead.',
   photo_unreadable: 'That photo could not be read. Try a JPEG or PNG under 3 MB.',
   unknown_category: 'Choose one of the listed categories.',
+  research_not_due: 'This product was searched recently. It can be searched again tomorrow.',
+  product_not_found: 'We could not find that product.',
   invalid_barcode: 'That is not a valid barcode. Check the digits and try again.',
   product_not_identified: 'We could not find that barcode anywhere yet. Try searching by name.',
   lookup_unavailable: 'The product database is busy right now. Try again in a minute.',
@@ -127,6 +132,16 @@ export type ProductSummary = {
   status_badge: string | null;
   trust_score: number | null;
   tier: number | null;
+  image_url: string | null;
+};
+export type Finding = {
+  kind: 'recall' | 'safety_warning' | 'complaint' | 'certification' | 'no_issue_found' | 'general';
+  title: string; source: string; about_this_product: boolean; url: string; finding: string; found_at: string;
+};
+export type Research = {
+  enabled: boolean; status: string | null; searched_at: string | null; can_request: boolean;
+  stats: { cpsc_notices: number; cpsc_new: number; pages: number; findings: number; errors: string[] } | null;
+  findings: Finding[];
 };
 export type Citation = { id: string; kind: string; excerpt: string | null; url: string | null };
 export type Dimension = {

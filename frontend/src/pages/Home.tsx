@@ -17,6 +17,7 @@ import { ProductCard } from '../components/ProductCard';
 import { SearchBox } from '../components/SearchBox';
 import { AnimatedNumber, CardSkeletons, StatusBadge, TrustRing, stagger } from '../components/ui';
 import { api, type ProductSummary } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { useLoad } from '../lib/useLoad';
 
 type Stats = { products: number; recalls: number; passports: number; members: number; reviews: number };
@@ -87,6 +88,7 @@ function PassportPreview() {
 }
 
 export function Home() {
+  const { me } = useAuth();
   const stats = useLoad(() => api<Stats>('/stats'), []);
   const recent = useLoad(() => api<ProductSummary[]>('/products?limit=6'), []);
   const recalls = useLoad(() => api<RecallLite[]>('/recalls?limit=4'), []);
@@ -230,10 +232,14 @@ export function Home() {
           <div className="relative grid items-center gap-8 lg:grid-cols-[1.4fr_1fr]">
             <div>
               <h2 className="font-display text-4xl font-extrabold tracking-tight">Own something? Make it safer for everyone.</h2>
-              <p className="mt-4 max-w-xl text-white/75">Create your TelcronID, save your products, and earn TelCoins when your reviews and hazard reports help others.</p>
+              <p className="mt-4 max-w-xl text-white/75">{me ? 'Scan what you own, save it to your wallet, and earn TelCoins when your reviews and hazard reports help others.' : 'Create your TelcronID, save your products, and earn TelCoins when your reviews and hazard reports help others.'}</p>
             </div>
             <div className="flex flex-wrap gap-3 lg:justify-end">
-              <Link to="/sign-up" className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-brand transition hover:-translate-y-0.5">Create your TelcronID <ArrowRight className="size-4" /></Link>
+              {me ? (
+                <Link to="/scan" className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-brand transition hover:-translate-y-0.5">Scan a product <ArrowRight className="size-4" /></Link>
+              ) : (
+                <Link to="/sign-up" className="inline-flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-semibold text-brand transition hover:-translate-y-0.5">Create your TelcronID <ArrowRight className="size-4" /></Link>
+              )}
               <Link to="/leaderboard" className="glass inline-flex items-center gap-2 rounded-full px-6 py-3 text-sm font-semibold text-white"><Trophy className="size-4" />Leaderboard</Link>
             </div>
           </div>

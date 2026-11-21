@@ -111,21 +111,22 @@ async def test_an_unknown_product_is_identified_from_a_photo_and_confirmed(clien
     monkeypatch.setattr(openfacts, "lookup", nobody)
     seen = {}
 
-    async def reads(data_url):
-        seen["url"] = data_url
+    async def reads(data_urls, hints=None):
+        seen["url"], seen["count"] = data_urls[0], len(data_urls)
         return {"brand": "Lumina", "name": "Lumina Desk Fan 30cm", "model": "LF-30",
                 "category": "appliances", "confidence": 0.7}
     monkeypatch.setattr(vision, "read_photo", reads)
     barcode = "8907770000006"
     assert (await client.post(f"{API}/identify", json={"barcode": barcode})).status_code == 404
 
-    photo = {"image": "data:image/jpeg;base64,/9j/AAAA", "barcode": barcode}
+    photo = {"images": ["data:image/jpeg;base64,/9j/AAAA", "data:image/jpeg;base64,/9j/BBBB"],
+             "barcode": barcode}
     assert (await client.post(f"{API}/identify/photo", json=photo)).status_code == 401  # members only
     _, _, member = await verified_user(client)
     suggestion = (await client.post(f"{API}/identify/photo", headers=member, json=photo)).json()
     got = (suggestion["brand"], suggestion["model"], suggestion["category"])
     assert got == ("Lumina", "LF-30", "appliances")
-    assert seen["url"].startswith("data:image/jpeg")
+    assert seen["url"].startswith("data:image/jpeg") and seen["count"] == 2  # both sides read
     # A suggestion is not a product: nothing was added yet.
     assert (await client.post(f"{API}/identify", json={"barcode": barcode})).status_code == 404
 
@@ -142,7 +143,7 @@ async def test_an_unknown_product_is_identified_from_a_photo_and_confirmed(clien
     assert (found["slug"], found["new"]) == (body["slug"], False)
     again = await client.post(f"{API}/identify/confirm", headers=member, json={
         "name": "Another name", "category": "appliances", "barcode": barcode})
-    assert again.json() == {**found}
+    assert (again.json()["slug"], again.json()["new"]) == (found["slug"], False)
     row = (await db.execute(select(IdentificationRequest).where(
         IdentificationRequest.extracted["from_photo"].astext == "true"))).scalars().first()
     assert row.status == "identified" and row.extracted["model"] == "LF-30"

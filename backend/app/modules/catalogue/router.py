@@ -1,13 +1,18 @@
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.deps import Db, Level1User, OptionalUser
 from app.core.paging import Offset, page
+from app.models import MediaAsset, MediaBlob
 
 from . import identify as identify_service
-from . import service
+from . import photos, service
 
 router = APIRouter(tags=["catalogue"])
 
@@ -31,7 +36,9 @@ async def identify(data: IdentifyIn, db: Db, user: OptionalUser) -> dict[str, An
 
 
 class PhotoIn(BaseModel):
-    image: str = Field(max_length=5_000_000)  # a data: URL, resized in the browser
+    # 1 to 4 photos as data: URLs, resized in the browser: the front, the back or label, the
+    # model plate. More sides, more of the pack is read.
+    images: list[str] = Field(min_length=1, max_length=4)
     barcode: str | None = Field(None, max_length=40)
 
 
@@ -42,12 +49,15 @@ class ConfirmIn(BaseModel):
     category: str
     barcode: str | None = Field(None, max_length=40)
     request_id: str | None = None
+    existing: str | None = Field(None, max_length=200)  # slug of the registry product it is
 
 
 @router.post("/identify/photo")
 async def identify_photo(data: PhotoIn, db: Db, user: Level1User) -> dict[str, Any]:
     """A suggestion of what a photographed product is, for the member to check. Stores nothing else."""
-    return await identify_service.suggest_from_photo(db, data.image, data.barcode, user.id)
+    if any(len(i) > 5_000_000 for i in data.images):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "photo_unreadable")
+    return await identify_service.suggest_from_photo(db, data.images, data.barcode, user.id)
 
 
 @router.post("/identify/confirm")
@@ -73,6 +83,20 @@ async def get_passport(id_or_slug: str, db: Db) -> dict[str, Any]:
     if view is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "passport_not_issued")
     return view
+
+
+@router.get("/media/{asset_id}", include_in_schema=False)
+async def media(asset_id: uuid.UUID, db: Db) -> RedirectResponse:
+    """A product photo: a short-lived link into the private bucket. Only photos a member confirmed
+    as a product's picture are public; anything else is a 404."""
+    row = (await db.execute(select(MediaBlob.storage_key_original).join(
+        MediaAsset, MediaAsset.blob_id == MediaBlob.id).where(
+        MediaAsset.id == asset_id, MediaAsset.visibility == "public",
+        MediaAsset.deleted_at.is_(None)))).scalar_one_or_none()
+    if row is None or get_settings().media_store != "s3":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "media_not_found")
+    return RedirectResponse(photos.link(row), status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+                            headers={"Cache-Control": "public, max-age=240"})
 
 
 @router.get("/stats")

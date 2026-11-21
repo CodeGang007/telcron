@@ -73,10 +73,10 @@ shown on a deployed build. One admin exists, `admin@telcron.example.com`; its pa
 | Lightsail instance, static IP | `telcron-dev-web`, `telcron-dev-web-ip` | The blueprint's own stack (nginx, MariaDB, PHP, phpMyAdmin, Varnish) is stopped and disabled |
 | RDS PostgreSQL | `telcron-dev` | 20 GB gp3 encrypted, single zone, not publicly reachable, deletion protection, 1-day backups |
 | Security groups | `telcron-dev-backend`, `telcron-dev-db` | 80 and 443 in; 5432 from the backend group only |
-| IAM role and instance profile | `telcron-dev-backend` | Session Manager, ECR read, the two buckets, `telcron/dev/*` secrets, the RDS master secret, Bedrock invoke |
-| S3 buckets | `telcron-dev-media-<account-id>`, `telcron-dev-raw-<account-id>` | Public access blocked. Not used yet |
+| IAM role and instance profile | `telcron-dev-backend` | Session Manager, ECR read, the two buckets, `telcron/dev/*` secrets, the RDS master secret, Bedrock invoke, SES send (`telcron-dev-ses-send`), Rekognition DetectText/DetectLabels (`telcron-dev-rekognition`, about $0.001 per call each, WO-014) |
+| S3 buckets | `telcron-dev-media-<account-id>`, `telcron-dev-raw-<account-id>` | Public access blocked. Media holds members' product photos (`photos/`), served through short-lived links (WO-014); raw is not used yet |
 | ECR repository | `telcron/backend` | Holds the image of the first, manual deploy. The pipeline does not use it |
-| Secret | `telcron/dev/app` | `JWT_SECRET`, `APP_DB_PASSWORD`, `SEED_ADMIN_PASSWORD`; generated, never displayed |
+| Secret | `telcron/dev/app` | `JWT_SECRET`, `APP_DB_PASSWORD`, `SEED_ADMIN_PASSWORD`; optional `LLM_API_KEY`, `MAIL_FROM`, `SMTP_PASSWORD`, `TAVILY_API_KEY`; never displayed |
 | Secret | RDS-managed master password | Rotated by RDS. Used only to create the application's role |
 | Budget | `telcron-monthly` | USD 22 a month, cost budget |
 

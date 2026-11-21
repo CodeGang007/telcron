@@ -1,7 +1,7 @@
 import { ArrowUpRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Link } from 'react-router-dom';
-import type { ProductSummary } from '../lib/api';
+import { apiUrl, type ProductSummary } from '../lib/api';
 import { CategoryTile, StatusBadge, scoreTone, stagger } from './ui';
 
 export function ProductCard({ product }: { product: ProductSummary }) {
@@ -10,7 +10,11 @@ export function ProductCard({ product }: { product: ProductSummary }) {
     <motion.div variants={stagger.item}>
       <Link to={`/products/${product.slug}`} className="card card-hover group flex h-full flex-col">
         <div className="flex items-start justify-between gap-3">
-          <CategoryTile category={product.category} />
+          {product.image_url ? (
+            <img src={apiUrl(product.image_url)} alt="" loading="lazy" className="size-12 rounded-2xl border border-line object-cover" />
+          ) : (
+            <CategoryTile category={product.category} />
+          )}
           <StatusBadge badge={product.status_badge} />
         </div>
         <p className="eyebrow mt-5">{product.category}</p>

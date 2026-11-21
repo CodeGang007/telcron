@@ -37,6 +37,7 @@ from app.models import (
     Product,
     ProductAlias,
     ProductCertification,
+    ProductTraceability,
     Recall,
     RecallProduct,
     RecallProductIdentifier,
@@ -52,6 +53,7 @@ from .scorer import DimensionSpec, EvidenceRef, Scorer, get_scorer
 CONTEXT = "safety"
 SIMILARITY_FLOOR = 0.45
 MAX_REVIEWS = 40
+MAX_WEB = 20
 SETTING = text("select coalesce((select (value #>> '{}')::numeric from app_settings "
                "where key = :key), cast(:fallback as numeric))")
 BAND = text("select label from scoring_bands where context_code = :context "
@@ -208,6 +210,17 @@ async def screen_product(db: AsyncSession, product_id: uuid.UUID, run_type: str,
         ev = await _evidence_for(db, EvidenceItem.hazard_flag_id, flag.id, "hazard_flag",
                                  flag.description)
         refs.append(EvidenceRef(str(ev.id), "hazard_flag", ev.excerpt or ""))
+        purpose[str(ev.id)] = "hazard"
+
+    # What research found on the web (WO-014): each finding is already an evidence item.
+    web = (await db.execute(
+        select(EvidenceItem, ProductTraceability.attribute)
+        .join(ProductTraceability, ProductTraceability.evidence_id == EvidenceItem.id)
+        .where(ProductTraceability.product_id == product.id, EvidenceItem.kind == "web_document")
+        .order_by(EvidenceItem.created_at.desc()).limit(MAX_WEB))).all()
+    for ev, attribute in web:
+        refs.append(EvidenceRef(str(ev.id), "web_document",
+                                f"{attribute.removeprefix('web_')}: {ev.excerpt or ''}"))
         purpose[str(ev.id)] = "hazard"
 
     # 2. Recall verdict. The candidates go in first: the verdict must be able to cite one.

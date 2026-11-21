@@ -11,6 +11,7 @@ from app.models import AuditLog, OutboxEvent
 # event_type -> job queue. An event type missing here is a bug the publisher reports loudly.
 ROUTES: dict[str, str] = {
     "IngestionRequested": "ingest",
+    "ResearchRequested": "ingest",
     "RecallImported": "screening",
     "ProductIngested": "screening",
     "ReviewSubmitted": "screening",

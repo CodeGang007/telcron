@@ -19,6 +19,7 @@ RECALL_WEIGHT, CERT_WEIGHT, HAZARD_WEIGHT = Decimal("0.4"), Decimal("0.2"), Deci
 RECALL_COMPONENT = {"no_match_found": Decimal(100), "near_match": Decimal(40),
                     "match": Decimal(0)}
 BAD_CERTIFICATE = ("expired", "revoked")
+HIGH_HAZARD = Decimal(60)  # the scale's "high" band: no "verified" badge at or above it
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,8 @@ def build(recall_verdict: str, cert_statuses: list[str],
         badge = "needs_information"  # a possible recall is not a recall, and not a clean bill
     elif any(s in BAD_CERTIFICATE for s in cert_statuses):
         badge = "certification_issue"
+    elif hazard_total is not None and hazard_total >= HIGH_HAZARD:
+        badge = "needs_information"  # evidence of serious hazard is not a clean bill (WO-014)
     else:
         badge = "verified"
     return PassportResult(2, badge, trust, recall, cert, hazard)

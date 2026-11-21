@@ -34,14 +34,15 @@ def _f(value: Any) -> float | None:
 def _summary_columns() -> list:
     return [Product.id, Product.public_slug, Product.canonical_name, Product.model_number,
             Brand.name.label("brand"), Category.name.label("category"),
-            Passport.status_badge, Passport.trust_score, Passport.tier]
+            Passport.status_badge, Passport.trust_score, Passport.tier, Product.primary_media_id]
 
 
 def _summary(row: Any) -> dict[str, Any]:
     return {"id": str(row.id), "slug": row.public_slug, "name": row.canonical_name,
             "model_number": row.model_number, "brand": row.brand, "category": row.category,
             "status_badge": row.status_badge, "trust_score": _f(row.trust_score),
-            "tier": row.tier}
+            "tier": row.tier,
+            "image_url": f"/api/v1/media/{row.primary_media_id}" if row.primary_media_id else None}
 
 
 def _summary_query():

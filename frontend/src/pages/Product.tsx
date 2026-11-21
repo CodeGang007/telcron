@@ -14,12 +14,13 @@ import {
   ThumbsUp,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useState, type FormEvent } from 'react';
+import { useCallback, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { FactForm, FlagForm } from '../components/Contribute';
+import { Research } from '../components/Research';
 import { CategoryTile, EmptyState, Notice, Pager, Skeleton, Stars, StatusBadge, TrustRing, scoreTone } from '../components/ui';
-import { api, explain, post, type Dimension, type Passport, type ProductDetail, type Review } from '../lib/api';
+import { api, apiUrl, explain, post, type Dimension, type Passport, type ProductDetail, type Review } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useLoad } from '../lib/useLoad';
 import { usePaged } from '../lib/usePaged';
@@ -61,8 +62,9 @@ function DimensionRow({ d, index }: { d: Dimension; index: number }) {
           <motion.ul initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mt-3 space-y-2 overflow-hidden">
             {d.citations.map((c) => (
               <li key={c.id} className="rounded-xl border border-line bg-panel/60 px-3 py-2 text-sm text-muted">
-                <span className="mr-2 text-[10px] font-bold uppercase tracking-wider text-ink">{c.kind.replace('_', ' ')}</span>
+                <span className="mr-2 text-[10px] font-bold uppercase tracking-wider text-ink">{c.kind === 'web_document' ? 'source' : c.kind.replace('_', ' ')}</span>
                 {c.excerpt}
+                {c.url && <a href={c.url} target="_blank" rel="noreferrer noopener" className="ml-2 text-xs font-semibold text-action hover:underline">open</a>}
               </li>
             ))}
           </motion.ul>
@@ -158,6 +160,7 @@ export function Product() {
   const passport = useLoad(() => api<Passport>(`/products/${slug}/passport`).catch(() => null), [slug]);
   const reviews = usePaged<Review>(`/products/${slug}/reviews`, 5);
   const [saved, setSaved] = useState(false);
+  const rated = useCallback(() => { void passport.reload(); void product.reload(); }, [passport.reload, product.reload]);
 
   if (product.loading) return <ProductSkeleton />;
   if (product.error || !product.data)
@@ -169,7 +172,11 @@ export function Product() {
   const p = product.data;
   const pass = passport.data;
   const canContribute = !!me && me.verification_level >= 1;
-  const recalls = pass ? pass.recall_matches.filter((r) => r.verdict !== 'rejected') : [];
+  // One card per notice, however many addresses or copies it was found under.
+  const noticeKey = (t: string) => t.toLowerCase().replace(/\s*\|.*$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const recalls = pass
+    ? pass.recall_matches.filter((r, i, all) => r.verdict !== 'rejected' && all.findIndex((o) => noticeKey(o.title) === noticeKey(r.title)) === i)
+    : [];
   const stub = pass?.hazard?.model_code.startsWith('stub');
 
   const save = async () => {
@@ -186,7 +193,11 @@ export function Product() {
     <div className="container-page py-10">
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-wrap items-start justify-between gap-6">
         <div className="flex items-start gap-5">
-          <CategoryTile category={p.category} size="lg" />
+          {p.image_url ? (
+            <img src={apiUrl(p.image_url)} alt={p.name} className="size-24 rounded-3xl border border-line bg-white object-cover shadow-soft" />
+          ) : (
+            <CategoryTile category={p.category} size="lg" />
+          )}
           <div>
             <p className="eyebrow">{p.category}</p>
             <h1 className="mt-1 max-w-2xl font-display text-3xl font-extrabold tracking-tight sm:text-4xl">{p.name}</h1>
@@ -271,6 +282,8 @@ export function Product() {
           </div>
         )}
       </section>
+
+      <div className="mt-8"><Research slug={p.slug} onRated={rated} /></div>
 
       {pass?.hazard && (
         <section className="mt-8 grid gap-8 lg:grid-cols-[1.4fr_1fr]">

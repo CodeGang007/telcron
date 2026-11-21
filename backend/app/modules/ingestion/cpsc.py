@@ -116,3 +116,20 @@ def parse(record: dict) -> ParsedRecall:
         units_affected=_joined(entries, "NumberOfUnits"),
         recall_date=date.fromisoformat(day) if day else None,
         url=record.get("URL") or None, products=products)
+
+
+async def search(title_words: str, limit: int = 20) -> list[dict]:
+    """Recall notices whose title names these words (a brand, usually): a live lookup for one
+    product, newest first. Same records as `fetch`, so `parse` reads them."""
+    recorded = get_settings().cpsc_fixture
+    if recorded:
+        path = Path(recorded) if Path(recorded).is_absolute() else ROOT / recorded
+        words = title_words.lower()
+        return [r for r in json.loads(path.read_text()) if words in (r.get("Title") or "").lower()]
+    headers = {"User-Agent": "telcron-registry/0.1"}
+    async with httpx.AsyncClient(timeout=60, headers=headers) as http:
+        response = await http.get(URL, params={"format": "json", "RecallTitle": title_words})
+        response.raise_for_status()
+        records = response.json()
+    records.sort(key=lambda r: r.get("RecallDate") or "", reverse=True)
+    return records[:limit]

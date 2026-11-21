@@ -18,7 +18,8 @@
 
 | WO-012 | Web app redesign: open-source components, scan page, animated wallet and rewards, pagination | (single session) → qa-test-engineer | — | DONE-PENDING-QA — live; journey 7 passed |
 
-| WO-013 | Sign-up codes by email (SES); Level 1 = verified email (ADR-006) | platform-identity-engineer (single session) → security-auditor | — | IN PROGRESS — branch `wo-013-email-signup`; checklist in the WO |
+| WO-013 | Sign-up codes by email (Gmail SMTP; SES kept); Level 1 = verified email (ADR-006) | platform-identity-engineer (single session) → security-auditor | — | DONE-PENDING-QA: live since 730f04d/d7a05b1 |
+| WO-014 | Product research (registries + web, cited, graded), photos with Rekognition, same-product matching | data-ai-engineer + catalogue-engineer (single session) → security-auditor | — | DONE-PENDING-QA |
 
 ## Defects
 

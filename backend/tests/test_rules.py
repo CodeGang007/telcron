@@ -84,3 +84,9 @@ def test_nothing_checked_is_not_verified():
     assert passport.build("no_match_found", ["valid"], None).status_badge == "verified"
     assert passport.build("no_match_found", [], Decimal(10)).status_badge == "verified"
     assert passport.build("match", [], None).status_badge == "recalled"
+
+
+def test_a_high_hazard_score_is_never_verified():
+    assert passport.build("no_match_found", ["valid"], D("59")).status_badge == "verified"
+    high = passport.build("no_match_found", ["valid"], D("60"))
+    assert (high.tier, high.status_badge) == (2, "needs_information")
