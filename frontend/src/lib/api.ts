@@ -87,6 +87,7 @@ export const post = <T>(path: string, body?: unknown) =>
 const MESSAGES: Record<string, string> = {
   invalid_credentials: 'That email and password do not match.',
   account_locked: 'Too many attempts. Try again in 15 minutes.',
+  email_not_verified: 'Confirm your email first: enter the code we emailed you.',
   email_taken: 'An account with this email already exists. Sign in instead.',
   invalid_or_expired_code: 'That code is wrong or has expired.',
   already_reviewed: 'You have already reviewed this product.',

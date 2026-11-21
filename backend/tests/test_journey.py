@@ -24,8 +24,14 @@ async def test_search_and_passport_need_no_account(client):
     assert (await client.get(f"{API}/products/nope")).status_code == 404
 
 
-async def test_level_zero_can_sign_in_but_not_contribute(client):
-    email, _ = await signup(client)
+async def test_level_zero_can_sign_in_but_not_contribute(client, monkeypatch):
+    # Level 0 with a confirmed email exists only while the phone is required too (ADR-006).
+    from app.core.config import get_settings
+    monkeypatch.setattr(get_settings(), "level1_requires_phone", True)
+    email, codes = await signup(client)
+    r = await client.post(f"{API}/auth/verify", json={
+        "email": email, "channel": "email", "code": codes["email"]})
+    assert r.status_code == 200
     _, headers = await login(client, email)
     assert (await client.get(f"{API}/auth/me", headers=headers)).json()["verification_level"] == 0
     assert (await client.get(f"{API}/wallet/items", headers=headers)).status_code == 403
@@ -347,3 +353,15 @@ async def test_codes_can_be_sent_through_smtp(client, monkeypatch):
     assert seen == {"server": ("smtp.gmail.com", 587), "tls": True,
                     "login": ("codes@example.com", "app-password"), "to": email,
                     "subject": f"{codes['email']} is your Telcron code"}
+
+
+async def test_sign_in_waits_for_a_confirmed_email(client):
+    email, codes = await signup(client)
+    early = await client.post(f"{API}/auth/login", json={"email": email, "password": PASSWORD})
+    assert early.status_code == 403 and early.json()["detail"] == "email_not_verified"
+    wrong = await client.post(f"{API}/auth/login", json={"email": email, "password": "wrong-password"})
+    assert wrong.status_code == 401  # a wrong password says nothing about the account
+    r = await client.post(f"{API}/auth/verify", json={
+        "email": email, "channel": "email", "code": codes["email"]})
+    assert r.status_code == 200
+    await login(client, email)

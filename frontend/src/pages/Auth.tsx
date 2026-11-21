@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { Link, useNavigate } from 'react-router-dom';
 import { LogoMark } from '../components/Logo';
 import { Notice } from '../components/ui';
-import { explain, post } from '../lib/api';
+import { ApiError, explain, post } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
 function Shell({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
@@ -57,28 +57,50 @@ export function SignIn() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  // Set when the password was right but the email is not confirmed yet: ask for the code.
+  const [unverified, setUnverified] = useState(false);
+  const [code, setCode] = useState('');
+  const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
+  const run = async (work: () => Promise<void>) => {
     setBusy(true);
     setError(null);
     try {
-      await signIn(email, password);
-      navigate('/');
+      await work();
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'email_not_verified') setUnverified(true);
       setError(explain(err));
     } finally {
       setBusy(false);
     }
   };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    return run(async () => {
+      if (unverified) await post('/auth/verify', { email, channel: 'email', code: code.trim() });
+      await signIn(email, password);
+      navigate(unverified ? '/rewards' : '/');
+    });
+  };
+  const resend = () => run(async () => {
+    const r = await post<{ dev_codes: Record<string, string> | null }>('/auth/resend', { email });
+    setNote(`A new code is on its way${r.dev_codes?.email ? ` (development build: ${r.dev_codes.email})` : ''}. Check your spam folder too.`);
+  });
   return (
     <Shell title="Sign in" sub="Use your TelcronID.">
       <form onSubmit={submit} className="space-y-5">
-        <Field label="Email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Field label="Email" type="email" autoComplete="email" required value={email} onChange={(e) => { setEmail(e.target.value); setUnverified(false); }} />
         <Field label="Password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+        {unverified && (
+          <Field label="Code from the email" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required value={code} onChange={(e) => setCode(e.target.value)} />
+        )}
         {error && <Notice tone="error">{error}</Notice>}
-        <button className="btn w-full !py-3.5" disabled={busy}>{busy ? 'Signing in…' : 'Sign In'}</button>
+        {note && <Notice tone="ok">{note}</Notice>}
+        <button className="btn w-full !py-3.5" disabled={busy}>{busy ? 'Signing in…' : unverified ? 'Confirm and sign in' : 'Sign In'}</button>
+        {unverified && (
+          <p className="text-center text-sm text-muted">No email? <button type="button" className="font-semibold text-action" onClick={resend}>Send a new code</button> (once a minute)</p>
+        )}
       </form>
       <p className="mt-6 text-center text-sm text-muted">
         New to Telcron? <Link className="text-action" to="/sign-up">Create your TelcronID</Link>

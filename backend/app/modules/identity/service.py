@@ -193,6 +193,12 @@ async def login(db: AsyncSession, email: str, password: str, ip: str | None,
                          failure_reason="bad_password", ip_address=ip))
         await db.commit()
         raise denied
+    if user.email_verified_at is None:
+        # The password was right, so saying why is safe: the member is sent to enter the code.
+        db.add(AuthEvent(user_id=user.id, event_type="login_failed", email_attempted=email,
+                         failure_reason="email_not_verified", ip_address=ip))
+        await db.commit()
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "email_not_verified")
     user.failed_login_count, user.locked_until, user.last_login_at = 0, None, _now()
     _, tokens = await _open_session(db, user, ip, agent)
     await rewards.daily_check_in(db, user.id)
