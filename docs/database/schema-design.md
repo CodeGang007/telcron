@@ -177,7 +177,7 @@ correctness: `audit_log`, `review_tasks`, `ai_invocations`, `trust_score_events`
 | One product per barcode / marketplace ID | `UNIQUE (alias_type, namespace, alias_value)` + GTIN/namespace CHECKs | `test_one_product_per_barcode`, `test_marketplace_ids_are_namespaced` |
 | One active product per brand + model | partial UNIQUE | `test_brand_model_unique_but_unknown_brand_allowed` |
 | Merges move user-facing data; no chains | `telcron_merge_products`, trigger | `test_merge_moves_everything_users_touch`, `test_no_merge_chains_or_self_merge` |
-| Level ≥ 1 ⇒ verified email + phone | CHECK | `test_level1_requires_verified_email_and_phone` |
+| Level ≥ 1 ⇒ verified email (phone dropped for now: ADR-006, migration `20261121120000`) | CHECK | `test_level1_requires_a_verified_email` |
 | OAuth subject → one user; verified phone → one user | UNIQUE / partial UNIQUE | `test_oauth_subject_…`, `test_phone_unique_only_once_verified` |
 | Session cap can't slide; rotation is linked | CHECKs | `test_session_absolute_cap_cannot_slide`, `test_session_rotation_links_replacement` |
 | Evidence has exactly the subject its kind requires | `CASE kind` CHECK | `test_evidence_has_exactly_one_typed_subject` |

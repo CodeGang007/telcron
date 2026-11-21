@@ -32,7 +32,7 @@ async def login(client, email):
 
 async def verified_user(client, name="Tester"):
     email, codes = await signup(client, name)
-    for channel in ("email", "phone"):
+    for channel in codes:  # email only, unless the phone requirement is on (ADR-006)
         r = await client.post(f"{API}/auth/verify", json={
             "email": email, "channel": channel, "code": codes[channel]})
         assert r.status_code == 200, r.text

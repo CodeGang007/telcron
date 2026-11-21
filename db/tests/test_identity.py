@@ -2,9 +2,13 @@
 from conftest import make_user, make_product, one, savepoint_raises, uid
 
 
-def test_level1_requires_verified_email_and_phone(db):
-    savepoint_raises(db, """INSERT INTO users (email, email_verified_at, display_name, referral_code, verification_level)
-                            VALUES ('a@x.com', now(), 'A', 'R1', 1)""", match="users_chk3")
+def test_level1_requires_a_verified_email(db):
+    # ADR-006: a verified email is enough for Level 1 until phone codes can be delivered.
+    savepoint_raises(db, """INSERT INTO users (email, display_name, referral_code, verification_level)
+                            VALUES ('a@x.com', 'A', 'R1', 1)""", match="users_chk3")
+    email_only = one(db, """INSERT INTO users (email, email_verified_at, display_name, referral_code,
+                            verification_level) VALUES ('e@x.com', now(), 'E', 'RE', 1) RETURNING id""")
+    assert email_only
     uid_ = make_user(db, level=1)
     assert one(db, "SELECT verification_level FROM users WHERE id = %s", (uid_,)) == 1
 

@@ -94,8 +94,8 @@ export function SignUp() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ display_name: '', email: '', phone_e164: '', password: '' });
   const [registered, setRegistered] = useState<Registered | null>(null);
-  const [codes, setCodes] = useState({ email: '', phone: '' });
-  const [done, setDone] = useState({ email: false, phone: false });
+  const [code, setCode] = useState('');
+  const [resent, setResent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -106,7 +106,7 @@ export function SignUp() {
     setBusy(true);
     setError(null);
     try {
-      setRegistered(await post<Registered>('/auth/register', form));
+      setRegistered(await post<Registered>('/auth/register', { ...form, phone_e164: form.phone_e164.trim() || null }));
     } catch (err) {
       setError(explain(err));
     } finally {
@@ -119,13 +119,7 @@ export function SignUp() {
     setBusy(true);
     setError(null);
     try {
-      const next = { ...done };
-      for (const channel of ['email', 'phone'] as const) {
-        if (next[channel]) continue;
-        await post('/auth/verify', { email: form.email, channel, code: codes[channel] });
-        next[channel] = true;
-        setDone({ ...next });
-      }
+      await post('/auth/verify', { email: form.email, channel: 'email', code: code.trim() });
       await signIn(form.email, form.password);
       navigate('/rewards');
     } catch (err) {
@@ -135,13 +129,23 @@ export function SignUp() {
     }
   };
 
+  const resend = async () => {
+    setError(null);
+    try {
+      const r = await post<{ dev_codes: Record<string, string> | null }>('/auth/resend', { email: form.email });
+      setResent(r.dev_codes?.email ?? '');
+    } catch (err) {
+      setError(explain(err));
+    }
+  };
+
   if (!registered)
     return (
       <Shell title="Create your TelcronID" sub="One verified identity signs everything you contribute.">
         <form onSubmit={register} className="space-y-5">
           <Field label="Name" required minLength={2} maxLength={80} autoComplete="name" value={form.display_name} onChange={set('display_name')} />
           <Field label="Email" type="email" required autoComplete="email" value={form.email} onChange={set('email')} />
-          <Field label="Mobile number" type="tel" required pattern="\+[1-9][0-9]{7,14}" placeholder="+14155550123" hint="With country code, for example +14155550123." autoComplete="tel" value={form.phone_e164} onChange={set('phone_e164')} />
+          <Field label="Mobile number (optional)" type="tel" pattern="\+[1-9][0-9]{7,14}" placeholder="+919876543210" hint="With country code. Not verified yet; phone checks come later." autoComplete="tel" value={form.phone_e164} onChange={set('phone_e164')} />
           <Field label="Password" type="password" required minLength={10} hint="At least 10 characters." autoComplete="new-password" value={form.password} onChange={set('password')} />
           {error && <Notice tone="error">{error}</Notice>}
           <button className="btn w-full !py-3.5" disabled={busy}>{busy ? 'Creating…' : 'Create account'}</button>
@@ -153,17 +157,16 @@ export function SignUp() {
     );
 
   return (
-    <Shell title="Confirm your email and phone" sub="Enter both six-digit codes to reach Level 1 and earn 100 TelCoins.">
-      <form onSubmit={verify} className="space-y-5">
+    <Shell title="Check your email" sub={`We sent a six-digit code to ${form.email}. Enter it to reach Level 1 and earn 100 TelCoins.`}>
+      <form onSubmit={verify} className="space-y-5" aria-label="Confirm your email">
         {registered.dev_codes && (
-          <Notice>
-            Development build: codes are not sent yet. Email {registered.dev_codes.email}, phone {registered.dev_codes.phone}.
-          </Notice>
+          <Notice>Development build: your code is {registered.dev_codes.email}.</Notice>
         )}
-        <Field label={`Code sent to ${form.email}`} inputMode="numeric" pattern="[0-9]{6}" required disabled={done.email} value={codes.email} onChange={(e) => setCodes({ ...codes, email: e.target.value })} />
-        <Field label={`Code sent to ${form.phone_e164}`} inputMode="numeric" pattern="[0-9]{6}" required disabled={done.phone} value={codes.phone} onChange={(e) => setCodes({ ...codes, phone: e.target.value })} />
+        <Field label="Code from the email" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required value={code} onChange={(e) => setCode(e.target.value)} />
         {error && <Notice tone="error">{error}</Notice>}
+        {resent !== null && <Notice tone="ok">If that address has an account waiting, a new code is on its way{resent ? ` (development build: ${resent})` : ''}. Check your spam folder too.</Notice>}
         <button className="btn w-full !py-3.5" disabled={busy}>{busy ? 'Checking…' : 'Confirm and continue'}</button>
+        <p className="text-center text-sm text-muted">No email? <button type="button" className="font-semibold text-action" onClick={resend}>Send a new code</button> (once a minute)</p>
       </form>
     </Shell>
   );

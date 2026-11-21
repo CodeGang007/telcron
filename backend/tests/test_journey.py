@@ -45,7 +45,25 @@ async def test_wrong_code_is_refused_and_counted(client):
     assert r.status_code == 400
 
 
-async def test_a_phone_number_has_one_verified_owner(client):
+async def test_email_alone_reaches_level_1(client):
+    email, codes = await signup(client)
+    assert set(codes) == {"email"}  # no phone code while there is no SMS route (ADR-006)
+    r = await client.post(f"{API}/auth/verify", json={
+        "email": email, "channel": "email", "code": codes["email"]})
+    assert r.json()["verification_level"] == 1
+
+
+async def test_a_new_code_can_be_requested_once_a_minute(client):
+    email, first = await signup(client)
+    assert (await client.post(f"{API}/auth/resend", json={"email": email})).json()["dev_codes"] is None
+    # Unknown addresses get the same answer: the endpoint does not reveal who has an account.
+    unknown = await client.post(f"{API}/auth/resend", json={"email": "nobody@example.com"})
+    assert unknown.status_code == 202 and unknown.json()["sent"] is True
+
+
+async def test_a_phone_number_has_one_verified_owner(client, monkeypatch):
+    from app.core.config import get_settings
+    monkeypatch.setattr(get_settings(), "level1_requires_phone", True)
     phone = new_phone()
     first, codes = await signup(client, "First", phone)
     for channel in ("email", "phone"):
@@ -252,3 +270,22 @@ async def test_lists_are_paged(client):
     assert not {p["id"] for p in first.json()} & {p["id"] for p in second.json()}
     last = await client.get(f"{API}/products", params={"limit": 50})
     assert last.headers["X-Has-More"] == "false"
+
+
+async def test_the_code_is_emailed_and_a_refused_send_does_not_break_sign_up(client, monkeypatch):
+    from app.core.config import get_settings
+    from app.modules.identity import mailer
+    s = get_settings()
+    monkeypatch.setattr(s, "mail_provider", "ses")
+    monkeypatch.setattr(s, "mail_from", "Telcron <codes@example.com>")
+    sent = []
+    monkeypatch.setattr(mailer, "_send_ses", lambda to, code: sent.append((to, code)))
+    email, codes = await signup(client)
+    assert sent == [(email, codes["email"])]
+    assert mailer._body(codes["email"], 10)[0] == f"{codes['email']} is your Telcron code"
+
+    def refuse(to, code):
+        raise RuntimeError("Email address is not verified (SES sandbox)")
+    monkeypatch.setattr(mailer, "_send_ses", refuse)
+    email, codes = await signup(client)  # still 201: the member can ask for a new code
+    assert codes["email"]

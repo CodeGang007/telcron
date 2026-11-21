@@ -242,6 +242,8 @@ TABLES = [
       checks=["verification_level BETWEEN 0 AND 3",
               "trust_score BETWEEN 0 AND 100",
               "verification_level = 0 OR (email_verified_at IS NOT NULL AND phone_verified_at IS NOT NULL)",
+              # Relaxed to email only by migration 20261121120000_level1_email_only (ADR-006);
+              # phase 1 is applied, so the change lives in that migration, not here.
               "phone_verified_at IS NULL OR phone_e164 IS NOT NULL",
               "phone_e164 IS NULL OR phone_e164 ~ '^\\+[1-9][0-9]{6,14}$'",
               "(status = 'deleted') = (deleted_at IS NOT NULL)"],

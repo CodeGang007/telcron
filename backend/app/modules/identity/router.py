@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, status
+from pydantic import BaseModel, EmailStr
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, Db
@@ -25,9 +26,20 @@ def _client(request: Request) -> tuple[str | None, str | None]:
 @router.post("/register", response_model=RegisterOut, status_code=status.HTTP_201_CREATED)
 async def register(data: RegisterIn, db: Db, request: Request) -> RegisterOut:
     user, codes = await service.register(db, data, _client(request)[0])
-    # Sending the codes (email, SMS) is not wired: WO-005. Locally they come back in the body.
+    # The email code is sent by mailer.py (SES when deployed). Locally it also comes back here.
     return RegisterOut(user_id=str(user.id),
                        dev_codes=codes if get_settings().dev_expose_codes else None)
+
+
+class ResendIn(BaseModel):
+    email: EmailStr
+
+
+@router.post("/resend", status_code=status.HTTP_202_ACCEPTED)
+async def resend(data: ResendIn, db: Db) -> dict:
+    """Send a new email code. The answer is the same whether or not the address has an account."""
+    codes = await service.resend(db, data.email)
+    return {"sent": True, "dev_codes": codes if codes and get_settings().dev_expose_codes else None}
 
 
 @router.post("/verify", response_model=VerifyOut)

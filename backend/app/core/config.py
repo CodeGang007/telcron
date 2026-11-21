@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     seed_admin_password: str | None = None
     # The commit this build was made from; baked into the image, reported by /health.
     git_sha: str = "dev"
+    # Verification codes by email: `log` (local, codes shown in the sign-up response) or `ses`.
+    mail_provider: str = "log"
+    mail_from: str | None = None
+    aws_region: str = "us-east-2"
+    # Level 1 needs a verified phone too. Off until an SMS route exists (ADR-006).
+    level1_requires_phone: bool = False
     # A JSON file to read instead of calling the CPSC feed. For stacks that must not depend on the
     # network (the pipeline's browser tests). Never set where real recalls are wanted.
     cpsc_fixture: str | None = None

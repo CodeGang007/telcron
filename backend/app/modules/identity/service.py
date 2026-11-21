@@ -15,6 +15,7 @@ from app.models import AuthEvent, TrustScoreEvent, User, VerificationToken
 from app.models import Session as SessionRow
 from app.modules.rewards import service as rewards
 
+from . import mailer
 from .schemas import RegisterIn, TokensOut
 
 # channel -> token_purpose, and the auth_event_type written when that channel is confirmed
@@ -44,6 +45,38 @@ async def _issue_code(db: AsyncSession, user: User, channel: str) -> str:
     return code
 
 
+async def _deliver(db: AsyncSession, user: User, code: str | None) -> bool:
+    """Email the code. A refusal does not undo the sign-up: it is recorded and the member can ask
+    for a new code."""
+    if code is None:
+        return False
+    try:
+        await mailer.send_code(user.email, code)
+        return True
+    except mailer.SendFailed as exc:
+        db.add(AuthEvent(user_id=user.id, event_type="otp_failed", email_attempted=user.email,
+                         failure_reason=f"email_not_sent: {exc}"[:200]))
+        return False
+
+
+RESEND_GAP = timedelta(seconds=60)
+
+
+async def resend(db: AsyncSession, email: str) -> dict[str, str] | None:
+    """A new email code, at most one a minute. Says nothing about whether the address exists."""
+    user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
+    if user is None or user.status in BLOCKED or user.email_verified_at is not None:
+        return None
+    last = await db.scalar(select(VerificationToken.created_at).where(
+        VerificationToken.user_id == user.id, VerificationToken.purpose == PURPOSE["email"])
+        .order_by(VerificationToken.created_at.desc()).limit(1))
+    if last is not None and _now() - last < RESEND_GAP:
+        return None
+    code = await _issue_code(db, user, "email")
+    await _deliver(db, user, code)
+    return {"email": code}
+
+
 async def register(db: AsyncSession, data: RegisterIn,
                    ip: str | None) -> tuple[User, dict[str, str]]:
     if (await db.execute(select(User.id).where(User.email == data.email))).first():
@@ -54,7 +87,11 @@ async def register(db: AsyncSession, data: RegisterIn,
                 referral_code=security.new_referral_code())
     db.add(user)
     await db.flush()
-    codes = {ch: await _issue_code(db, user, ch) for ch in ("email", "phone")}
+    # Phone codes only once an SMS route exists (ADR-006); the number, if given, is kept.
+    channels = ("email", "phone") if get_settings().level1_requires_phone and data.phone_e164 \
+        else ("email",)
+    codes = {ch: await _issue_code(db, user, ch) for ch in channels}
+    await _deliver(db, user, codes.get("email"))
     audit(db, action="user.registered", entity_type="user", entity_id=user.id,
           actor_user_id=user.id)
     return user, codes
@@ -99,7 +136,8 @@ async def verify(db: AsyncSession, email: str, channel: str, code: str) -> User:
         user.phone_verified_at = user.phone_verified_at or _now()
     db.add(AuthEvent(user_id=user.id, event_type=VERIFIED[channel], email_attempted=email))
 
-    if user.email_verified_at and user.phone_verified_at and user.verification_level < 1:
+    phone_ok = user.phone_verified_at is not None or not get_settings().level1_requires_phone
+    if user.email_verified_at and phone_ok and user.verification_level < 1:
         user.verification_level = 1
         user.trust_score = LEVEL1_TRUST
         await db.flush()

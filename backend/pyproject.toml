@@ -16,6 +16,7 @@ dependencies = [
   "arq>=0.26",
   "redis>=5.2",
   "httpx>=0.28.1",
+  "boto3>=1.44.9",
 ]
 
 [dependency-groups]

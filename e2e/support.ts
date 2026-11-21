@@ -34,15 +34,14 @@ export async function newMember(page: Page, name: string): Promise<{ email: stri
   await page.goto('/sign-up');
   await page.getByLabel('Name').fill(name);
   await page.getByLabel('Email').fill(member.email);
-  await page.getByLabel('Mobile number').fill(`+1415${stamp.slice(-7)}`);
+  await page.getByLabel('Mobile number (optional)').fill(`+1415${stamp.slice(-7)}`);
   await page.getByLabel('Password').fill(member.password);
   await page.getByRole('button', { name: 'Create account' }).click();
+  // Locally the email code is also shown on the page; deployed, it only arrives by email.
   const notice = await page.getByText('Development build').innerText();
-  const codes = notice.match(/Email (\d{6}), phone (\d{6})/);
-  expect(codes, 'the local build shows both codes').not.toBeNull();
-  const inputs = page.locator('input[inputmode="numeric"]');
-  await inputs.nth(0).fill(codes![1]);
-  await inputs.nth(1).fill(codes![2]);
+  const code = notice.match(/your code is (\d{6})/);
+  expect(code, 'the local build shows the email code').not.toBeNull();
+  await page.getByLabel('Code from the email').fill(code![1]);
   await page.getByRole('button', { name: 'Confirm and continue' }).click();
   await page.waitForURL('**/rewards');
   return member;
