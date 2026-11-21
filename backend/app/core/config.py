@@ -25,8 +25,13 @@ class Settings(BaseSettings):
     login_lock_minutes: int = 15
     # Local only: return verification codes in the register response instead of sending them.
     dev_expose_codes: bool = False
-    # stub | bedrock. Bedrock is not wired yet (WO-004).
+    # stub | llm. `llm` scores hazards with a model over an OpenAI-compatible API (Groq's free plan
+    # by default) and falls back to the keyword stub when it cannot answer.
     ai_provider: str = "stub"
+    llm_api_key: str | None = None
+    llm_base_url: str = "https://api.groq.com/openai/v1"
+    llm_model: str = "openai/gpt-oss-120b"
+    vision_model: str = "qwen/qwen3.8-27b"
     passport_cache_seconds: int = 24 * 3600
     # Local demos only: the application seed shortens every earn rule's confirmation delay to this.
     coin_confirm_delay_seconds: int | None = None
@@ -35,6 +40,35 @@ class Settings(BaseSettings):
     seed_admin_password: str | None = None
     # The commit this build was made from; baked into the image, reported by /health.
     git_sha: str = "dev"
+    # Verification codes by email: `log` (local, codes shown in the sign-up response), `smtp` or `ses`.
+    mail_provider: str = "log"
+    mail_from: str | None = None
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str | None = None  # defaults to MAIL_FROM
+    smtp_password: str | None = None
+    # Product research (WO-014): live recall databases and a web search. TAVILY_API_KEY selects
+    # Tavily; without it the LLM provider's built-in browser search is used, sparingly.
+    research_enabled: bool = True
+    tavily_api_key: str | None = None
+    research_model: str = "openai/gpt-oss-20b"
+    research_cooldown_hours: int = 24
+    # Photos (WO-014): `none` keeps nothing; `s3` stores them in MEDIA_BUCKET with the host role.
+    media_store: str = "none"
+    media_bucket: str | None = None
+    # `rekognition` reads text and labels from a photo before the vision model; `none` skips it.
+    image_reader: str = "none"
+    # Embeddings (WO-015): our own embedder service (services/embedder). Unset = no vectors; search
+    # and the assistant fall back to text matching and recency.
+    embed_url: str | None = None
+    embed_token: str | None = None
+    embed_model: str = "bge-small-en-v1.5:384"
+    aws_region: str = "us-east-2"
+    # Level 1 needs a verified phone too. Off until an SMS route exists (ADR-006).
+    level1_requires_phone: bool = False
+    # A JSON file to read instead of calling the CPSC feed. For stacks that must not depend on the
+    # network (the pipeline's browser tests). Never set where real recalls are wanted.
+    cpsc_fixture: str | None = None
 
     @field_validator("database_url")
     @classmethod

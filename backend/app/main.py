@@ -10,9 +10,13 @@ from sqlalchemy import text
 from app.core.config import get_settings
 from app.core.db import engine
 from app.core.redis import close_redis, get_redis
+from app.modules.assistant.router import router as assistant
 from app.modules.catalogue.router import router as catalogue
 from app.modules.community.router import router as community
 from app.modules.identity.router import router as identity
+from app.modules.ingestion.router import router as ingestion
+from app.modules.moderation.router import router as moderation
+from app.modules.research.router import router as research
 from app.modules.rewards.router import router as rewards
 from app.modules.screening.router import router as screening
 from app.modules.wallet.router import router as wallet
@@ -35,10 +39,12 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Telcron API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=[get_settings().web_origin],
-                   allow_methods=["*"], allow_headers=["*"])
+                   allow_methods=["*"], allow_headers=["*"],
+                   expose_headers=["X-Has-More"])
 
 # The route table of contents. Only tech-lead edits this list.
-for router in (identity, catalogue, community, wallet, rewards, screening):
+for router in (identity, catalogue, community, wallet, rewards, screening, moderation, ingestion,
+               research, assistant):
     app.include_router(router, prefix="/api/v1")
 
 

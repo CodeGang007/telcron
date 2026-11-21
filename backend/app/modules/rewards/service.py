@@ -4,6 +4,7 @@ rapid-fire fraud hold and the level bonus, and keep `coin_balances` in step with
 This module never inserts into or updates the ledger itself."""
 
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,3 +56,79 @@ async def level_for(db: AsyncSession, lifetime_earned: int) -> RewardLevel | Non
     return (await db.execute(
         select(RewardLevel).where(RewardLevel.min_lifetime_coins <= lifetime_earned)
         .order_by(RewardLevel.level.desc()).limit(1))).scalar_one_or_none()
+
+
+# ---------------------------------------------------------------- streaks, badges, the store
+
+LEVEL_BADGES = {2: "inspector", 3: "analyst", 4: "expert", 5: "master"}
+REDEEM = text("select coin_redeem(cast(:user as uuid), cast(:item as text), cast(:key as text), "
+              "cast(:product as uuid))")
+
+
+async def daily_check_in(db: AsyncSession, user_id: uuid.UUID) -> int:
+    """Called on sign-in. The first sign-in of a day pays the streak rule; after seven days in a row
+    it pays the bigger one. Returns the streak length in days."""
+    today = (await db.scalar(text("select current_date")))
+    inserted = (await db.execute(text(
+        "insert into user_daily_logins (user_id, login_date) values (:u, current_date) "
+        "on conflict do nothing returning 1"), {"u": user_id})).first()
+    streak = int(await db.scalar(text("""
+        with d as (select login_date, login_date - (row_number() over (order by login_date))::int as g
+                     from user_daily_logins where user_id = :u)
+        select count(*) from d where g = (select g from d where login_date = current_date)"""),
+        {"u": user_id}) or 0)
+    if inserted and await db.scalar(text("select verification_level >= 1 from users where id = :u"),
+                                    {"u": user_id}):
+        rule = "login_streak_7plus" if streak >= 7 else "login_streak"
+        await earn(db, user_id, rule, idempotency_key=f"daily:{user_id}:{today}")
+    return streak
+
+
+async def streak_of(db: AsyncSession, user_id: uuid.UUID) -> int:
+    return int(await db.scalar(text("""
+        with d as (select login_date, login_date - (row_number() over (order by login_date))::int as g
+                     from user_daily_logins where user_id = :u)
+        select count(*) from d where g = (select g from d order by login_date desc limit 1)
+          and (select max(login_date) from d) >= current_date - 1"""), {"u": user_id}) or 0)
+
+
+async def award_level_badges(db: AsyncSession, user_id: uuid.UUID, level: int) -> None:
+    for at, code in LEVEL_BADGES.items():
+        if level >= at:
+            await db.execute(text("insert into user_badges (user_id, badge_code) values (:u, :b) "
+                                  "on conflict do nothing"), {"u": user_id, "b": code})
+
+
+async def redeem(db: AsyncSession, user_id: uuid.UUID, item_code: str, key: str,
+                 product_id: uuid.UUID | None) -> uuid.UUID:
+    """Spend confirmed coins on a catalogue item, then fulfil what can be fulfilled at once."""
+    from fastapi import HTTPException
+    from fastapi import status as http
+    from sqlalchemy.exc import DBAPIError
+
+    from app.models import Redemption, RedemptionItem, UserEntitlement
+    item = await db.get(RedemptionItem, item_code)
+    if item is None or not item.is_active:
+        raise HTTPException(http.HTTP_404_NOT_FOUND, "item_not_found")
+    if item.fulfilment_type == "pdf_report" and product_id is None:
+        raise HTTPException(http.HTTP_422_UNPROCESSABLE_ENTITY, "product_required")
+    try:
+        async with db.begin_nested():
+            redemption_id = await db.scalar(REDEEM, {"user": user_id, "item": item_code,
+                                                     "key": key, "product": product_id})
+    except DBAPIError as exc:
+        if "insufficient confirmed TelCoins" in str(exc):
+            raise HTTPException(http.HTTP_409_CONFLICT, "not_enough_coins") from exc
+        raise
+    redemption = await db.get(Redemption, redemption_id)
+    if redemption.status == "processing":
+        now = datetime.now(UTC)
+        if item.fulfilment_type in ("watchlist_slots", "feature_access", "rate_limit_boost"):
+            db.add(UserEntitlement(user_id=user_id, source="redemption", redemption_id=redemption.id,
+                                   entitlement=item.fulfilment_type, quantity=item.quantity,
+                                   ends_at=now + item.duration if item.duration else None))
+            redemption.status, redemption.fulfilled_at = "fulfilled", now
+        elif item.fulfilment_type == "pdf_report":
+            redemption.fulfilment = {"report": f"/products/{product_id}/report"}
+            redemption.status, redemption.fulfilled_at = "fulfilled", now
+    return redemption.id

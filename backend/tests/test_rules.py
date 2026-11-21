@@ -72,3 +72,21 @@ def test_certification_component():
     assert passport.certification_component(["valid", "not_checked"]) == 85
     assert passport.certification_component(["valid"]) == 100
     assert passport.certification_component(["lookup_failed", "expired"]) == 0
+
+
+def test_nothing_checked_is_not_verified():
+    from decimal import Decimal
+
+    from app.domain import passport
+    bare = passport.build("no_match_found", [], None)
+    assert (bare.tier, bare.status_badge, bare.trust_score) == (1, "needs_information", None)
+    # One piece of real evidence is enough to be scored.
+    assert passport.build("no_match_found", ["valid"], None).status_badge == "verified"
+    assert passport.build("no_match_found", [], Decimal(10)).status_badge == "verified"
+    assert passport.build("match", [], None).status_badge == "recalled"
+
+
+def test_a_high_hazard_score_is_never_verified():
+    assert passport.build("no_match_found", ["valid"], D("59")).status_badge == "verified"
+    high = passport.build("no_match_found", ["valid"], D("60"))
+    assert (high.tier, high.status_badge) == (2, "needs_information")

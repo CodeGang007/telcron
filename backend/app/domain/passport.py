@@ -19,6 +19,7 @@ RECALL_WEIGHT, CERT_WEIGHT, HAZARD_WEIGHT = Decimal("0.4"), Decimal("0.2"), Deci
 RECALL_COMPONENT = {"no_match_found": Decimal(100), "near_match": Decimal(40),
                     "match": Decimal(0)}
 BAD_CERTIFICATE = ("expired", "revoked")
+HIGH_HAZARD = Decimal(60)  # the scale's "high" band: no "verified" badge at or above it
 
 
 @dataclass(frozen=True)
@@ -51,6 +52,10 @@ def build(recall_verdict: str, cert_statuses: list[str],
     recall = RECALL_COMPONENT[recall_verdict]
     cert = certification_component(cert_statuses)
     hazard = None if hazard_total is None else Decimal(100) - hazard_total
+    if recall_verdict == "no_match_found" and hazard is None and not cert_statuses:
+        # Nothing was checked: no certificate is known and no evidence was scored. The absence of a
+        # recall notice alone is not a clean bill of health, so no badge and no score yet.
+        return PassportResult(1, "needs_information", None, recall, None, None)
     # Tier 2 requires a trust score, so a missing hazard component drops out of the mean
     # instead of counting as zero or as a hundred.
     parts = [(recall, RECALL_WEIGHT), (cert, CERT_WEIGHT)]
@@ -65,6 +70,8 @@ def build(recall_verdict: str, cert_statuses: list[str],
         badge = "needs_information"  # a possible recall is not a recall, and not a clean bill
     elif any(s in BAD_CERTIFICATE for s in cert_statuses):
         badge = "certification_issue"
+    elif hazard_total is not None and hazard_total >= HIGH_HAZARD:
+        badge = "needs_information"  # evidence of serious hazard is not a clean bill (WO-014)
     else:
         badge = "verified"
     return PassportResult(2, badge, trust, recall, cert, hazard)

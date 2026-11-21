@@ -35,7 +35,7 @@ test('a signed-in member uses the wallet, reviews a product and is paid, on the 
     await page.getByLabel('Email').fill(EMAIL);
     await page.getByLabel('Password').fill(PASSWORD);
     await page.getByRole('button', { name: 'Sign In' }).click();
-    await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
+    await expect(page.locator('header [aria-haspopup=menu]')).toBeVisible();
   });
 
   await test.step('wallet: save a product, see it listed, remove it', async () => {
@@ -60,9 +60,9 @@ test('a signed-in member uses the wallet, reviews a product and is paid, on the 
     for (const slug of REVIEWABLE) {
       await page.goto(`/products/${slug}`);
       const before = await passportVersion(page);
-      await page.locator('textarea').fill(REVIEW);
+      await page.getByRole('form', { name: 'Write a review' }).locator('textarea').fill(REVIEW);
       await page.getByRole('button', { name: 'Post review' }).click();
-      const outcome = page.getByText(/Review posted|already reviewed/);
+      const outcome = page.getByText(/TelCoins are pending|already reviewed/);
       await expect(outcome).toBeVisible();
       if ((await outcome.innerText()).includes('already reviewed')) continue;
 
@@ -84,12 +84,13 @@ test('a signed-in member uses the wallet, reviews a product and is paid, on the 
     await page.goto('/rewards');
     await expect(page.getByRole('heading', { name: 'History' })).toBeVisible();
     await expect(page.locator('ul.divide-y li').filter({ hasText: /Review|First review/ }).first()).toBeVisible();
-    const card = await page.locator('div.bg-brand').innerText();
+    const card = await page.locator('section').first().innerText();
     test.info().annotations.push({ type: 'coins', description: card.replace(/\s+/g, ' ') });
   });
 
   await test.step('sign out closes the member pages', async () => {
-    await page.getByRole('button', { name: 'Sign out' }).click();
+    await page.locator('header [aria-haspopup=menu]').click();
+    await page.getByRole('menuitem', { name: 'Sign out' }).click();
     await page.goto('/rewards');
     await expect(page.getByText('Sign in to continue')).toBeVisible();
   });

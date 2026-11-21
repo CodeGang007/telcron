@@ -1,4 +1,7 @@
-const BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:4310') + '/api/v1';
+const ORIGIN = import.meta.env.VITE_API_URL ?? 'http://localhost:4310';
+const BASE = ORIGIN + '/api/v1';
+/** A path the API returns (such as a product photo) as a full URL. */
+export const apiUrl = (path: string) => ORIGIN + path;
 const KEY = 'telcron.session';
 
 export type Tokens = { access_token: string; refresh_token: string };
@@ -56,7 +59,7 @@ function refresh(): Promise<Tokens | null> {
   return refreshing;
 }
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function request(path: string, init: RequestInit = {}): Promise<Response> {
   let res = await raw(path, init, session.get()?.access_token);
   if (res.status === 401 && session.get()) {
     const next = await refresh();
@@ -66,7 +69,19 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = await res.json().catch(() => ({}));
     throw new ApiError(res.status, typeof body.detail === 'string' ? body.detail : 'request_failed');
   }
+  return res;
+}
+
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await request(path, init);
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+}
+
+/** One page of a list endpoint. The server says whether another page follows. */
+export async function apiPage<T>(path: string, offset: number, limit: number): Promise<{ items: T[]; hasMore: boolean }> {
+  const sep = path.includes('?') ? '&' : '?';
+  const res = await request(`${path}${sep}offset=${offset}&limit=${limit}`);
+  return { items: (await res.json()) as T[], hasMore: res.headers.get('X-Has-More') === 'true' };
 }
 
 export const post = <T>(path: string, body?: unknown) =>
@@ -75,11 +90,31 @@ export const post = <T>(path: string, body?: unknown) =>
 const MESSAGES: Record<string, string> = {
   invalid_credentials: 'That email and password do not match.',
   account_locked: 'Too many attempts. Try again in 15 minutes.',
+  email_not_verified: 'Confirm your email first: enter the code we emailed you.',
   email_taken: 'An account with this email already exists. Sign in instead.',
   invalid_or_expired_code: 'That code is wrong or has expired.',
   already_reviewed: 'You have already reviewed this product.',
   already_in_wallet: 'This product is already in your wallet.',
   wallet_full: 'Your wallet is full. Remove a product to save another.',
+  flag_pending: 'You already have a report on this product waiting for review.',
+  report_pending: 'You already have a correction to that field waiting for review.',
+  own_contribution: 'You cannot decide on your own contribution. Leave it for a colleague.',
+  review_task_closed: 'Someone has already decided this one.',
+  already_decided: 'This has already been decided.',
+  role_not_allowed: 'Your account is not allowed to do this.',
+  photo_identification_unavailable: 'Reading photos is not available right now. Type the details instead.',
+  photo_unreadable: 'That photo could not be read. Try a JPEG or PNG under 3 MB.',
+  unknown_category: 'Choose one of the listed categories.',
+  assistant_quota_reached: 'You have asked a lot today. The assistant is available again tomorrow.',
+  thread_not_found: 'That conversation is not available.',
+  research_not_due: 'This product was searched recently. It can be searched again tomorrow.',
+  product_not_found: 'We could not find that product.',
+  invalid_barcode: 'That is not a valid barcode. Check the digits and try again.',
+  product_not_identified: 'We could not find that barcode anywhere yet. Try searching by name.',
+  lookup_unavailable: 'The product database is busy right now. Try again in a minute.',
+  identify_quota_reached: 'You have reached today\'s scan limit. It resets tomorrow.',
+  not_enough_coins: 'You do not have enough confirmed TelCoins for that yet.',
+  bad_date_range: 'Choose a start date before the end date, at most a year apart.',
   phone_in_use: 'That phone number is already verified on another account.',
   verification_level_1_required: 'Confirm your email and phone to do this.',
   not_authenticated: 'Sign in to continue.',
@@ -99,6 +134,17 @@ export type ProductSummary = {
   status_badge: string | null;
   trust_score: number | null;
   tier: number | null;
+  image_url: string | null;
+};
+export type Finding = {
+  kind: 'recall' | 'safety_warning' | 'complaint' | 'certification' | 'no_issue_found' | 'general';
+  title: string; source: string; about_this_product: boolean; url: string; finding: string; found_at: string;
+};
+export type Research = {
+  enabled: boolean; status: string | null; searched_at: string | null; can_request: boolean;
+  // A queued or running search has empty stats: every field may be missing.
+  stats: Partial<{ cpsc_notices: number; cpsc_new: number; pages: number; findings: number; errors: string[] }> | null;
+  findings: Finding[];
 };
 export type Citation = { id: string; kind: string; excerpt: string | null; url: string | null };
 export type Dimension = {

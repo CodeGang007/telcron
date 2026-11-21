@@ -32,11 +32,11 @@ PAGES = [
         ["product_aliases", "product_media", "~data_sources"],
         ["media_assets", "identification_requests", "~users"],
         ["media_blobs", "embedding_models"],
-        ["media_annotations", "media_embeddings"],
+        ["media_annotations", "media_embeddings", "product_embeddings"],
     ]),
     ("4 · Sources, Evidence, Recalls & Certifications", [
         ["data_sources", "ingestion_jobs", "~products"],
-        ["source_records", "evidence_items", "product_traceability"],
+        ["source_records", "evidence_items", "product_traceability", "evidence_embeddings"],
         ["recalls", "recall_regions", "~embedding_models"],
         ["recall_products", "recall_product_identifiers", "recall_embeddings"],
         ["product_certifications", "certification_checks", "certification_schemes"],
@@ -67,6 +67,7 @@ PAGES = [
         ["posts", "post_media", "reactions"],
         ["comments", "hazard_flags", "hazard_flag_media"],
         ["product_fact_reports", "~risk_events", "~hazard_dimensions"],
+        ["~users", "chat_threads", "chat_messages"],
     ]),
     ("9 · Commerce Feed & Personalisation", [
         ["~products", "~categories", "~recalls", "~posts"],

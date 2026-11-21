@@ -177,7 +177,7 @@ correctness: `audit_log`, `review_tasks`, `ai_invocations`, `trust_score_events`
 | One product per barcode / marketplace ID | `UNIQUE (alias_type, namespace, alias_value)` + GTIN/namespace CHECKs | `test_one_product_per_barcode`, `test_marketplace_ids_are_namespaced` |
 | One active product per brand + model | partial UNIQUE | `test_brand_model_unique_but_unknown_brand_allowed` |
 | Merges move user-facing data; no chains | `telcron_merge_products`, trigger | `test_merge_moves_everything_users_touch`, `test_no_merge_chains_or_self_merge` |
-| Level ≥ 1 ⇒ verified email + phone | CHECK | `test_level1_requires_verified_email_and_phone` |
+| Level ≥ 1 ⇒ verified email (phone dropped for now: ADR-006, migration `20261121120000`) | CHECK | `test_level1_requires_a_verified_email` |
 | OAuth subject → one user; verified phone → one user | UNIQUE / partial UNIQUE | `test_oauth_subject_…`, `test_phone_unique_only_once_verified` |
 | Session cap can't slide; rotation is linked | CHECKs | `test_session_absolute_cap_cannot_slide`, `test_session_rotation_links_replacement` |
 | Evidence has exactly the subject its kind requires | `CASE kind` CHECK | `test_evidence_has_exactly_one_typed_subject` |
@@ -620,6 +620,21 @@ Which media assets illustrate a product, and in what role.
 
 **Primary key:** `(product_id, media_asset_id)`
 
+#### `product_embeddings` — phase 2
+
+Semantic vector of a product's identity and known safety facts, per model.  
+*Serves:* WO-015 semantic search, similar products, assistant retrieval
+
+| Column | Type | Null | Key | Default | Notes |
+|---|---|---|---|---|---|
+| `product_id` | uuid → `products.id` (cascade) |  | PK FK |  |  |
+| `model_code` | text → `embedding_models.code` (restrict) |  | PK FK |  |  |
+| `content_sha256` | bytea |  |  |  | re-embed only when the text changes |
+| `embedding` | vector |  |  |  |  |
+| `created_at` | timestamptz |  |  | `now()` |  |
+
+**Primary key:** `(product_id, model_code)`
+
 
 ### Media & AI Recognition
 
@@ -856,6 +871,20 @@ Resolved product facts (manufacturer, model, specs) with evidence and method —
 | `created_at` | timestamptz |  |  | `now()` |  |
 
 **Indexes:** `(product_id, attribute)`
+
+#### `evidence_embeddings` — phase 2
+
+Semantic vector of one evidence item's excerpt (finding, recall, review, flag), per model.  
+*Serves:* WO-015 assistant retrieval
+
+| Column | Type | Null | Key | Default | Notes |
+|---|---|---|---|---|---|
+| `evidence_id` | uuid → `evidence_items.id` (cascade) |  | PK FK |  |  |
+| `model_code` | text → `embedding_models.code` (restrict) |  | PK FK |  |  |
+| `embedding` | vector |  |  |  |  |
+| `created_at` | timestamptz |  |  | `now()` |  |
+
+**Primary key:** `(evidence_id, model_code)`
 
 
 ### Recalls
@@ -1537,6 +1566,43 @@ Badges awarded to users.
 
 
 ### Community & Reviews
+
+#### `chat_threads` — phase 2
+
+A member's conversation with the product assistant about one product (its memory).  
+*Serves:* WO-015 product assistant
+
+| Column | Type | Null | Key | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | uuid |  | PK | `uuidv7()` |  |
+| `user_id` | uuid → `users.id` (cascade) |  | FK |  |  |
+| `product_id` | uuid → `products.id` (cascade) |  | FK |  |  |
+| `created_at` | timestamptz |  |  | `now()` |  |
+| `last_message_at` | timestamptz |  |  | `now()` |  |
+
+**Indexes:** `(user_id, product_id, last_message_at DESC)`
+
+#### `chat_messages` — append-only · phase 2
+
+One turn of a conversation. An answer keeps the evidence it cited and the model that wrote it.  
+*Serves:* WO-015 product assistant
+
+| Column | Type | Null | Key | Default | Notes |
+|---|---|---|---|---|---|
+| `id` | uuid |  | PK | `uuidv7()` |  |
+| `thread_id` | uuid → `chat_threads.id` (cascade) |  | FK |  |  |
+| `role` | text |  |  |  |  |
+| `content` | text |  |  |  |  |
+| `citations` | jsonb |  |  | `'[]'::jsonb` | [{evidence_id, url, excerpt}] |
+| `model_code` | text | yes |  |  |  |
+| `prompt_version` | text | yes |  |  |  |
+| `input_tokens` | integer | yes |  |  |  |
+| `output_tokens` | integer | yes |  |  |  |
+| `created_at` | timestamptz |  |  | `now()` |  |
+
+**Append-only:** insert-only  
+**Checks:** `role IN ('user', 'assistant')`; `char_length(content) BETWEEN 1 AND 8000`  
+**Indexes:** `(thread_id, created_at)`
 
 #### `reviews` — ★ core · phase 1
 

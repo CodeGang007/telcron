@@ -31,7 +31,11 @@ INSERT INTO data_sources (code, name, kind, base_url, country_codes) VALUES
     ('reddit',       'Reddit API',                     'social',                  'https://oauth.reddit.com',                              '{}'),
     ('tiktok',       'TikTok API',                     'social',                  'https://open.tiktokapis.com',                           '{}'),
     ('user_upload',  'User uploads',                   'user',                    NULL,                                                    '{}'),
-    ('telcron',      'Telcron internal',               'internal',                NULL,                                                    '{}')
+    ('telcron',      'Telcron internal',               'internal',                NULL,                                                    '{}'),
+    ('web_search',   'Web search (product research)',  'internal',                NULL,                                                    '{}'),
+    ('regulator_web','Web search of safety regulators','recall_authority',        NULL,                                                    '{}'),
+    ('community_web','Owner reports: forums, social media, marketplace reviews', 'social', NULL,                                          '{}'),
+    ('uk_opss',      'UK Product Safety Alerts and Recalls', 'recall_authority',  'https://www.gov.uk/product-safety-alerts-reports-recalls', '{GB}')
 ON CONFLICT (code) DO NOTHING;
 UPDATE data_sources SET is_enabled = false WHERE code IN ('reddit', 'tiktok', 'nhtsa', 'ul_productiq', 'intertek_etl');
 

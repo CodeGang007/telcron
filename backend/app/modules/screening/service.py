@@ -7,8 +7,8 @@ dimension cites evidence; assessments and passports are insert-only; a passport'
 next one and its badge agrees with its screening. This module orders its writes to satisfy those
 rules and never works around them.
 
-Vector retrieval (Titan + pgvector) is not wired — WO-004. Recall candidates come from
-identifier equality and name similarity only.
+Recall candidates come from identifier equality, name similarity, and (WO-015) closeness in meaning
+between the product's vector and the recalls' vectors (bge-small + pgvector).
 """
 
 import time
@@ -19,6 +19,7 @@ from decimal import Decimal
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.events import audit, emit
 from app.domain import passport as passport_rules
 from app.domain.hazard import DimensionScore, total_score
@@ -37,6 +38,7 @@ from app.models import (
     Product,
     ProductAlias,
     ProductCertification,
+    ProductTraceability,
     Recall,
     RecallProduct,
     RecallProductIdentifier,
@@ -52,10 +54,20 @@ from .scorer import DimensionSpec, EvidenceRef, Scorer, get_scorer
 CONTEXT = "safety"
 SIMILARITY_FLOOR = 0.45
 MAX_REVIEWS = 40
+MAX_WEB = 20
 SETTING = text("select coalesce((select (value #>> '{}')::numeric from app_settings "
                "where key = :key), cast(:fallback as numeric))")
 BAND = text("select label from scoring_bands where context_code = :context "
             "and score_range @> cast(:total as numeric)")
+MEANING = text("""
+    SELECT re.recall_id, re.embedding <=> pe.embedding AS distance, max(rp.brand_name)
+    FROM product_embeddings pe
+    JOIN recall_embeddings re ON re.model_code = pe.model_code
+    JOIN recall_products rp ON rp.recall_id = re.recall_id
+    WHERE pe.product_id = :product AND pe.model_code = :model
+      AND re.embedding <=> pe.embedding < 0.2
+    GROUP BY re.recall_id, re.embedding, pe.embedding
+    ORDER BY 2 LIMIT 10""")
 ALERT_THRESHOLD = text("select alert_threshold from scoring_contexts where code = :context")
 
 
@@ -105,6 +117,17 @@ async def _recall_candidates(db: AsyncSession, product: Product, brand: str | No
         if brand and recall_brand and _norm(brand) == _norm(recall_brand):
             found[recall.id] = (recall, "near_match", Decimal(str(round(float(score), 3))),
                                 float(score), "Similar product name and the same brand.")
+    # By meaning (WO-015): recalls whose text is about what this product's vector is about, where
+    # both have vectors for the active model. The same brand is still required for a near match.
+    rows = (await db.execute(MEANING, {"product": product.id,
+                                       "model": get_settings().embed_model})).all()
+    for recall_id, distance, recall_brand in rows:
+        if recall_id in found or not (brand and recall_brand and _norm(brand) == _norm(recall_brand)):
+            continue
+        recall = await db.get(Recall, recall_id)
+        closeness = round(1 - float(distance), 3)
+        found[recall_id] = (recall, "near_match", Decimal(str(closeness)), closeness,
+                            "Recall text close in meaning to this product, and the same brand.")
     return list(found.values())
 
 
@@ -131,6 +154,8 @@ async def _issue(db: AsyncSession, product: Product, screening: Screening,
     await db.refresh(product)
     audit(db, action="passport.issued", entity_type="passport", entity_id=passport.id,
           changes={"version": passport.version, "badge": passport.status_badge})
+    # Its vectors follow what is known about it (WO-015); done in the Worker.
+    emit(db, "product", product.id, "ProductIndexRequested", {"product_id": str(product.id)})
     return passport
 
 
@@ -202,11 +227,23 @@ async def screen_product(db: AsyncSession, product_id: uuid.UUID, run_type: str,
         refs.append(EvidenceRef(str(ev.id), "review", ev.excerpt or ""))
         purpose[str(ev.id)] = "hazard"
     flags = (await db.execute(select(HazardFlag).where(
-        HazardFlag.product_id == product.id, HazardFlag.status == "confirmed"))).scalars().all()
+        HazardFlag.product_id == product.id, HazardFlag.status == "confirmed")
+        .order_by(HazardFlag.reviewed_at.desc()).limit(MAX_REVIEWS))).scalars().all()
     for flag in flags:
         ev = await _evidence_for(db, EvidenceItem.hazard_flag_id, flag.id, "hazard_flag",
                                  flag.description)
         refs.append(EvidenceRef(str(ev.id), "hazard_flag", ev.excerpt or ""))
+        purpose[str(ev.id)] = "hazard"
+
+    # What research found on the web (WO-014): each finding is already an evidence item.
+    web = (await db.execute(
+        select(EvidenceItem, ProductTraceability.attribute)
+        .join(ProductTraceability, ProductTraceability.evidence_id == EvidenceItem.id)
+        .where(ProductTraceability.product_id == product.id, EvidenceItem.kind == "web_document")
+        .order_by(EvidenceItem.created_at.desc()).limit(MAX_WEB))).all()
+    for ev, attribute in web:
+        refs.append(EvidenceRef(str(ev.id), "web_document",
+                                f"{attribute.removeprefix('web_')}: {ev.excerpt or ''}"))
         purpose[str(ev.id)] = "hazard"
 
     # 2. Recall verdict. The candidates go in first: the verdict must be able to cite one.
@@ -232,9 +269,12 @@ async def screen_product(db: AsyncSession, product_id: uuid.UUID, run_type: str,
     results = await scorer.score(
         f"{brand or ''} {product.canonical_name}. {product.description or ''}",
         [DimensionSpec(d.code, d.name, d.description) for d in dims], refs)
+    usage = getattr(scorer, "usage", {}) or {}
+    error = getattr(scorer, "error", None)
     db.add(AiInvocation(purpose="hazard_score", model_code=scorer.model_code,
                         prompt_version=scorer.prompt_version, subject_type="product",
-                        subject_id=product.id, succeeded=True,
+                        subject_id=product.id, succeeded=error is None, error=error,
+                        input_tokens=usage.get("input"), output_tokens=usage.get("output"),
                         latency_ms=int((time.monotonic() - started) * 1000)))
     offered = {r.id for r in refs}
     by_code = {r.code: r for r in results}

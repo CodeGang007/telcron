@@ -3,6 +3,7 @@
 The tables are created by the SQL in db/ (generated from docs/database/schema_spec.py), never by
 SQLAlchemy. tests/test_schema_drift.py fails when this mapping and that schema disagree."""
 
+from .assistant import *  # noqa: F403
 from .base import VECTOR_DIM, Base
 from .catalogue import *  # noqa: F403
 from .certifications import *  # noqa: F403

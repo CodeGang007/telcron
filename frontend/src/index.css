@@ -1,50 +1,129 @@
 @import 'tailwindcss';
 
-/* Tokens taken from testlabhub.com (the Telcron property this UI follows). Components use these
-   names only; no literal colours in component files. */
+/* Telcron design tokens. The brand red and Poppins come from testlabhub.com; the rest is a modern
+   product palette around them. Components use these names only; no literal colours in components. */
 @theme {
   --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
-  --color-brand: #6b0000;
-  --color-brand-deep: #4d0000;
-  --color-brand-ink: #991b1b;
-  --color-brand-tint: #fdf2f8;
+  --font-display: 'Plus Jakarta Sans', 'Poppins', ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand: #7a0a12;
+  --color-brand-deep: #3d0207;
+  --color-brand-ink: #b3121f;
+  --color-brand-bright: #e23744;
+  --color-brand-tint: #fff1f2;
   --color-action: #4f46e5;
   --color-action-hover: #4338ca;
-  --color-panel: #f1f5f9;
-  --color-warm: #fff7ed;
-  --color-ink: #111827;
-  --color-muted: #4b5563;
-  --color-line: #e5e7eb;
-  --color-ok: #15803d;
-  --color-ok-tint: #dcfce7;
-  --color-warn: #b45309;
-  --color-warn-tint: #fef3c7;
-  --color-danger: #b91c1c;
+  --color-action-tint: #eef2ff;
+  --color-panel: #f6f7fb;
+  --color-warm: #fff8f1;
+  --color-ink: #0f172a;
+  --color-muted: #5b6475;
+  --color-line: #e7e9f0;
+  --color-night: #0b0f1a;
+  --color-night-2: #121829;
+  --color-ok: #059669;
+  --color-ok-tint: #d1fae5;
+  --color-warn: #c2410c;
+  --color-warn-tint: #ffedd5;
+  --color-danger: #dc2626;
   --color-danger-tint: #fee2e2;
-  --color-neutral-tint: #f3f4f6;
+  --color-gold: #f59e0b;
+  --color-gold-tint: #fef3c7;
+  --color-neutral-tint: #f1f3f8;
+
+  --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(15 23 42 / 0.05), 0 22px 44px -18px rgb(15 23 42 / 0.28);
+  --shadow-glow: 0 0 0 1px rgb(79 70 229 / 0.15), 0 12px 40px -10px rgb(79 70 229 / 0.45);
+
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-scan: scan 2.2s ease-in-out infinite;
+  --animate-pulse-ring: pulse-ring 2s ease-out infinite;
+
+  @keyframes shimmer {
+    from { background-position: -400px 0; }
+    to { background-position: 400px 0; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50% { transform: translateY(-14px) rotate(1.5deg); }
+  }
+  @keyframes scan {
+    0%, 100% { top: 8%; }
+    50% { top: 88%; }
+  }
+  @keyframes pulse-ring {
+    0% { transform: scale(0.9); opacity: 0.7; }
+    100% { transform: scale(1.6); opacity: 0; }
+  }
 }
 
+html {
+  scroll-behavior: smooth;
+}
 body {
   @apply bg-white font-sans text-ink antialiased;
+}
+::selection {
+  @apply bg-brand-ink text-white;
 }
 
 @layer components {
   .container-page {
     @apply mx-auto w-full max-w-6xl px-4 sm:px-6;
   }
+  .font-display {
+    font-family: var(--font-display);
+  }
   .btn {
-    @apply inline-flex items-center justify-center rounded-full bg-action px-6 py-3 text-sm font-medium text-white transition hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-action disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-action px-6 py-3 text-sm font-semibold text-white shadow-[0_8px_20px_-8px_rgb(79_70_229/0.6)] transition duration-200 hover:-translate-y-0.5 hover:bg-action-hover active:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-action disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-brand {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-brand-ink to-brand-bright px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_-10px_rgb(226_55_68/0.7)] transition duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:opacity-50;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center rounded-full border border-line bg-white px-6 py-3 text-sm font-medium text-ink transition hover:bg-neutral-tint;
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-line bg-white px-6 py-3 text-sm font-semibold text-ink transition duration-200 hover:-translate-y-0.5 hover:border-ink/20 hover:shadow-soft disabled:opacity-50;
+  }
+  .btn-sm {
+    @apply !px-4 !py-2 !text-xs;
   }
   .field {
-    @apply w-full rounded-2xl border border-line bg-white px-4 py-3 text-sm outline-none focus:border-action focus:ring-2 focus:ring-action/20;
+    @apply w-full rounded-xl border border-line bg-white px-4 py-3 text-sm outline-none transition placeholder:text-muted/70 focus:border-action focus:ring-4 focus:ring-action/10;
   }
   .card {
-    @apply rounded-3xl border border-line bg-white p-6;
+    @apply rounded-3xl border border-line bg-white p-6 shadow-soft;
+  }
+  .card-hover {
+    @apply transition duration-300 hover:-translate-y-1 hover:border-ink/10 hover:shadow-lift;
+  }
+  .glass {
+    @apply border border-white/10 bg-white/5 backdrop-blur-xl;
   }
   .eyebrow {
-    @apply text-xs font-semibold uppercase tracking-wider text-brand-ink;
+    @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-brand-ink;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold;
+  }
+  .skeleton {
+    @apply rounded-xl bg-[linear-gradient(90deg,var(--color-neutral-tint)_0px,#e9ecf3_120px,var(--color-neutral-tint)_240px)] bg-[length:800px_100%] animate-shimmer;
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.06) 1px, transparent 1px);
+    background-size: 44px 44px;
+  }
+  .text-gradient {
+    @apply bg-gradient-to-r from-white via-rose-100 to-rose-300 bg-clip-text text-transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

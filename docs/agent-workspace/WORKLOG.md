@@ -70,3 +70,25 @@ provider GitHub would need; nothing was done to get around that.
 "Earn AWS credits" activities; everything else on the board.
 
 Gates, 2026-11-16: pipeline run 43751927320 for commit f267b07 succeeded in all five jobs (schema tests, backend lint and tests, web typecheck and build, the member's journey in a browser, release to dev). After it both hosts reported f267b07 as the running build, without anyone touching AWS. Against the live site: the read-only smoke set passed 5 of 5, and the member journey signed in as the admin passed 5 of 5 steps (wallet round trip, a review re-screened from passport v1 to v2, earlier coins confirmed). Locally: make db-test 66 passed, make api-test 26 passed, journey 4 passed.
+
+
+## 2026-11-21 — Moderation, recalls ingestion, scanning, AI scorer, evals, redesign
+
+**Decided by the user**: stay on the AWS Free plan (so no Bedrock); no SerpApi/ScraperAPI, use free sources;
+use a free model ("something like grok"): Groq's free plan chosen, not xAI (no free tier); redesign the UI with
+open-source components, animation, logos, pagination; everything working end to end.
+
+**Live** (commit c921389, all through the pipeline): safety-team review queue; CPSC recall ingestion (nightly +
+admin) with 132 real notices imported on the dev site; barcode identification via UPCitemdb's free tier;
+daily streaks, badges, coin store; the model scorer with stub fallback (switched off until a key exists);
+`backend/evals` (12 cases) gating the pipeline at 90%; the redesigned web app.
+
+**Found in Chrome, fixed**: newer Chrome returns a promise from `window.scrollTo`; an effect returned it and
+crashed the app on every route change. The headless test browser did not have that behaviour, so the
+pipeline did not catch it; the redesign build was live with it for one release (about 15 minutes).
+
+**Honest caveat on evals**: the cases were written and the keyword placeholder tuned in the same session, so
+its 97% is a regression baseline, not an independent quality measure.
+
+**Open**: a Groq key to switch the AI scorer on; photo identification; media uploads; Level 2 identity; email/SMS
+codes (sign-up still closed on the dev site).

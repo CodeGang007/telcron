@@ -7,11 +7,13 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=10, max_length=200)
     display_name: str = Field(min_length=2, max_length=80)
-    phone_e164: str = Field(pattern=r"^\+[1-9]\d{7,14}$")
+    phone_e164: str | None = Field(None, pattern=r"^\+[1-9]\d{7,14}$")
 
 
 class RegisterOut(BaseModel):
     user_id: str
+    # False when the mail provider refused the code (the member can ask for a new one).
+    email_sent: bool = False
     # Present only when DEV_EXPOSE_CODES is on. Never in a deployed environment.
     dev_codes: dict[str, str] | None = None
 

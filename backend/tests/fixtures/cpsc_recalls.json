@@ -1,0 +1,38 @@
+[
+  {
+    "RecallID": 990001, "RecallNumber": "27-TEST-1", "RecallDate": "2026-10-29T00:00:00",
+    "Title": "HeatWave USA Recalls HW-1500 Space Heaters Due to Fire and Burn Hazards",
+    "URL": "https://example.invalid/recalls/990001",
+    "Description": "This recall involves HeatWave space heaters, model HW-1500, sold in white.",
+    "Products": [{"Name": "HeatWave Space Heaters, model HW-1500", "Description": "", "Model": "", "Type": "Electric Space Heaters", "CategoryID": "987", "NumberOfUnits": "About 12,000"}],
+    "Hazards": [{"Name": "The heater can overheat, posing fire and burn hazards."}],
+    "Remedies": [{"Name": "Stop using the heater and contact HeatWave for a full refund."}],
+    "Manufacturers": [], "Importers": [{"Name": "HeatWave USA Inc., of Columbus, Ohio"}], "Distributors": [],
+    "ProductUPCs": [], "Images": [{"URL": "https://example.invalid/heater.jpg", "Caption": "Recalled heater"}],
+    "Retailers": [], "Injuries": [], "ManufacturerCountries": [{"Country": "China"}], "RemedyOptions": [{"Option": "Refund"}]
+  },
+  {
+    "RecallID": 990002, "RecallNumber": "27-TEST-2", "RecallDate": "2026-10-20T00:00:00",
+    "Title": "Brightline Recalls Children's Pajama Sets Due to Risk of Serious Burn Injury",
+    "URL": "https://example.invalid/recalls/990002",
+    "Description": "This recall involves children's two-piece pajama sets in sizes 2T to 10.",
+    "Products": [{"Name": "Brightline children's pajama sets", "Description": "", "Model": "", "Type": "Sleepwear", "CategoryID": "100", "NumberOfUnits": "About 3,400"}],
+    "Hazards": [{"Name": "The pajamas violate the flammability regulations for children's sleepwear."}],
+    "Remedies": [{"Name": "Stop using the pajamas and contact Brightline for a refund."}],
+    "Manufacturers": [], "Importers": [], "Distributors": [],
+    "ProductUPCs": [{"UPC": "850055599991"}], "Images": [],
+    "Retailers": [], "Injuries": [], "ManufacturerCountries": [], "RemedyOptions": [{"Option": "Refund"}]
+  },
+  {
+    "RecallID": 990003, "RecallNumber": "27-TEST-3", "RecallDate": "2026-10-11T00:00:00",
+    "Title": "Kettleworks Recalls Electric Kettles Due to Shock Hazard",
+    "URL": "https://example.invalid/recalls/990003",
+    "Description": "This recall involves Kettleworks electric kettles, models KW-10, KW-12 and KW-15.",
+    "Products": [{"Name": "Kettleworks electric kettles", "Description": "", "Model": "", "Type": "Kettles", "CategoryID": "200", "NumberOfUnits": "About 880"}],
+    "Hazards": [{"Name": "The base can expose live parts, posing a shock hazard."}],
+    "Remedies": [{"Name": "Stop using the kettle and contact Kettleworks for a replacement base."}],
+    "Manufacturers": [{"Name": "Kettleworks Ltd., of Leeds, England"}], "Importers": [], "Distributors": [],
+    "ProductUPCs": [], "Images": [],
+    "Retailers": [], "Injuries": [], "ManufacturerCountries": [], "RemedyOptions": [{"Option": "Replace"}]
+  }
+]
