@@ -17,6 +17,15 @@ def test_barcodes_are_checked_and_stored_as_14_digits():
     assert identify.gtin14("4006381333931") == "04006381333931"  # EAN-13
     assert identify.gtin14("885909950806") is None  # wrong check digit
     assert identify.gtin14("12345") is None
+    # UPC-E, the short code on small packages: its check digit belongs to the expanded UPC-A.
+    assert identify.upce_to_upca("04252614") == "042100005264"
+    assert identify.gtin14("04252614") == "00042100005264"
+    assert identify.gtin14("0 42526 1 4") == "00042100005264"  # as printed, with spaces
+
+
+async def test_a_barcode_typed_with_spaces_is_accepted(client):
+    r = await client.post(f"{API}/identify", json={"barcode": "8 50012 34567 8"})
+    assert r.status_code == 200 and r.json()["slug"] == "aquablend-900"
 
 
 def test_categories_are_mapped():

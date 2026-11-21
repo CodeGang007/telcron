@@ -27,15 +27,40 @@ CATEGORIES = [
 ]
 
 
-def gtin14(code: str) -> str | None:
-    """A UPC-A, EAN-8, EAN-13 or GTIN-14 as 14 digits, or None if it is not one (bad check digit)."""
-    digits = re.sub(r"\D", "", code)
-    if len(digits) not in (8, 12, 13, 14):
-        return None
+def _checks(digits: str) -> bool:
     digits = digits.zfill(14)
-    body, check = digits[:-1], int(digits[-1])
-    total = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(body))
-    return digits if (10 - total % 10) % 10 == check else None
+    total = sum(int(d) * (3 if i % 2 == 0 else 1) for i, d in enumerate(digits[:-1]))
+    return (10 - total % 10) % 10 == int(digits[-1])
+
+
+def upce_to_upca(code: str) -> str | None:
+    """UPC-E, the short barcode on small packages, written out as the 12-digit UPC-A it stands for."""
+    if len(code) == 7:  # printed without its number system digit
+        code = "0" + code
+    if len(code) != 8 or code[0] not in "01":
+        return None
+    ns, x, check = code[0], code[1:7], code[7]
+    last = x[5]
+    if last in "012":
+        body = x[0:2] + last + "0000" + x[2:5]
+    elif last == "3":
+        body = x[0:3] + "00000" + x[3:5]
+    elif last == "4":
+        body = x[0:4] + "00000" + x[4]
+    else:
+        body = x[0:5] + "0000" + last
+    return ns + body + check
+
+
+def gtin14(code: str) -> str | None:
+    """A UPC-A, UPC-E, EAN-8, EAN-13 or GTIN-14 as 14 digits, or None if it is not one."""
+    digits = re.sub(r"\D", "", code)
+    if len(digits) in (8, 12, 13, 14) and _checks(digits):
+        return digits.zfill(14)
+    expanded = upce_to_upca(digits) if len(digits) in (7, 8) else None
+    if expanded and _checks(expanded):
+        return expanded.zfill(14)
+    return None
 
 
 def category_code(path: str | None) -> str:
@@ -98,7 +123,7 @@ async def _add_to_registry(db: AsyncSession, gtin: str, item: dict[str, Any],
 
 async def by_barcode(db: AsyncSession, code: str, user_id: uuid.UUID | None) -> dict[str, Any]:
     digits = re.sub(r"\D", "", code)
-    if len(digits) not in (8, 12, 13, 14):
+    if len(digits) not in (7, 8, 12, 13, 14):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid_barcode")
     known = await _registry_hit(db, digits.zfill(14))
     gtin = gtin14(code) or (digits.zfill(14) if known else None)

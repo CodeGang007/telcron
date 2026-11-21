@@ -1,4 +1,5 @@
 import { BrowserMultiFormatReader, type IScannerControls } from '@zxing/browser';
+import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { Camera, CameraOff, Hash, ImageUp, Keyboard, Loader2, ScanLine, Sparkles } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
@@ -9,6 +10,10 @@ import { explain, post } from '../lib/api';
 
 type Identified = { slug: string; name: string; new: boolean };
 type Phase = 'idle' | 'camera' | 'looking' | 'error';
+
+// Retail barcodes only: a QR code or a shipping label on the same box is not the product.
+const RETAIL = [BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E];
+const reader = () => new BrowserMultiFormatReader(new Map<DecodeHintType, unknown>([[DecodeHintType.POSSIBLE_FORMATS, RETAIL], [DecodeHintType.TRY_HARDER, true]]));
 
 const STAGES = ['Reading the barcode', 'Finding the product', 'Checking recall notices', 'Scoring hazards', 'Issuing the passport'];
 
@@ -37,11 +42,11 @@ export function Scan() {
     setStage(0);
     const timer = setInterval(() => setStage((s) => Math.min(s + 1, STAGES.length - 1)), 650);
     try {
-      const found = await post<Identified>('/identify', { barcode });
+      const found = await post<Identified>('/identify', { barcode: barcode.replace(/[\s-]/g, '') });
       toast.success(found.new ? 'New product added and screened' : 'Product found', { description: found.name });
       navigate(`/products/${found.slug}`);
     } catch (e) {
-      setError(explain(e));
+      setError(`${explain(e)} (read: ${barcode})`);
       setPhase('error');
     } finally {
       clearInterval(timer);
@@ -58,8 +63,7 @@ export function Scan() {
     }
     setPhase('camera');
     try {
-      const reader = new BrowserMultiFormatReader();
-      controls.current = await reader.decodeFromVideoDevice(undefined, video.current!, (result) => {
+      controls.current = await reader().decodeFromVideoDevice(undefined, video.current!, (result) => {
         if (result) void identify(result.getText());
       });
     } catch {
@@ -71,7 +75,7 @@ export function Scan() {
   const fromPhoto = async (file: File) => {
     const url = URL.createObjectURL(file);
     try {
-      const result = await new BrowserMultiFormatReader().decodeFromImageUrl(url);
+      const result = await reader().decodeFromImageUrl(url);
       void identify(result.getText());
     } catch {
       setError('No barcode could be read in that photo. Try a sharper, closer picture.');

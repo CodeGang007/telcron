@@ -13,7 +13,7 @@ router = APIRouter(tags=["catalogue"])
 
 
 class IdentifyIn(BaseModel):
-    barcode: str = Field(min_length=6, max_length=32, pattern=r"^[0-9A-Za-z-]+$")
+    barcode: str = Field(min_length=6, max_length=40)  # digits as printed; spaces and dashes are fine
 
 
 @router.get("/products")
