@@ -14,8 +14,8 @@ type Paged = {
   more: () => Promise<void>; reload: () => Promise<void>;
 };
 
-// Reviews this member voted helpful in this browser. The review list does not say yet whether the
-// caller voted (backend request in DEF-031); until it does, this keeps the vote visible after a reload.
+// Reviews this member voted helpful in this browser. The review list now says whether the caller
+// voted (`voted`, DEF-031); this copy is only a fallback for a list served without that field.
 const VOTES = 'telcron.helpful:';
 function readVotes(userId: string): Set<string> {
   try {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Notice, PageTitle } from '../components/ui';
-import { api, explain, post } from '../lib/api';
+import { ApiError, api, explain, post } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useLoad } from '../lib/useLoad';
 
@@ -18,7 +18,11 @@ type Subject = {
   member?: string;
   product?: { slug: string; name: string };
 };
-type Task = { id: string; task_type: string; status: string; priority: number; created_at: string; subject: Subject };
+type Task = {
+  id: string; task_type: string; status: string; priority: number; created_at: string; subject: Subject;
+  /** Not sent by the API yet (DEF-101): the subject is the caller's own contribution or coins. */
+  mine?: boolean;
+};
 
 // What each decision means differs by the kind of task, so the buttons say it in words.
 const KIND: Record<string, { title: string; confirm: string; reject: string }> = {
@@ -33,6 +37,9 @@ function TaskCard({ task, onDone }: { task: Task; onDone: () => void }) {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Nobody decides on their own item (DEF-011). Until the queue says so up front, a 403 own_item
+  // also takes the buttons away, so the reviewer is not left with decisions that can only fail.
+  const [own, setOwn] = useState(!!task.mine);
   const s = task.subject;
   const decide = async (decision: 'confirm' | 'reject' | 'dismiss') => {
     setBusy(true);
@@ -41,7 +48,8 @@ function TaskCard({ task, onDone }: { task: Task; onDone: () => void }) {
       await post(`/review-tasks/${task.id}/resolve`, { decision, note: note || null });
       onDone();
     } catch (e) {
-      setError(explain(e));
+      if (e instanceof ApiError && e.code === 'own_item') setOwn(true);
+      else setError(explain(e));
       setBusy(false);
     }
   };
@@ -73,16 +81,22 @@ function TaskCard({ task, onDone }: { task: Task; onDone: () => void }) {
       {task.task_type === 'fraud_hold' && (
         <p className="mt-2 text-sm">{s.member}: {s.reason}</p>
       )}
-      <label className="mt-4 block text-sm">
-        Note (optional)
-        <input className="field mt-1" maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
-      </label>
-      {error && <div className="mt-3"><Notice tone="error">{error}</Notice></div>}
-      <div className="mt-4 flex flex-wrap gap-3">
-        <button className="btn !px-4 !py-2" disabled={busy} onClick={() => decide('confirm')}>{kind.confirm}</button>
-        {kind.reject && <button className="btn-ghost !px-4 !py-2" disabled={busy} onClick={() => decide('reject')}>{kind.reject}</button>}
-        <button className="btn-ghost !px-4 !py-2" disabled={busy} onClick={() => decide('dismiss')}>Dismiss</button>
-      </div>
+      {own ? (
+        <div className="mt-4"><Notice>Your item: a colleague decides this.</Notice></div>
+      ) : (
+        <>
+          <label className="mt-4 block text-sm">
+            Note (optional)
+            <input className="field mt-1" maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} />
+          </label>
+          {error && <div className="mt-3"><Notice tone="error">{error}</Notice></div>}
+          <div className="mt-4 flex flex-wrap gap-3">
+            <button className="btn min-h-11 !px-4 !py-2" disabled={busy} onClick={() => decide('confirm')}>{kind.confirm}</button>
+            {kind.reject && <button className="btn-ghost min-h-11 !px-4 !py-2" disabled={busy} onClick={() => decide('reject')}>{kind.reject}</button>}
+            <button className="btn-ghost min-h-11 !px-4 !py-2" disabled={busy} onClick={() => decide('dismiss')}>Dismiss</button>
+          </div>
+        </>
+      )}
     </li>
   );
 }

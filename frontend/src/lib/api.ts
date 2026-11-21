@@ -228,7 +228,7 @@ export type Review = {
   origin: string;
   helpful_count: number;
   created_at: string;
-  /** Not sent by the API yet (see DEF-031): whether the caller wrote it / already voted it helpful. */
+  /** Whether the caller wrote it / already voted it helpful (DEF-031); false for a visitor. */
   mine?: boolean;
   voted?: boolean;
 };
