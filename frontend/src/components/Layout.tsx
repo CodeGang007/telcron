@@ -138,7 +138,7 @@ function TabBar() {
 }
 
 export function Layout() {
-  const { me } = useAuth();
+  const { me, unreachable } = useAuth();
   const location = useLocation();
   const [scrolled, setScrolled] = useState(false);
   useEffect(() => {
@@ -182,7 +182,7 @@ export function Layout() {
             <Link to="/scan" className={`hidden items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition sm:flex ${dark ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-brand-tint text-brand-ink hover:bg-brand-ink hover:text-white'}`}>
               <ScanLine className="size-4" />Scan
             </Link>
-            {me ? <UserMenu /> : <Link to="/sign-in" className="btn btn-sm">Sign in</Link>}
+            {me ? <UserMenu /> : unreachable ? <span className="text-sm text-muted">Offline</span> : <Link to="/sign-in" className="btn btn-sm">Sign in</Link>}
           </div>
         </div>
       </header>
