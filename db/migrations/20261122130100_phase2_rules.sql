@@ -1,4 +1,14 @@
--- Phase 2 (AI engine) rules. Hand-written; apply after phase2_schema.sql.
+-- Phase 2 (AI engine) rules. Hand-written; applied after 20261122130000_phase2_schema.sql.
+-- Promoted from db/schema-next/ (WO-022): skipped as a whole when the rules are already present
+-- (a database that had phase 2 from `make db-next` or the dev host's own block).
+-- migrate:up
+DO $migrate$
+BEGIN
+IF to_regproc('public.telcron_dimension_score_cited') IS NOT NULL THEN
+    RAISE NOTICE 'phase 2 rules already present: skipped';
+    RETURN;
+END IF;
+EXECUTE $phase2_rules$
 
 -- Score bands of one context may not overlap.
 ALTER TABLE scoring_bands ADD CONSTRAINT scoring_bands_no_overlap
@@ -52,3 +62,11 @@ BEGIN
                    left(p_table || '_' || regexp_replace(p_model, '[^a-z0-9]+', '_', 'g'), 55) || '_hnsw',
                    p_table, dims, p_model);
 END $$;
+$phase2_rules$;
+END $migrate$;
+
+-- migrate:down
+ALTER TABLE IF EXISTS scoring_bands DROP CONSTRAINT IF EXISTS scoring_bands_no_overlap;
+DROP FUNCTION IF EXISTS telcron_create_embedding_index(text, text);
+DROP FUNCTION IF EXISTS telcron_embedding_dims_check() CASCADE;
+DROP FUNCTION IF EXISTS telcron_dimension_score_cited() CASCADE;

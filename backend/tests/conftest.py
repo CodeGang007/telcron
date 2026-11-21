@@ -1,7 +1,7 @@
 """Integration tests run against a real PostgreSQL and Redis.
 
-The database is built from the designed schema in db/ — migrations, reference seeds, then phases
-2-3 from db/schema-next — in the order db/tests/conftest.py uses, as its own database inside the
+The database is built from the designed schema in db/ — the migrations (all three phases), then the
+core reference seed — in the order db/tests/conftest.py uses, as its own database inside the
 local Postgres (`make up`). Nothing here touches the development data, and SQLAlchemy creates
 nothing: if the application disagrees with the schema, these tests fail.
 """
@@ -43,10 +43,7 @@ import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 
 FILES = (sorted((ROOT / "db" / "migrations").glob("*.sql"))
-         + [ROOT / "db" / "seeds" / "001_core_reference.sql"]
-         + [ROOT / "db" / "schema-next" / f for f in
-            ("phase2_schema.sql", "phase2_rules.sql", "phase3_schema.sql", "phase3_rules.sql",
-             "seed_reference.sql")])
+         + [ROOT / "db" / "seeds" / "001_core_reference.sql"])
 
 
 def up_part(sql: str) -> str:

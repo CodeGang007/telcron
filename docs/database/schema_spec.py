@@ -3,7 +3,7 @@ Telcron — database design, single source of truth (v0.2).
 
 Generated from this file:
   * docs/database/telcron-erd.drawio + table catalogue in schema-design.md   (tools/build_erd.py)
-  * db/migrations/*_schema_*.sql and db/schema-next/*.sql                     (tools/build_sql.py)
+  * db/migrations/*_phase{1,2,3}_schema.sql + *_extensions_and_types.sql      (tools/build_sql.py)
 
 Every `checks` entry, unique and index here is literal PostgreSQL. Rules that cannot be expressed
 declaratively live in hand-written SQL (db/sql/*.sql) and are listed in each table's `rules`.
@@ -1030,7 +1030,9 @@ TABLES = [
             C("duration", "interval"),
             C("quantity", "integer"),
             C("is_active", "boolean", nn=True, default="true")],
-      checks=["cost_coins > 0", "quantity IS NULL OR quantity > 0"]),
+      checks=["cost_coins > 0", "quantity IS NULL OR quantity > 0"],
+      rules=["Phase one sells only pdf_report and watchlist_slots items; the rest are is_active = false (D13, WO-019).",
+             "coin_redeem() refuses an inactive item."]),
 
     T("redemptions", "rewards", phase=3, features="TC-P1-017",
       purpose="A redemption; its spend is exactly one ledger entry. Fulfilment evidence recorded.",
@@ -1044,7 +1046,11 @@ TABLES = [
             C("fulfilled_at", "timestamptz"),
             CREATED()],
       checks=["(status = 'fulfilled') = (fulfilled_at IS NOT NULL)"],
-      indexes=[I("user_id, created_at DESC")]),
+      indexes=[I("user_id, created_at DESC")],
+      rules=["coin_redeem(): spend + redemption in one transaction, idempotent on its key.",
+             "coin_refund_redemption(): a processing or failed redemption with nothing delivered gets one confirmed "
+             "refund entry reversing its spend and becomes refunded; a repeat returns the same entry and pays nothing.",
+             "No redemption is left processing (WO-019): one that cannot be fulfilled is refunded."]),
 
     T("user_entitlements", "rewards", phase=3, features="TC-P1-017/018",
       purpose="Time-boxed rights from redemptions, level perks or admins (rate boost, feature access, watchlist slots).",

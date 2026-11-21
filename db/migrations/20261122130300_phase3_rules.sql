@@ -1,4 +1,14 @@
--- Phase 3 (engagement) rules. Hand-written; apply after phase3_schema.sql.
+-- Phase 3 (engagement) rules. Hand-written; applied after 20261122130200_phase3_schema.sql.
+-- Promoted from db/schema-next/ (WO-022): skipped as a whole when the rules are already present
+-- (a database that had phase 3 from `make db-next` or the dev host's own block).
+-- migrate:up
+DO $migrate$
+BEGIN
+IF to_regproc('public.coin_earn') IS NOT NULL THEN
+    RAISE NOTICE 'phase 3 rules already present: skipped';
+    RETURN;
+END IF;
+EXECUTE $phase3_rules$
 -- TelCoin writes MUST go through the coin_* functions: they serialise per user on the
 -- coin_balances row, which makes caps, limits and balances race-free.
 
@@ -355,3 +365,20 @@ BEGIN
     SELECT count(*) INTO n FROM ins;
     RETURN n;
 END $$;
+$phase3_rules$;
+END $migrate$;
+
+-- migrate:down
+DROP FUNCTION IF EXISTS telcron_fanout_risk_event CASCADE;
+DROP VIEW IF EXISTS community_feed;
+DROP FUNCTION IF EXISTS telcron_post_counters CASCADE;
+DROP FUNCTION IF EXISTS telcron_reward_level CASCADE;
+DROP FUNCTION IF EXISTS coin_redeem CASCADE;
+DROP FUNCTION IF EXISTS coin_clawback CASCADE;
+DROP FUNCTION IF EXISTS coin_spend CASCADE;
+DROP FUNCTION IF EXISTS coin_confirm_due CASCADE;
+DROP FUNCTION IF EXISTS coin_earn CASCADE;
+DROP FUNCTION IF EXISTS coin_resolve_hold CASCADE;
+DROP FUNCTION IF EXISTS coin_apply_hold CASCADE;
+DROP FUNCTION IF EXISTS coin_lock_balance CASCADE;
+DROP FUNCTION IF EXISTS telcron_ledger_transition CASCADE;
