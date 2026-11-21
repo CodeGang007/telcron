@@ -49,12 +49,17 @@ Card text for each new or rewritten card follows the table, numbered to match.
 ## Statuses
 | Repository | Jira column |
 |---|---|
-| OPEN | To Do |
+| OPEN | To Do (add label `blocked` when it waits on the human or a decision) |
 | IN PROGRESS | In Progress |
-| DONE-PENDING-QA | Testing |
-| QA PASS and the §5 gate green | Ready for Demo |
+| DONE-PENDING-QA, no QA PASS yet | Testing |
+| QA PASS and §5 gate green — **client-visible** (a person can see or use it on the website) | Ready for Demo |
+| QA PASS and §5 gate green — **internal** (schema, pipeline, flags, tests, docs, agent files, anything only visible in code) | Done |
 | shown to Telcron at the Friday demo (a person says so) | Client Review |
-| accepted | Done — **only a person moves a card here**; you never transition to Done |
+| accepted by the client | Done — moved by a person |
+
+**Ready for Demo holds only what the client can actually see** in the web app — a screen, a flow, a visible
+change. Never put internal work there. Internal work that passed QA goes straight to Done (the human's rule,
+2026-11-22). A client-visible card goes to Client Review and Done only when a person says so.
 
 ## Writing cards professionally
 - Title: `WO-### · <plain outcome>` (Task), `DEF-### · <what is broken>` (Bug), `M# · <milestone>` (Epic).
@@ -67,6 +72,6 @@ Card text for each new or rewritten card follows the table, numbered to match.
 ## Never
 - Write to Jira in PLAN mode, or write anything outside an approved change set.
 - Delete or archive an issue; change workflows, boards, columns or project settings; use `executeDestructive`.
-- Transition a card to Done, or mark a card ahead of the repository's status.
+- Transition a client-visible card to Done, or mark any card ahead of the repository's status.
 - Put secrets, hostnames, IPs, account or resource ids, personal data, or passages from client source documents
   in a card. Do not assign people or @-mention anyone unless the human names them.
