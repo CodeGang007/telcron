@@ -9,7 +9,8 @@
 # Python: backend/uv.lock (all groups) is exported to a hashed requirements file and checked with
 # pip-audit against the PyPA advisory database. pip-audit has no severity filter, so each finding's
 # severity is looked up in OSV (the GitHub advisory's rating, via the finding's aliases). A finding
-# whose severity cannot be determined counts as High: the scan fails closed.
+# whose severity cannot be determined (no rating, or OSV unreachable) is shown as UNKNOWN and counts as
+# High: the scan fails closed. A network failure therefore fails the run rather than passing it.
 # JavaScript: `npm audit --audit-level=high` over each package-lock.json (no install needed).
 #
 # Only package names and versions leave the machine (to PyPI's advisory service, OSV and the npm
@@ -30,7 +31,7 @@ python_scan() {
     cp "$REQUIREMENTS" "$tmp/requirements.txt"
     hashes=()
   else
-    (cd "$ROOT/backend" && uv export --frozen --all-groups --no-emit-project -q -o "$tmp/requirements.txt")
+    (cd "$ROOT/backend" && uv export --frozen --all-groups --all-extras --no-emit-project -q -o "$tmp/requirements.txt")
     hashes=(--require-hashes)
   fi
   local rc=0
@@ -60,6 +61,7 @@ report = json.load(open(sys.argv[1]))
 deps = report["dependencies"] if isinstance(report, dict) else report
 blocking = 0
 found = 0
+tally = {}
 for dep in deps:
     for v in dep.get("vulns", []):
         found += 1
@@ -70,10 +72,13 @@ for dep in deps:
         sev = max(ratings, key=RANK.get) if ratings else "UNKNOWN"
         blocks = sev == "UNKNOWN" or RANK[sev] >= RANK["HIGH"]
         blocking += blocks
+        tally[sev] = tally.get(sev, 0) + 1
         fix = ", ".join(v.get("fix_versions", [])) or "none yet"
         print(f"  {'BLOCK' if blocks else 'note '} {sev:<9} {dep['name']}=={dep['version']}  {v['id']}"
               f"  ({', '.join(v.get('aliases', [])) or 'no aliases'})  fixed in: {fix}")
-print(f"  {len(deps)} packages, {found} known vulnerabilities, {blocking} High/Critical or unrated")
+by_sev = ", ".join(f"{n} {s.lower()}" for s, n in sorted(tally.items(), key=lambda kv: -RANK.get(kv[0], 5)))
+print(f"  {len(deps)} packages, {found} known vulnerabilities{f' ({by_sev})' if by_sev else ''},"
+      f" {blocking} High/Critical or unrated")
 sys.exit(1 if blocking else 0)
 PY
 }

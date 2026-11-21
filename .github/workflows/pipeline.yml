@@ -22,8 +22,10 @@ jobs:
   deps:
     name: Dependency scan
     # Known vulnerabilities in every locked dependency (backend/uv.lock, frontend and e2e lockfiles).
-    # High or Critical fails the run, and the release needs this job.
+    # High or Critical fails the run, and the release needs this job. The advisories are live data: a new
+    # High advisory against an unchanged lockfile turns the run red too (fix: bump in the owner's lockfile).
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6

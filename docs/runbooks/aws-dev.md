@@ -31,8 +31,12 @@ PostgreSQL about 300 MB (capped at 600 MB; `shared_buffers` 128 MB, 40 connectio
 
 ## How a release happens
 
-1. A push to `main` runs `.github/workflows/pipeline.yml`: schema tests, backend lint and tests, web
-   typecheck and build, and the member's journey in a browser against a full stack.
+1. A push to `main` runs `.github/workflows/pipeline.yml`: a dependency scan (`tools/dependency-scan.sh`:
+   `backend/uv.lock` with pip-audit, `frontend/` and `e2e/` lockfiles with `npm audit`; any High or
+   Critical advisory, or a scan that cannot rate a finding, fails the run), schema tests, backend lint
+   and tests, web typecheck and build, and the member's journey in a browser against a full stack.
+   The advisories are live data, so a new High advisory can stop releases without any code change: the
+   owner of that lockfile bumps the package, and nothing is released until they do.
 2. If all of it passes, the `release` job builds the web app, and commits it with a `VERSION` file naming
    the commit to the `release/dev` branch. That is the whole release: a commit on a branch.
 3. Each host runs a small agent from a systemd timer, once a minute. It asks GitHub where `release/dev`
@@ -180,11 +184,13 @@ disk 2.30, Lightsail 5.00, two secrets 0.80). During the cutover both hosts run 
 - One host is a single point of failure: no managed backups, no failover, no point-in-time recovery.
   The nightly dump to S3 is the only copy; up to a day of data can be lost (ADR-007).
 - The backend image is built on the 2 GB host at deploy time, beside the running stack. It works, with
-  swap. A registry the host can read without new credentials would be better.
+  swap. A registry the host can read without new credentials would be better (prepared, waiting on
+  the human: WO-020, DEF-006 item 4).
 - The Lightsail host has port 22 open to the internet (key-only). It was needed to set the host up; it is
-  not needed for releases and should be closed or restricted.
+  not needed for releases and should be closed or restricted (prepared, waiting on the human: WO-020).
 - The hostnames depend on a third-party wildcard-DNS service. A real domain removes that.
-- The budget has no alert recipient, so it notifies nobody. After the cutover the total is close to it.
+- The budget has no alert recipient, so it notifies nobody. After the cutover the total is close to it
+  (prepared, waiting on the human: WO-020).
 - No monitoring or alarms. Logs live only on the host.
 - Bedrock: every model call on 2026-11-15 failed with `ThrottlingException: Too many tokens per day`.
   The account's quota is effectively zero, so hazard scoring is still the keyword placeholder.
