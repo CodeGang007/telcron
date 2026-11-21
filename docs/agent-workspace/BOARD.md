@@ -21,7 +21,7 @@
 | WO-013 | Sign-up codes by email (Gmail SMTP; SES kept); Level 1 = verified email (ADR-006) | platform-identity-engineer (single session) → security-auditor | — | DONE-PENDING-QA: live since 730f04d/d7a05b1 |
 | WO-014 | Product research (registries + web, cited, graded), photos with Rekognition, same-product matching | data-ai-engineer + catalogue-engineer (single session) → security-auditor | — | DONE-PENDING-QA |
 | WO-015 | Vectors (own embedder), semantic search, safer alternatives, product assistant with memory and evals | data-ai + catalogue + frontend (single session) → security-auditor | — | DONE-PENDING-QA (deploys with WO-016) |
-| WO-016 | One t4g.small for everything: Postgres + embedder on the host, RDS and t3.micro retired (ADR-007) | infra-deploy-engineer | — | IN PROGRESS |
+| WO-016 | One t4g.small for everything: Postgres + embedder on the host, RDS and t3.micro retired (ADR-007) | infra-deploy-engineer | — | LIVE 2026-11-21 (3e588a0): data identical (111 tables, 1,214 rows); old host + RDS await the human's yes to delete |
 
 ## Defects
 
