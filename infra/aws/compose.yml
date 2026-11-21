@@ -158,6 +158,9 @@ networks:
     ipam:
       config:
         - subnet: 172.30.250.0/24
+          # Docker hands out dynamic addresses only from the upper half, so a container started first
+          # can never take a pinned address (Caddy's .10). Pin any new fixed address below .128.
+          ip_range: 172.30.250.128/25
 
 volumes:
   caddy_data:
