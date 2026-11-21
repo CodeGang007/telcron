@@ -159,6 +159,34 @@ async def _issue(db: AsyncSession, product: Product, screening: Screening,
     return passport
 
 
+async def _open_insufficient_data_task(db: AsyncSession, product_id: uuid.UUID,
+                                       assessment_id: uuid.UUID, passport_id: uuid.UUID,
+                                       missing: list[str]) -> ReviewTask:
+    """One open "missing evidence" task per product (DEF-032). A re-screen while one is open or in
+    progress points that task at the newest assessment and passport; a new task opens only once
+    the previous one is resolved or dismissed. The product row is locked FOR UPDATE by the caller,
+    so two re-screens of one product cannot both miss the open task. The schema's partial unique
+    index is per assessment (`review_tasks_u1_uidx`), and every re-screen writes a new assessment,
+    so it does not cover this."""
+    payload = {"product_id": str(product_id), "passport_id": str(passport_id),
+               "missing_dimensions": missing}
+    task = (await db.execute(
+        select(ReviewTask).where(
+            ReviewTask.task_type == "hazard_insufficient_data",
+            ReviewTask.status.in_(("open", "in_progress")),
+            ReviewTask.payload["product_id"].astext == str(product_id))
+        .order_by(ReviewTask.created_at.desc()).limit(1))).scalar_one_or_none()
+    if task is None:
+        task = ReviewTask(task_type="hazard_insufficient_data", subject_type="hazard_assessment",
+                          subject_id=assessment_id, priority=3, payload=payload)
+        db.add(task)
+    else:
+        task.subject_id = assessment_id
+        task.payload = {**task.payload, **payload}
+    await db.flush()
+    return task
+
+
 async def screen_product(db: AsyncSession, product_id: uuid.UUID, run_type: str,
                          scorer: Scorer | None = None) -> Passport:
     scorer = scorer or get_scorer()
@@ -325,10 +353,9 @@ async def screen_product(db: AsyncSession, product_id: uuid.UUID, run_type: str,
     # 6. People. The schema has no review-task type for a Medium or High band, only for
     #    missing evidence, so a band alone opens no task (recorded in WO-011).
     if assessment.has_insufficient_data:
-        db.add(ReviewTask(task_type="hazard_insufficient_data", subject_type="hazard_assessment",
-                          subject_id=assessment.id, priority=3,
-                          payload={"product_id": str(product.id),
-                                   "passport_id": str(passport.id)}))
+        await _open_insufficient_data_task(
+            db, product.id, assessment.id, passport.id,
+            [dim.code for dim, score, _, _ in rows if score is None])
 
     # 7. Risk events, only when something became true that was not true before.
     events: list[tuple[str, str, str, dict]] = []
