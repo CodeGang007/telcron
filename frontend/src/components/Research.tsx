@@ -16,7 +16,19 @@ const KIND: Record<Finding['kind'], { label: string; icon: typeof Globe; tone: s
 };
 const SOURCE: Record<string, string> = {
   web_search: 'Web', regulator_web: 'Government regulator', uk_opss: 'UK Product Safety (OPSS)', openfda: 'US FDA',
+  community_web: 'Owner report',
 };
+const SITES: [RegExp, string][] = [
+  [/(^|\.)reddit\.com$/, 'Reddit'], [/(^|\.)(x|twitter)\.com$/, 'X'], [/(^|\.)youtube\.com$/, 'YouTube'],
+  [/(^|\.)quora\.com$/, 'Quora'], [/(^|\.)trustpilot\.com$/, 'Trustpilot'], [/(^|\.)amazon\./, 'Amazon reviews'],
+  [/(^|\.)flipkart\.com$/, 'Flipkart reviews'], [/(^|\.)walmart\.com$/, 'Walmart reviews'],
+  [/(^|\.)bestbuy\.com$/, 'Best Buy reviews'], [/(^|\.)ebay\./, 'eBay'], [/(^|\.)target\.com$/, 'Target reviews'],
+];
+/** "Reddit", "Amazon reviews"… for owner reports; the registry or "Web" otherwise. */
+function sourceLabel(f: Finding) {
+  const site = SITES.find(([re]) => re.test(host(f.url)));
+  return site && (f.source === 'community_web' || f.source === 'web_search') ? site[1] : (SOURCE[f.source] ?? f.source);
+}
 const ORDER: Finding['kind'][] = ['recall', 'safety_warning', 'complaint', 'general', 'certification', 'no_issue_found'];
 
 function host(url: string) {
@@ -76,7 +88,8 @@ export function Research({ slug, onRated }: { slug: string; onRated: () => void 
         <div>
           <h2 id="research" className="flex items-center gap-2 font-display text-xl font-bold"><Landmark className="size-5 text-brand-ink" />What official sources and the web say</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            US CPSC and FDA, UK Product Safety, government safety regulators (EU, Canada, Australia and others) and the open web.
+            US CPSC and FDA, UK Product Safety, government safety regulators (EU, Canada, Australia and others), the open web,
+            and what owners report on Reddit, X, YouTube and marketplace reviews.
             Every line links to the page it comes from; a claim the page does not make is thrown away.
           </p>
         </div>
@@ -101,7 +114,7 @@ export function Research({ slug, onRated }: { slug: string; onRated: () => void 
               <motion.li key={f.url + f.kind} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }} className="rounded-2xl border border-line p-4">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`chip ${k.tone}`}><k.icon className="size-3.5" />{k.label}</span>
-                  <span className="chip bg-panel text-muted">{SOURCE[f.source] ?? f.source}</span>
+                  <span className="chip bg-panel text-muted">{sourceLabel(f)}</span>
                 </div>
                 <p className="mt-2 text-sm">{f.finding}</p>
                 <a href={f.url} target="_blank" rel="noreferrer noopener" className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-action hover:underline">

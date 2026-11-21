@@ -45,7 +45,7 @@ from app.modules.ingestion.service import _store_recall
 from . import registries, web
 
 SOURCE = "web_search"
-DAILY_CAP = 15  # two Tavily searches a run; the free plan is 1,000 searches a month
+DAILY_CAP = 10  # three Tavily searches a run; the free plan is 1,000 searches a month
 PREFIX = "web_"
 
 

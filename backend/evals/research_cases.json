@@ -1,5 +1,5 @@
 {
- "about": "Research-reader evaluation (WO-014). Each case is a product and fixed search results; `expect` maps a result number to the kind of finding it should give, and results not listed must give none. Written before the reader was tuned; the fictional brands keep the model's memory out of it. Traps: a page with injected instructions, another product of the same brand, a similar name from another brand, shop listings.",
+ "about": "Research-reader evaluation (WO-014). Each case is a product and fixed search results; `expect` maps a result number to the kind of finding it should give, and results not listed must give none. Written before the reader was tuned; the fictional brands keep the model's memory out of it. Traps: a page with injected instructions, another product of the same brand, a similar name from another brand, shop listings. 2026-11-22: two owner-report cases added (Reddit, a marketplace review of a similar-named brand) when the community search was added, before running them.",
  "cases": [
   {
    "id": "recall-official",
@@ -180,6 +180,39 @@
     "1": "complaint"
    },
    "brand": "Ember"
+  },
+  {
+   "id": "reddit-owner-report",
+   "product": "Volta VC-65 USB-C charger",
+   "brand": "Volta",
+   "hits": [
+    {
+     "title": "Volta VC-65 charger melted while charging my laptop : r/UsbCHardware",
+     "url": "https://www.reddit.com/r/UsbCHardware/comments/abc123/volta_vc65_melted/",
+     "snippet": "My Volta VC-65 charger melted at the plug and smelled of burning plastic after two weeks of charging my laptop overnight."
+    },
+    {
+     "title": "Volta VC-65 arrived late : r/deals",
+     "url": "https://www.reddit.com/r/deals/comments/def456/volta_vc65_late/",
+     "snippet": "Ordered the Volta VC-65, the courier took three weeks and the box was dented."
+    }
+   ],
+   "expect": {
+    "1": "complaint"
+   }
+  },
+  {
+   "id": "marketplace-other-brand",
+   "product": "Polar PF-90 mini fridge",
+   "brand": "Polar",
+   "hits": [
+    {
+     "title": "Customer reviews: Polaris PF-90 Compact Fridge",
+     "url": "https://www.amazon.com/product-reviews/B0POLARIS",
+     "snippet": "Polaris PF-90: the compressor caught fire after a month. One star."
+    }
+   ],
+   "expect": {}
   }
  ]
 }
