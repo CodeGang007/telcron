@@ -138,6 +138,11 @@ BEGIN
     INSERT INTO reviews (product_id, author_user_id, rating, title, body, verified_owner)
     VALUES (p_fridge, v_demo, 4, 'Quiet and compact', 'Keeps drinks cold, a little noisy at night.', true);
 
+    -- Marked, so the app never offers them as alternatives or sends anyone to shop for them.
+    UPDATE products SET specifications = specifications || '{"demo": true}'::jsonb
+    WHERE public_slug IN ('acme-powerblend-1000', 'contoso-fastcharge-65w', 'northwind-chillmate-31',
+                          'unidentified-desk-lamp');
+
     INSERT INTO audit_log (actor_type, action, entity_type, metadata)
     VALUES ('system', 'seed.demo_data', 'database', '{"note": "fictional demo data"}');
 END $$;

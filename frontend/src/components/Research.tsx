@@ -1,21 +1,24 @@
-import { BadgeCheck, CircleCheck, ExternalLink, Globe, Landmark, Loader2, Megaphone, MessageSquareWarning, RefreshCw, ScrollText, TriangleAlert } from 'lucide-react';
+import { BadgeCheck, CircleCheck, Star, ExternalLink, Globe, Landmark, Loader2, Megaphone, MessageSquareWarning, RefreshCw, ScrollText, TriangleAlert } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { api, explain, post, type Finding, type Research as ResearchT } from '../lib/api';
+import { api, explain, MESSAGES, post, type Finding, type Research as ResearchT } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { track } from '../lib/researching';
 import { Skeleton } from './ui';
 
 const KIND: Record<Finding['kind'], { label: string; icon: typeof Globe; tone: string }> = {
   recall: { label: 'Recall', icon: Megaphone, tone: 'bg-danger-tint text-danger' },
   safety_warning: { label: 'Safety warning', icon: TriangleAlert, tone: 'bg-danger-tint text-danger' },
   complaint: { label: 'Complaint', icon: MessageSquareWarning, tone: 'bg-warn-tint text-warn' },
+  review: { label: 'Review', icon: Star, tone: 'bg-gold-tint text-gold' },
   certification: { label: 'Certification', icon: BadgeCheck, tone: 'bg-ok-tint text-ok' },
   no_issue_found: { label: 'No issue found', icon: CircleCheck, tone: 'bg-ok-tint text-ok' },
   general: { label: 'Safety note', icon: ScrollText, tone: 'bg-neutral-tint text-muted' },
 };
 const SOURCE: Record<string, string> = {
   web_search: 'Web', regulator_web: 'Government regulator', uk_opss: 'UK Product Safety (OPSS)', openfda: 'US FDA',
+  review_web: 'Review',
   community_web: 'Owner report',
 };
 const SITES: [RegExp, string][] = [
@@ -29,14 +32,14 @@ function sourceLabel(f: Finding) {
   const site = SITES.find(([re]) => re.test(host(f.url)));
   return site && (f.source === 'community_web' || f.source === 'web_search') ? site[1] : (SOURCE[f.source] ?? f.source);
 }
-const ORDER: Finding['kind'][] = ['recall', 'safety_warning', 'complaint', 'general', 'certification', 'no_issue_found'];
+const ORDER: Finding['kind'][] = ['recall', 'safety_warning', 'complaint', 'review', 'general', 'certification', 'no_issue_found'];
 
 function host(url: string) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
 }
 
 /** What the recall registries and the web say about this product, each claim linked to its page. */
-export function Research({ slug, onRated }: { slug: string; onRated: () => void }) {
+export function Research({ slug, name, onRated }: { slug: string; name: string; onRated: () => void }) {
   const { me } = useAuth();
   const [data, setData] = useState<ResearchT | null>(null);
   const [asking, setAsking] = useState(false);
@@ -67,6 +70,7 @@ export function Research({ slug, onRated }: { slug: string; onRated: () => void 
     setAsking(true);
     try {
       await post(`/products/${slug}/research`);
+      track(slug, name);
       toast.success('Searching recall registries and the web', { description: 'This takes about a minute.' });
     } catch (e) {
       toast.error(explain(e));
@@ -94,16 +98,39 @@ export function Research({ slug, onRated }: { slug: string; onRated: () => void 
           </p>
         </div>
         {member && data.enabled && (
-          <button className="btn-ghost btn-sm" onClick={ask} disabled={asking || busy || !data.can_request} title={data.can_request ? 'Search again now' : 'Searched in the last day'}>
-            <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />{busy ? 'Searching…' : 'Search again'}
+          <button className="btn-ghost btn-sm" onClick={ask} disabled={asking || busy || !data.can_request}
+            title={data.can_request ? (data.unread ? 'Read the pages that were left' : 'Search again now') : data.unread ? 'Available a quarter of an hour after the last try' : MESSAGES[data.blocked ?? ''] ?? 'Searched in the last day'}>
+            <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />{busy ? 'Searching…' : data.unread ? 'Read the rest' : 'Search again'}
           </button>
         )}
       </div>
 
       {busy && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-5 flex items-center gap-3 rounded-2xl bg-action-tint px-4 py-3 text-sm text-action">
-          <Loader2 className="size-4 animate-spin" />Searching recall registries and the web, then reading what they say. The passport updates when it is done.
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-5 rounded-2xl bg-action-tint px-4 py-3 text-sm text-action">
+          <p className="flex items-center gap-3"><Loader2 className="size-4 animate-spin" />{data.progress?.stage ?? 'Waiting its turn in the queue'}</p>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/70">
+            <motion.div className="h-full rounded-full bg-action" animate={{ width: `${data.progress?.percent ?? 3}%` }} transition={{ duration: 0.6 }} />
+          </div>
+          <p className="mt-2 text-xs text-action/80">This takes a minute or two. You can keep using Telcron: we tell you when it is done, and the passport updates itself.</p>
         </motion.div>
+      )}
+
+      {!busy && !data.unread && (data.blocked === 'research_daily_limit' || data.blocked === 'research_month_limit') && (
+        <p className="mt-5 flex items-start gap-2 rounded-2xl bg-warn-tint px-4 py-3 text-sm text-warn">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          {!data.status
+            ? data.blocked === 'research_daily_limit'
+              ? 'Telcron has used today’s web-search allowance, so this product is waiting its turn. It is researched automatically as soon as the allowance frees up: no need to come back and press anything.'
+              : 'Telcron has used this month’s web-search allowance. This product is researched automatically when it renews.'
+            : MESSAGES[data.blocked]}
+        </p>
+      )}
+
+      {!busy && data.unread > 0 && (
+        <p className="mt-5 flex items-start gap-2 rounded-2xl bg-warn-tint px-4 py-3 text-sm text-warn">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          {data.unread} page{data.unread === 1 ? '' : 's'} could not be read yet: the free AI allowance was used up. Telcron reads them again automatically every 20 minutes{data.can_request ? ', or use “Read the rest” now.' : '.'}
+        </p>
       )}
 
       {findings.length > 0 ? (
@@ -131,13 +158,15 @@ export function Research({ slug, onRated }: { slug: string; onRated: () => void 
         </ul>
       ) : !busy && (
         <p className="mt-5 rounded-2xl bg-panel px-4 py-3 text-sm text-muted">
-          {data.status
-            ? `Searched ${data.searched_at ? new Date(data.searched_at).toLocaleDateString() : ''}: ${data.stats?.pages ?? 0} pages read, none said anything about this product's safety.`
-            : 'Not searched yet.'}
+          {!data.status
+            ? 'Not searched yet.'
+ : data.unread > 0
+              ? `Searched ${data.searched_at ? new Date(data.searched_at).toLocaleDateString() : ''}: ${data.stats?.pages ?? 0} pages found; nothing kept yet from the pages read so far.`
+              : `Searched ${data.searched_at ? new Date(data.searched_at).toLocaleDateString() : ''}: ${data.stats?.pages ?? 0} pages read, none said anything about this product's safety or reliability.`}
         </p>
       )}
-      {!busy && (data.stats?.errors?.length ?? 0) > 0 && (
-        <p className="mt-3 text-xs text-muted">Some sources did not answer last time: {(data.stats?.errors ?? []).map((e) => e.split(':')[0]).join(', ')}.</p>
+      {!busy && !data.unread && (data.stats?.errors?.filter((e) => !e.startsWith('reader')).length ?? 0) > 0 && (
+        <p className="mt-3 text-xs text-muted">Some sources did not answer last time: {(data.stats?.errors ?? []).filter((e) => !e.startsWith('reader')).map((e) => e.split(':')[0]).join(', ')}.</p>
       )}
     </section>
   );

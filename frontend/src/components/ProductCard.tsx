@@ -15,7 +15,10 @@ export function ProductCard({ product }: { product: ProductSummary }) {
           ) : (
             <CategoryTile category={product.category} />
           )}
-          <StatusBadge badge={product.status_badge} />
+          <span className="flex flex-col items-end gap-1">
+            <StatusBadge badge={product.status_badge} />
+            {product.demo && <span className="chip bg-warn-tint text-warn !py-0 text-[10px]">Demo</span>}
+          </span>
         </div>
         <p className="eyebrow mt-5">{product.category}</p>
         <h3 className="mt-1.5 font-display text-lg font-bold leading-snug group-hover:text-brand-ink">{product.name}</h3>

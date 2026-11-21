@@ -87,7 +87,7 @@ export async function apiPage<T>(path: string, offset: number, limit: number): P
 export const post = <T>(path: string, body?: unknown) =>
   api<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) });
 
-const MESSAGES: Record<string, string> = {
+export const MESSAGES: Record<string, string> = {
   invalid_credentials: 'That email and password do not match.',
   account_locked: 'Too many attempts. Try again in 15 minutes.',
   email_not_verified: 'Confirm your email first: enter the code we emailed you.',
@@ -107,7 +107,10 @@ const MESSAGES: Record<string, string> = {
   unknown_category: 'Choose one of the listed categories.',
   assistant_quota_reached: 'You have asked a lot today. The assistant is available again tomorrow.',
   thread_not_found: 'That conversation is not available.',
-  research_not_due: 'This product was searched recently. It can be searched again tomorrow.',
+  research_not_due: 'This product was searched in the last day. It can be searched again tomorrow.',
+  research_daily_limit: 'Telcron has used today\'s web-search allowance. New products are researched automatically as it frees up.',
+  research_month_limit: 'Telcron has used this month\'s web-search allowance. Research resumes when it renews.',
+  research_disabled: 'Web research is switched off right now.',
   product_not_found: 'We could not find that product.',
   invalid_barcode: 'That is not a valid barcode. Check the digits and try again.',
   product_not_identified: 'We could not find that barcode anywhere yet. Try searching by name.',
@@ -135,16 +138,21 @@ export type ProductSummary = {
   trust_score: number | null;
   tier: number | null;
   image_url: string | null;
+  demo: boolean;
 };
 export type Finding = {
-  kind: 'recall' | 'safety_warning' | 'complaint' | 'certification' | 'no_issue_found' | 'general';
+  kind: 'recall' | 'safety_warning' | 'complaint' | 'review' | 'certification' | 'no_issue_found' | 'general';
   title: string; source: string; about_this_product: boolean; url: string; finding: string; found_at: string;
 };
 export type Research = {
   enabled: boolean; status: string | null; searched_at: string | null; can_request: boolean;
+  // Why a search cannot start now (an error code from MESSAGES), or null.
+  blocked: string | null;
   // A queued or running search has empty stats: every field may be missing.
   stats: Partial<{ cpsc_notices: number; cpsc_new: number; pages: number; findings: number; errors: string[] }> | null;
   findings: Finding[];
+  progress: { stage: string; percent: number } | null;
+  unread: number;
 };
 export type Citation = { id: string; kind: string; excerpt: string | null; url: string | null };
 export type Dimension = {

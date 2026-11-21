@@ -21,11 +21,13 @@ from app.core.redis import redis_settings
 from app.modules.assistant import embedder
 from app.modules.assistant.index import backfill
 from app.modules.ingestion.service import run_job, schedule_nightly
-from app.workers.handlers import alerts, coins, index, ingest, screening
+from app.workers.handlers import alerts, coins, index, ingest, research, screening
 
 log = logging.getLogger("telcron.worker")
 HANDLERS = {"ingest": ingest.handle, "screening": screening.handle, "coins": coins.handle,
-            "alerts": alerts.handle, "index": index.handle}
+            "alerts": alerts.handle, "index": index.handle, "research": research.handle}
+# Research shares the model provider's per-minute limit: one product at a time, not ten at once.
+CONCURRENCY = {"research": 1}
 MAX_TRIES = 5
 DONE_TTL = 7 * 24 * 3600
 
@@ -68,15 +70,23 @@ async def nightly_vectors(ctx: dict[str, Any]) -> str:
     return f"vectors: {done}"
 
 
+async def reread_research(ctx: dict[str, Any]) -> str:
+    """Every 20 minutes: pages research could not read (the AI allowance was spent), read again."""
+    from app.modules.research.service import reread_due
+    return f"re-reads queued: {await reread_due()}"
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     workers = [Worker(functions=[func(handle, name="handle", max_tries=MAX_TRIES)],
                       queue_name=queue_name(q), redis_settings=redis_settings(),
-                      handle_signals=False, max_jobs=10, poll_delay=0.5, keep_result=3600)
+                      handle_signals=False, max_jobs=CONCURRENCY.get(q, 10), poll_delay=0.5,
+                      keep_result=3600)
                for q in HANDLERS]
     # One more worker for the schedule; arq runs a cron job once however many workers are up.
     workers.append(Worker(cron_jobs=[cron(nightly_recall_sync, hour=3, minute=0),
-                                     cron(nightly_vectors, hour=4, minute=0)],
+                                     cron(nightly_vectors, hour=4, minute=0),
+                                     cron(reread_research, minute={0, 20, 40})],
                           queue_name=queue_name("schedule"), redis_settings=redis_settings(),
                           handle_signals=False, poll_delay=5, keep_result=3600))
     tasks = [asyncio.create_task(w.async_run()) for w in workers]

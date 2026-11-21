@@ -81,3 +81,50 @@ async def test_a_failing_model_falls_back_to_the_stub_and_says_so(db, monkeypatc
                              .order_by(AiInvocation.created_at.desc()).limit(1))).scalar_one()
     assert call.model_code == "stub-heuristic-0" and not call.succeeded
     assert "ConnectError" in call.error
+
+
+async def test_a_spent_daily_allowance_moves_to_the_fallback_model(monkeypatch):
+    """Seen live: the main model's 200k tokens a day ran out and research read nothing."""
+    import httpx
+
+    from app.core.config import get_settings
+    from app.modules.screening import llm
+    s = get_settings()
+    monkeypatch.setattr(s, "llm_api_key", "test")
+    used = []
+
+    async def post(self, url, json=None, headers=None):
+        used.append(json["model"])
+        if json["model"] == s.llm_fallback_model:
+            assert json["reasoning_effort"] == "low" and json["max_completion_tokens"] >= 2500
+        req = httpx.Request("POST", url)
+        if json["model"] == s.llm_model:
+            return httpx.Response(429, request=req, text='{"error":{"message":"Rate limit reached '
+                                  'on tokens per day (TPD): Limit 200000. Please try again in 3m10s."}}')
+        return httpx.Response(200, request=req, json={"choices": [{"message": {"content": "{}"}}]})
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    answer = await llm.complete([{"role": "user", "content": "hi"}])
+    assert answer["choices"] and used == [s.llm_model, s.llm_fallback_model]  # no waiting first
+
+
+async def test_when_both_groq_models_are_spent_gemini_answers(monkeypatch):
+    import httpx
+
+    from app.core.config import get_settings
+    from app.modules.screening import llm
+    s = get_settings()
+    monkeypatch.setattr(s, "llm_api_key", "groq")
+    monkeypatch.setattr(s, "gemini_api_key", "gemini")
+    asked = []
+
+    async def post(self, url, json=None, headers=None):
+        asked.append((url.split("/v1")[0][-12:], json["model"]))
+        req = httpx.Request("POST", url)
+        if "groq" in url:
+            return httpx.Response(429, request=req, text="Rate limit reached on tokens per day (TPD)")
+        assert headers["Authorization"] == "Bearer gemini" and json["reasoning_effort"] == "low"
+        return httpx.Response(200, request=req, json={"choices": [{"message": {"content": "{}"}}]})
+    monkeypatch.setattr(httpx.AsyncClient, "post", post)
+    answer = await llm.complete([{"role": "user", "content": "hi"}])
+    assert [m for _, m in asked] == [s.llm_model, s.llm_fallback_model, s.gemini_model]
+    assert answer["model"] == s.gemini_model  # the record says which model really answered

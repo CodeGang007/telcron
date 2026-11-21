@@ -47,22 +47,37 @@ async def read_photo(data_urls: list[str], hints: dict[str, Any] | None = None
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": PROMPT + _hinted(hints)},
                 *({"type": "image_url", "image_url": {"url": u}} for u in data_urls[:MAX_IMAGES])]}]}
-    try:
-        async with httpx.AsyncClient(base_url=s.llm_base_url, timeout=90) as http:
-            for attempt in range(RETRIES + 1):
-                response = await http.post("/chat/completions", json=body, headers={
-                    "Authorization": f"Bearer {s.llm_api_key}"})
-                if response.status_code == 429 and attempt < RETRIES:
-                    try:
-                        wait = float(response.headers.get("retry-after", "10"))
-                    except ValueError:
-                        wait = 10.0
-                    await asyncio.sleep(min(wait + 0.5, 30))
-                    continue
-                if response.status_code >= 400:
-                    raise VisionUnavailable(f"HTTP {response.status_code}: {response.text[:200]}")
-                answer = json.loads(response.json()["choices"][0]["message"]["content"])
+    tried: list[str] = []
+    # Groq's vision model first, then Gemini (it reads images too) when Groq refuses or is spent.
+    chain = [(s.llm_base_url, s.llm_api_key, s.vision_model, body)]
+    if s.gemini_api_key:
+        gemini = {**body, "model": s.gemini_model, "reasoning_effort": "low",
+                  "max_completion_tokens": 2500}
+        chain.append((s.gemini_base_url, s.gemini_api_key, s.gemini_model, gemini))
+    answer: Any = None
+    async with httpx.AsyncClient(timeout=90) as http:
+        for base, key, model, sent in chain:
+            try:
+                for attempt in range(RETRIES + 1):
+                    response = await http.post(f"{base}/chat/completions", json=sent, headers={
+                        "Authorization": f"Bearer {key}"})
+                    if response.status_code == 429 and attempt < RETRIES and \
+                            "per day" not in response.text:
+                        try:
+                            wait = float(response.headers.get("retry-after", "10"))
+                        except ValueError:
+                            wait = 10.0
+                        await asyncio.sleep(min(wait + 0.5, 30))
+                        continue
+                    if response.status_code >= 400:
+                        raise VisionUnavailable(f"HTTP {response.status_code}: {response.text[:200]}")
+                    answer = json.loads(response.json()["choices"][0]["message"]["content"])
+                    break
+            except (VisionUnavailable, httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
+                tried.append(f"{model}: {type(exc).__name__}: {exc}"[:200])
+                continue
+            if answer is not None:
                 break
-    except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
-        raise VisionUnavailable(f"{type(exc).__name__}: {exc}"[:300]) from exc
+    if answer is None:
+        raise VisionUnavailable("; ".join(tried)[:300] or "no answer")
     return answer if isinstance(answer, dict) else {}

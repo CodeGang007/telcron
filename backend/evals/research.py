@@ -29,7 +29,8 @@ async def evaluate() -> dict:
     for case in cases:
         hits = [Hit(h["title"], h["url"], h["snippet"]) for h in case["hits"]]
         audit: dict[str, int] = {}
-        findings = await read(case["product"], hits, audit, brand=case.get("brand"))
+        findings = await read(case["product"], hits, audit, brand=case.get("brand"),
+                              category=case.get("category"))
         await asyncio.sleep(2)  # the free plan's per-minute limit
         got = {str(hits.index(f.hit) + 1): f.kind for f in findings}
         want = case["expect"]

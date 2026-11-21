@@ -115,7 +115,11 @@ async def no_outside_research(monkeypatch):
 
     async def unread(body):
         return photos.Reading()
+    async def unknown_balance():
+        return None
+    from app.modules.research import service as research
     monkeypatch.setattr(web, "search", nothing)
+    monkeypatch.setattr(research, "_searches_left", unknown_balance)
     monkeypatch.setattr(registries, "search", no_registry)
     monkeypatch.setattr(photos, "read", unread)
 

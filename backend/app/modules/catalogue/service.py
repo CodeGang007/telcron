@@ -36,7 +36,8 @@ def _f(value: Any) -> float | None:
 def _summary_columns() -> list:
     return [Product.id, Product.public_slug, Product.canonical_name, Product.model_number,
             Brand.name.label("brand"), Category.name.label("category"),
-            Passport.status_badge, Passport.trust_score, Passport.tier, Product.primary_media_id]
+            Passport.status_badge, Passport.trust_score, Passport.tier, Product.primary_media_id,
+            Product.specifications["demo"].astext.label("demo")]
 
 
 def _summary(row: Any) -> dict[str, Any]:
@@ -44,7 +45,8 @@ def _summary(row: Any) -> dict[str, Any]:
             "model_number": row.model_number, "brand": row.brand, "category": row.category,
             "status_badge": row.status_badge, "trust_score": _f(row.trust_score),
             "tier": row.tier,
-            "image_url": f"/api/v1/media/{row.primary_media_id}" if row.primary_media_id else None}
+            "image_url": f"/api/v1/media/{row.primary_media_id}" if row.primary_media_id else None,
+            "demo": row.demo == "true"}
 
 
 def _summary_query():
@@ -214,6 +216,7 @@ async def passport_view(db: AsyncSession, product: Product) -> dict[str, Any] | 
     return view
 
 
+SIMILAR = 0.62  # cosine similarity of two products' vectors to call them alike (bge: unrelated ~0.5)
 ALTERNATIVES = """
     SELECT pe2.product_id, (pe2.embedding::vector(DIMS)) <=> (pe.embedding::vector(DIMS)) AS distance
     FROM product_embeddings pe
@@ -239,17 +242,21 @@ async def alternatives(db: AsyncSession, product: Product, limit: int = 6) -> di
         for product_id, distance in rows:
             order.append(product_id)
             closeness[product_id] = round(1 - float(distance), 3)
+    # The same kind of product only, never a fictional demo one: an alternative is something a
+    # person could buy instead (a mini fridge is no alternative to a games console).
     safe = (_summary_query().where(Passport.status_badge == "verified",
-                                   Passport.trust_score >= floor, Product.id != product.id))
+                                   Passport.trust_score >= floor, Product.id != product.id,
+                                   Product.category_id == product.category_id,
+                                   Product.specifications["demo"].astext.is_(None)))
     if order:
         rows = {r.id: r for r in (await db.execute(safe.where(Product.id.in_(order)))).all()}
-        picked = [rows[i] for i in order if i in rows and closeness[i] >= 0.55][:limit * 2]
+        picked = [rows[i] for i in order if i in rows and closeness[i] >= SIMILAR][:limit * 2]
     else:
         picked = []
     how = "meaning" if picked else "category"
-    if not picked:  # no vectors, or nothing close: the same category
-        picked = (await db.execute(safe.where(Product.category_id == product.category_id)
-                                   .order_by(Passport.trust_score.desc()).limit(limit * 2))).all()
+    if not picked:  # no vectors, or nothing close: the same category, safest first
+        picked = (await db.execute(safe.order_by(Passport.trust_score.desc())
+                                   .limit(limit * 2))).all()
     stats = {pid: (float(avg), n) for pid, avg, n in (await db.execute(
         select(Review.product_id, func.avg(Review.rating), func.count()).where(
             Review.product_id.in_([r.id for r in picked]), Review.status == "published",

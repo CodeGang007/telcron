@@ -14,7 +14,7 @@
 # Without BACKEND_IMAGE the image is built on this host from the commit. With it, it is used as is
 # (pulled first when it is in ECR).
 # The app secret must hold JWT_SECRET, APP_DB_PASSWORD, SEED_ADMIN_PASSWORD and PG_SUPERUSER_PASSWORD;
-# LLM_API_KEY, MAIL_FROM, SMTP_PASSWORD and TAVILY_API_KEY are optional.
+# LLM_API_KEY, GEMINI_API_KEY, MAIL_FROM, SMTP_PASSWORD and TAVILY_API_KEY are optional.
 set -euo pipefail
 
 : "${GIT_REF:?}" "${API_HOST:?}" "${WEB_ORIGIN:?}"
@@ -76,6 +76,8 @@ MAIL_PROVIDER=log
 if [ -n "$MAIL_FROM" ]; then MAIL_PROVIDER=$([ -n "$SMTP_PASSWORD" ] && echo smtp || echo ses); fi
 # Optional: a Tavily key for product research's web search (WO-014).
 TAVILY_API_KEY=$(json_field TAVILY_API_KEY "" <<<"$app_secret")
+# Optional: a Gemini key, the last model in line when Groq's daily allowance is spent.
+GEMINI_API_KEY=$(json_field GEMINI_API_KEY "" <<<"$app_secret")
 # Product photos go to the private media bucket (created with the host, named after the account);
 # Rekognition reads them. Both use the host's IAM role: no keys.
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -99,6 +101,7 @@ MAIL_PROVIDER=$MAIL_PROVIDER
 MAIL_FROM=$MAIL_FROM
 SMTP_PASSWORD=$SMTP_PASSWORD
 TAVILY_API_KEY=$TAVILY_API_KEY
+GEMINI_API_KEY=$GEMINI_API_KEY
 MEDIA_STORE=s3
 MEDIA_BUCKET=$MEDIA_BUCKET
 IMAGE_READER=rekognition

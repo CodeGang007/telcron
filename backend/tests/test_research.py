@@ -4,7 +4,7 @@ stored as cited evidence, and the product rated again from it."""
 import uuid
 
 from helpers import API, verified_user
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 
 from app.core.config import get_settings
 from app.models import IdentificationRequest, IngestionJob, ProductAlias
@@ -49,8 +49,32 @@ async def test_the_reader_keeps_only_findings_its_sources_say(monkeypatch):
     found = await web.read("Lumina LF-30 desk fan", [PAGE, SHOP, other, trap], audit,
                            brand="Lumina")
     assert [(f.hit.url, f.kind) for f in found] == [(PAGE.url, "recall")]
-    assert audit == {"injected": 1, "raw": 5, "bad_reference": 2, "ungrounded": 1,
-                     "other_product": 1}
+    # The other-brand page never reaches the model now: it is dropped as off-topic first.
+    assert audit["injected"] == 1 and audit["off_topic"] == 1 and audit["bad_reference"] >= 1
+    assert audit["ungrounded"] == 1 and audit["failed_batches"] == 0
+
+
+async def test_a_long_result_list_is_read_in_batches_and_a_failed_batch_is_not_fatal(monkeypatch):
+    """Seen live: one call with ~30 results broke the per-minute limit and nothing was read."""
+    monkeypatch.setattr(get_settings(), "llm_api_key", "test")
+    hits = [web.Hit(f"Lumina LF-30 owner report {i}", f"https://forum.example.org/{i}",
+                    f"Lumina LF-30 fan motor overheated and stopped after {i} weeks.") for i in range(20)]
+    calls = []
+
+    async def chat(body, seconds=90):
+        import json
+        calls.append(body["messages"][1]["content"].count("\n   "))
+        if len(calls) == 2:
+            raise web.ResearchUnavailable("rate limited")
+        return {"choices": [{"message": {"content": json.dumps({"findings": [
+            {"n": 1, "kind": "complaint", "finding": "Lumina LF-30 fan motor overheated and stopped",
+             "about_this_product": True}]})}}]}
+    monkeypatch.setattr(web, "_chat", chat)
+    monkeypatch.setattr(web, "PAUSE", 0)
+    audit: dict[str, int] = {}
+    found = await web.read("Lumina LF-30 desk fan", hits, audit, brand="Lumina")
+    assert calls == [8, 8, 4]  # three calls of at most eight results
+    assert len(found) == 2 and audit["failed_batches"] == 1
 
 
 async def test_research_stores_cited_findings_and_rates_the_product(client, db, monkeypatch):
@@ -68,13 +92,14 @@ async def test_research_stores_cited_findings_and_rates_the_product(client, db, 
     uk = web.Hit("UK OPSS: Product Recall: Lumina LF-30 Desk Fan", "https://www.gov.uk/lf30",
                  "Product Recall for Lumina LF-30 Desk Fan presenting a risk of fire.", "uk_opss")
 
-    async def searched(query):
+    async def searched(label, category=None):
+        assert label.startswith("Lumina Desk Fan") and category == "appliances"
         return [PAGE, SHOP]
 
     async def registry(words, category, limit=5):
         return [uk], []
 
-    async def read(label, hits, audit=None, brand=None):
+    async def read(label, hits, audit=None, brand=None, progress=None, category=None, unread=None):
         assert [h.url for h in hits][:1] == [uk.url]  # official registries first
         return [web.Finding(uk, "recall", "Product Recall for Lumina LF-30 Desk Fan presenting "
                             "a risk of fire.", True),
@@ -83,6 +108,9 @@ async def test_research_stores_cited_findings_and_rates_the_product(client, db, 
     monkeypatch.setattr(web, "search", searched)
     monkeypatch.setattr(registries, "search", registry)
     monkeypatch.setattr(web, "read", read)
+    queued = (await client.get(f"{API}/products/{product['slug']}/research")).json()
+    assert queued["status"] == "queued" and queued["progress"]["percent"] > 0
+    assert queued["stats"] is None  # no half-filled stats while it waits (it crashed the page)
     stats = await service.run(job.id)
     assert stats["findings"] == 2 and stats["pages"] == 3
 
@@ -95,6 +123,7 @@ async def test_research_stores_cited_findings_and_rates_the_product(client, db, 
     cited = {c["url"] for d in after["hazard"]["dimensions"] for c in d["citations"]}
     assert cited and cited <= {uk.url, PAGE.url}  # every citation is a page the search returned
     summary = (await client.get(f"{API}/products/{product['slug']}/research")).json()
+    assert summary["progress"] is None and summary["status"] == "succeeded"
     assert {f["url"] for f in summary["findings"]} == {uk.url, PAGE.url}
     assert {f["source"] for f in summary["findings"]} == {"uk_opss", "web_search"}
     # Asked again within the day: refused, the searches are rationed.
@@ -176,3 +205,123 @@ async def test_photos_are_kept_read_and_become_the_products_pictures(client, db,
     assert linked == {"slug": made["slug"], "name": linked["name"], "new": False, "linked": True}
     found = (await client.post(f"{API}/identify", json={"barcode": "4006381333931"})).json()
     assert found["slug"] == made["slug"]
+
+
+def test_owners_are_asked_about_what_goes_wrong_with_that_kind_of_product():
+    """One set of words for everything found laptop threads for a face peel (seen 2026-11-22)."""
+    assert "irritation" in web.concerns("Pilgrim Peeling Solution", "household")
+    assert "allergy" in web.concerns("PAXO Sage & Onion Stuffing Mix", "food")
+    assert "overheating" in web.concerns("Sony PlayStation 5", "electronics")
+    assert "overheating" not in web.concerns("Oak Teether", "household")
+
+
+async def test_marketplace_listings_are_real_product_pages_and_can_be_checked(client, db, monkeypatch):
+    monkeypatch.setattr(get_settings(), "tavily_api_key", "test")
+    seen = {}
+
+    async def tavily(query, domains=None, source="web_search"):
+        seen.update(query=query, domains=domains)
+        return [web.Hit("Amazon.in : The Ordinary AHA 30% + BHA 2% Peeling Solution 30ml",
+                        "https://www.amazon.in/Ordinary-Peeling-Solution/dp/B07ABC1234",
+                        "4.3 out of 5 stars ₹1,450 Exfoliating peel"),
+                    web.Hit("Peeling solutions - Amazon.in", "https://www.amazon.in/s?k=peeling", "All"),
+                    web.Hit("Minimalist AHA BHA Peeling Solution | Nykaa",
+                            "https://www.nykaa.com/minimalist-peeling/p/1234", "Rs. 599")]
+    monkeypatch.setattr(web, "_tavily", tavily)
+    _, _, member = await verified_user(client)
+    made = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": f"Peeling Solution {uuid.uuid4().hex[:4]}", "brand": "Pilgrim",
+        "category": "household"})).json()
+    found = (await client.get(f"{API}/products/{made['slug']}/marketplace",
+                              params={"country": "IN"})).json()
+    assert "amazon.in" in seen["domains"] and "Pilgrim" not in seen["query"]
+    assert [(i["store"], i["price"], i["rating"]) for i in found["items"]] == [
+        ("Amazon", "₹1,450", 4.3), ("Nykaa", "Rs.599", None)]  # the search page is not a product
+    assert found["items"][0]["title"] == "The Ordinary AHA 30% + BHA 2% Peeling Solution 30ml"
+    checked = await client.post(f"{API}/products/{made['slug']}/marketplace/check", headers=member,
+                                json={"title": found["items"][0]["title"], "url": found["items"][0]["url"]})
+    assert checked.status_code == 200 and checked.json()["new"] is True
+
+
+async def test_unread_pages_are_read_again_without_searching_again(client, db, monkeypatch):
+    """Seen live: the AI's daily allowance ran out mid-run; the pages it could not read are kept and
+    read later, and 'Search again' is open again after a quarter of an hour, not a day."""
+    from datetime import timedelta
+    _, _, member = await verified_user(client)
+    made = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": f"Desk Lamp D{uuid.uuid4().hex[:4]}", "brand": "Lumina",
+        "category": "household"})).json()
+    pid = (await client.get(f"{API}/products/{made['slug']}")).json()["id"]
+    # Its own job: earlier tests may have spent today's search allowance (the daily cap).
+    await db.execute(update(IngestionJob).where(IngestionJob.params["product_id"].astext == pid)
+                     .values(status="cancelled"))
+    job = IngestionJob(data_source_code="web_search", trigger="admin", params={"product_id": pid})
+    db.add(job)
+    await db.commit()
+    searches = []
+
+    async def searched(label, category=None):
+        searches.append(label)
+        return [PAGE]
+
+    async def nobody_reads(label, hits, audit=None, brand=None, progress=None, category=None,
+                           unread=None):
+        unread.extend(hits)
+        return []
+    monkeypatch.setattr(web, "search", searched)
+    monkeypatch.setattr(web, "read", nobody_reads)
+    first = await service.run(job.id)
+    assert first["unread"] == 1 and len(searches) == 1
+    state = (await client.get(f"{API}/products/{made['slug']}/research")).json()
+    assert state["unread"] == 1 and state["can_request"] is False  # not yet: a quarter of an hour
+    await db.execute(update(IngestionJob).where(IngestionJob.id == job.id).values(
+        created_at=IngestionJob.created_at - timedelta(minutes=20)))
+    await db.execute(update(IngestionJob).where(  # the one queued on confirm, cancelled above
+        IngestionJob.params["product_id"].astext == pid, IngestionJob.id != job.id).values(
+        created_at=IngestionJob.created_at - timedelta(minutes=30)))
+    await db.commit()
+    assert (await client.get(f"{API}/products/{made['slug']}/research")).json()["can_request"]
+
+    async def reads(label, hits, audit=None, brand=None, progress=None, category=None, unread=None):
+        return [web.Finding(PAGE, "recall", "Lumina is recalling the LF-30 desk fan because its "
+                            "motor can overheat and catch fire.", True)]
+    monkeypatch.setattr(web, "read", reads)
+    again = await client.post(f"{API}/products/{made['slug']}/research", headers=member)
+    assert again.status_code == 202
+    retry = await db.get(IngestionJob, uuid.UUID(again.json()["job_id"]))
+    assert retry.params["reread"] == str(job.id)
+    second = await service.run(retry.id)
+    assert second["findings"] == 1 and second["unread"] == 0 and len(searches) == 1  # no new search
+
+
+async def test_a_spent_search_allowance_says_so_and_catches_up_later(client, db, monkeypatch):
+    """Seen live: with the shared allowance spent, a new product was refused as 'searched
+    recently' and never researched. Now the refusal names the allowance, and the Worker's cron
+    researches the product once the allowance frees up."""
+    _, _, member = await verified_user(client)
+    made = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": f"Kettle K{uuid.uuid4().hex[:4]}", "brand": "Brewmaster",
+        "category": "household"})).json()
+    pid = (await client.get(f"{API}/products/{made['slug']}")).json()["id"]
+    await db.execute(delete(IngestionJob).where(IngestionJob.params["product_id"].astext == pid))
+    await db.commit()
+
+    async def spent():
+        return 12  # fewer than a run plus the reserve
+    monkeypatch.setattr(service, "_searches_left", spent)
+    state = (await client.get(f"{API}/products/{made['slug']}/research")).json()
+    assert state["can_request"] is False and state["blocked"] == "research_month_limit"
+    refused = await client.post(f"{API}/products/{made['slug']}/research", headers=member)
+    assert refused.status_code == 429 and refused.json()["detail"] == "research_month_limit"
+    await service.reread_due()  # still spent: the product keeps waiting
+    assert await db.scalar(select(IngestionJob.id).where(
+        IngestionJob.params["product_id"].astext == pid)) is None
+
+    async def renewed():
+        return 900
+    monkeypatch.setattr(service, "_searches_left", renewed)
+    monkeypatch.setattr(service, "BACKLOG_PER_TICK", 500)  # other tests' products wait too
+    await service.reread_due()
+    queued = await db.scalar(select(IngestionJob).where(
+        IngestionJob.params["product_id"].astext == pid))
+    assert queued is not None and queued.trigger == "schedule" and "reread" not in queued.params
