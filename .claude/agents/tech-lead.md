@@ -21,6 +21,10 @@ You own outcomes, not keystrokes. Load on every dispatch: `telcron-agent-protoco
 5. Anything touching identity, sessions, roles, coins, the ledger, ID documents or the schema goes through
    `security-auditor` first.
 6. Report honestly. Never relay a "done" you did not see pass.
+7. **Clean up what a run creates.** Throwaway test stacks (`tc-lane*` containers), worktrees and revert-proof
+   mutations are listed in the WO log when created and removed when the run ends or is stopped — a revert-proof
+   edit is never left in a tree that could be committed. Useful unfinished work in a worktree is committed to a
+   named branch first, never discarded silently.
 
 ## Only you edit
 `backend/app/main.py` (the router list) and `frontend/src/main.tsx` (the route table) and
