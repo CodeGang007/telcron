@@ -8,6 +8,7 @@ Writes (generated — do not edit by hand):
   db/migrations/20261114120200_phase1_schema.sql          core tables, constraints, FKs, indexes, triggers
   db/migrations/20261122130000_phase2_schema.sql          AI-engine tables (WO-022, D11)
   db/migrations/20261122130200_phase3_schema.sql          engagement tables (WO-022, D11)
+  db/migrations/<since>                                   indexes added after their phase (`I(..., since=)`)
 
 Phases 2-3 were applied outside dbmate before they became migrations (`make db-next` locally, a
 hand-written block on the dev host). Their migrations therefore skip, without error, a database that
@@ -34,6 +35,7 @@ PROMOTED = {
     2: ("20261122130000_phase2_schema.sql", "hazard_assessments"),
     3: ("20261122130200_phase3_schema.sql", "coin_ledger_entries"),
 }
+PHASE_FILES = {1: "20261114120200_phase1_schema.sql", **{p: f for p, (f, _) in PROMOTED.items()}}
 
 
 def ident(*parts, suffix):
@@ -104,13 +106,43 @@ def index_ddl(t):
             where = f" WHERE {u.where}" if u.where else ""
             out.append(f"CREATE UNIQUE INDEX {ident(t.name, f'u{n}', suffix='uidx')} ON {t.name} ({u.cols}){nnd}{where};")
     for n, ix in enumerate(t.indexes, 1):
+        if ix.since:
+            continue  # added later by its own migration (later_index_migrations); the phase is frozen
         first = re.split(r"[ ,(]", ix.cols.strip())[0]
         if not ix.where and not ix.using:
             leading.add(first)
-        using = f" USING {ix.using}" if ix.using else ""
-        where = f" WHERE {ix.where}" if ix.where else ""
-        out.append(f"CREATE INDEX {ident(t.name, f'i{n}', suffix='idx')} ON {t.name}{using} ({ix.cols}){where};")
+        out.append(create_index(t, n, ix))
     return out, leading
+
+
+def index_name(t, n):
+    return ident(t.name, f"i{n}", suffix="idx")
+
+
+def create_index(t, n, ix):
+    using = f" USING {ix.using}" if ix.using else ""
+    where = f" WHERE {ix.where}" if ix.where else ""
+    return f"CREATE INDEX {index_name(t, n)} ON {t.name}{using} ({ix.cols}){where};"
+
+
+def later_index_migrations():
+    """{migration file: text} for indexes added after their phase was applied (`I(..., since=...)`).
+
+    The number in the index name is its position in the table's `indexes`, as for every other index, so a
+    later index is appended to the list and never inserted before an existing one. The down-step drops it.
+    """
+    files = {}
+    for t in S.TABLES:
+        for n, ix in enumerate(t.indexes, 1):
+            if not ix.since:
+                continue
+            phase_file = PHASE_FILES[t.phase]
+            assert ix.since > phase_file, f"{t.name} index {n}: {ix.since} must sort after {phase_file}"
+            up, down = files.setdefault(ix.since, ([], []))
+            up.append((f"-- {ix.note}\n" if ix.note else "") + create_index(t, n, ix))
+            down.append(f"DROP INDEX IF EXISTS {index_name(t, n)};")
+    return {f: "-- migrate:up\n" + HEADER + "\n".join(up) + "\n\n-- migrate:down\n" + "\n".join(reversed(down)) + "\n"
+            for f, (up, down) in files.items()}
 
 
 def fk_phase(child, parent):
@@ -240,10 +272,12 @@ def main():
 
     sql, tables = phase_sql(1)
     down = "\n".join(f"DROP TABLE IF EXISTS {t.name} CASCADE;" for t in reversed(tables))
-    (mig / "20261114120200_phase1_schema.sql").write_text(
+    (mig / PHASE_FILES[1]).write_text(
         "-- migrate:up\n" + sql + "\n-- migrate:down\n" + down + "\n")
     for p, (fname, _) in PROMOTED.items():
         (mig / fname).write_text(guarded_phase_migration(p))
+    for fname, text in later_index_migrations().items():
+        (mig / fname).write_text(text)
     print("Wrote migrations")
 
 

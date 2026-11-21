@@ -578,7 +578,7 @@ Canonical Product Identity Registry record. Never hard-deleted; duplicates are m
 **Composite FKs:** `(current_passport_id, id) → passports(id, product_id)` deferrable  
 **Rules (triggers/functions):** Merge target may not itself be merged (trigger). merge_products(src, dst) moves aliases, media, wallet items, reviews (function).  
 **Checks:** `(status = 'merged') = (merged_into_product_id IS NOT NULL)`; `merged_into_product_id IS NULL OR merged_into_product_id <> id`; `identity_confidence BETWEEN 0 AND 1`; `public_slug ~ '^[a-z0-9-]{6,80}$'`; `model_number_normalized IS NULL OR model_number_normalized ~ '^[A-Z0-9]+$'`  
-**Indexes:** `gist (canonical_name gist_trgm_ops(siglen=64))`; `(model_number_normalized)`; `(category_id, status)`
+**Indexes:** `gist (canonical_name gist_trgm_ops(siglen=64))`; `(model_number_normalized)`; `(category_id, status)`; `(brand_id, canonical_name, id)`
 
 #### `product_variants` — phase 3
 

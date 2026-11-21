@@ -9,6 +9,8 @@ Every `checks` entry, unique and index here is literal PostgreSQL. Rules that ca
 declaratively live in hand-written SQL (db/sql/*.sql) and are listed in each table's `rules`.
 A check changed after its phase was applied is a `Revised`: the spec states the rule the database
 enforces now, while the applied phase migration keeps being generated with the text it was applied with.
+An index added after its phase was applied carries `since=<migration file>`: the frozen phase migration
+leaves it out, and build_sql.py writes it (and its down-step) into that later migration.
 
 Target: PostgreSQL 18 · extensions citext, pg_trgm, btree_gist, postgis, vector.
 Phases: 1 = core (created now) · 2 = AI engine · 3 = engagement. FKs are emitted in the phase in
@@ -52,6 +54,7 @@ class I:                              # non-unique index
     using: str | None = None          # gin | gist | hnsw
     where: str | None = None
     note: str = ""
+    since: str | None = None          # migration that added it after its phase was applied (generated)
 
     def __str__(self):
         s = (f"{self.using} " if self.using else "") + f"({self.cols})"
@@ -416,7 +419,9 @@ TABLES = [
               "model_number_normalized IS NULL OR model_number_normalized ~ '^[A-Z0-9]+$'"],
       indexes=[I("canonical_name gist_trgm_ops(siglen=64)", using="gist", note="KNN: ORDER BY canonical_name <-> $q LIMIT n"),
                I("model_number_normalized"),
-               I("category_id, status")],
+               I("category_id, status"),
+               I("brand_id, canonical_name, id", since="20261122150000_products_brand_index.sql",
+                 note="a brand's products in name order (search by brand, DEF-080); also the brand_id FK index")],
       rules=["Merge target may not itself be merged (trigger).",
              "merge_products(src, dst) moves aliases, media, wallet items, reviews (function)."]),
 
