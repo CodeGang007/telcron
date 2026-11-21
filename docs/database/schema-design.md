@@ -361,7 +361,7 @@ One row per person. Holds account PII. Password optional (OAuth-only users). Del
 | `deleted_at` | timestamptz | yes |  |  | soft delete |
 
 **Unique:** `UNIQUE (phone_e164) WHERE phone_verified_at IS NOT NULL`  
-**Checks:** `verification_level BETWEEN 0 AND 3`; `trust_score BETWEEN 0 AND 100`; `verification_level = 0 OR (email_verified_at IS NOT NULL AND phone_verified_at IS NOT NULL)`; `phone_verified_at IS NULL OR phone_e164 IS NOT NULL`; `phone_e164 IS NULL OR phone_e164 ~ '^\+[1-9][0-9]{6,14}$'`; `(status = 'deleted') = (deleted_at IS NOT NULL)`  
+**Checks:** `verification_level BETWEEN 0 AND 3`; `trust_score BETWEEN 0 AND 100`; `verification_level = 0 OR email_verified_at IS NOT NULL`; `phone_verified_at IS NULL OR phone_e164 IS NOT NULL`; `phone_e164 IS NULL OR phone_e164 ~ '^\+[1-9][0-9]{6,14}$'`; `(status = 'deleted') = (deleted_at IS NOT NULL)`  
 **Indexes:** `(status) WHERE deleted_at IS NULL`
 
 #### `user_identities` — ★ core · phase 1

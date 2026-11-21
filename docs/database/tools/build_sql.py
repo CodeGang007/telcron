@@ -74,6 +74,7 @@ def table_ddl(t):
             nnd = "NULLS NOT DISTINCT " if u.nulls_not_distinct else ""
             lines.append(f"    CONSTRAINT {ident(t.name, *cols_of(u.cols), suffix='key')} UNIQUE {nnd}({u.cols})")
     for i, chk in enumerate(t.checks, 1):
+        chk = getattr(chk, "applied", chk)  # a Revised check: its phase migration is applied and frozen
         lines.append(f"    CONSTRAINT {ident(t.name, suffix=f'chk{i}')} CHECK ({chk})")
     tail = f" PARTITION BY RANGE ({t.partition_by})" if t.partition_by else ""
     out = [f"CREATE TABLE {t.name} (\n" + ",\n".join(lines) + f"\n){tail};"]
