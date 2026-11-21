@@ -179,12 +179,14 @@ export function SignUp() {
     );
 
   return (
-    <Shell title="Check your email" sub={`We sent a six-digit code to ${form.email}. Enter it to reach Level 1 and earn 100 TelCoins.`}>
+    // The answer to /auth/register is the same for a new address and a taken one (DEF-043): a new
+    // address gets a code, an existing account's owner gets a notice to sign in instead.
+    <Shell title="Check your email" sub={`We sent an email to ${form.email}. Enter the six-digit code in it to reach Level 1 and earn 100 TelCoins. If it says you already have an account, sign in instead.`}>
       <form onSubmit={verify} className="space-y-5" aria-label="Confirm your email">
-        {registered.dev_codes && (
+        {registered.dev_codes?.email && (
           <Notice>Development build: your code is {registered.dev_codes.email}.</Notice>
         )}
-        {!registered.email_sent && !registered.dev_codes && (
+        {!registered.email_sent && !registered.dev_codes?.email && (
           <Notice tone="error">We could not send the email just now. Wait a minute and use “Send a new code” below. If it still does not arrive, write to info@telcron.net.</Notice>
         )}
         <Field label="Code from the email" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required value={code} onChange={(e) => setCode(e.target.value)} />
@@ -192,6 +194,7 @@ export function SignUp() {
         {resent !== null && <Notice tone="ok">If that address has an account waiting, a new code is on its way{resent ? ` (development build: ${resent})` : ''}. Check your spam folder too.</Notice>}
         <button className="btn w-full !py-3.5" disabled={busy}>{busy ? 'Checking…' : 'Confirm and continue'}</button>
         <p className="text-center text-sm text-muted">No email? <button type="button" className="font-semibold text-action" onClick={resend}>Send a new code</button> (once a minute)</p>
+        <p className="text-center text-sm text-muted">Already have an account? <Link className="font-semibold text-action" to="/sign-in">Sign in</Link></p>
       </form>
     </Shell>
   );

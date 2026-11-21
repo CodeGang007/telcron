@@ -9,6 +9,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     public code: string,
+    /** Seconds from the Retry-After header of a 429, when the server sent one. */
+    public retryAfter: number | null = null,
   ) {
     super(code);
   }
@@ -67,7 +69,9 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, typeof body.detail === 'string' ? body.detail : 'request_failed');
+    const wait = Number(res.headers.get('Retry-After'));
+    throw new ApiError(res.status, typeof body.detail === 'string' ? body.detail : 'request_failed',
+      Number.isFinite(wait) && wait > 0 ? wait : null);
   }
   return res;
 }
@@ -89,9 +93,7 @@ export const post = <T>(path: string, body?: unknown) =>
 
 export const MESSAGES: Record<string, string> = {
   invalid_credentials: 'That email and password do not match.',
-  account_locked: 'Too many attempts. Try again in 15 minutes.',
   email_not_verified: 'Confirm your email first: enter the code we emailed you.',
-  email_taken: 'An account with this email already exists. Sign in instead.',
   invalid_or_expired_code: 'That code is wrong or has expired.',
   already_reviewed: 'You have already reviewed this product.',
   already_in_wallet: 'This product is already in your wallet.',
@@ -119,13 +121,26 @@ export const MESSAGES: Record<string, string> = {
   not_enough_coins: 'You do not have enough confirmed TelCoins for that yet.',
   bad_date_range: 'Choose a start date before the end date, at most a year apart.',
   phone_in_use: 'That phone number is already verified on another account.',
-  verification_level_1_required: 'Confirm your email and phone to do this.',
+  verification_level_1_required: 'Confirm your email to do this: enter the code we emailed you.',
+  rate_limited: 'Too many tries from here. Wait a few minutes, then try again.',
+  item_not_available: 'That reward is not available right now. Your TelCoins were returned; choose another.',
+  item_not_found: 'That reward is no longer offered. Reload the page to see what is.',
+  product_required: 'This reward is for one product. Choose one from your wallet first.',
+  research_user_daily_limit: 'You have started today\'s share of web searches. You can ask again tomorrow.',
+  listing_not_found: 'That listing has changed since it was shown. Reload the page and try again.',
   not_authenticated: 'Sign in to continue.',
 };
-export const explain = (e: unknown) =>
-  e instanceof ApiError
-    ? (MESSAGES[e.code] ?? 'Something went wrong. Try again.')
-    : 'Cannot reach Telcron. Check your connection and try again.';
+/** "in 3 minutes" for a Retry-After in seconds, rounded up; "in a moment" under a minute. */
+function inMinutes(seconds: number) {
+  const m = Math.ceil(seconds / 60);
+  return seconds < 60 ? 'in a moment' : `in ${m} minute${m === 1 ? '' : 's'}`;
+}
+
+export const explain = (e: unknown) => {
+  if (!(e instanceof ApiError)) return 'Cannot reach Telcron. Check your connection and try again.';
+  if (e.code === 'rate_limited' && e.retryAfter) return `Too many tries from here. Try again ${inMinutes(e.retryAfter)}.`;
+  return MESSAGES[e.code] ?? 'Something went wrong. Try again.';
+};
 
 export type ProductSummary = {
   id: string;

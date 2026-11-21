@@ -111,7 +111,7 @@ export function IdentifyNew({ barcode, onCancel }: { barcode: string | null; onC
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card space-y-6 !p-8">
       <Steps at={busy ? 3 : suggestion || manual ? 2 : taken.length ? 1 : barcode ? 1 : 0} />
       <div className="flex items-start gap-4">
-        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gold-tint text-amber-600"><Sparkles className="size-6" /></span>
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gold-tint text-gold-deep"><Sparkles className="size-6" /></span>
         <div>
           <h2 className="font-display text-2xl font-bold">New to Telcron: tell us what it is</h2>
           <p className="mt-1 text-sm text-muted">

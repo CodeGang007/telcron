@@ -14,7 +14,7 @@ export function SearchBox({ initial = '', autoFocus = false, dark = false }: { i
       onSubmit={submit}
       role="search"
       className={`group flex w-full max-w-2xl items-center gap-2 rounded-2xl p-1.5 transition ${
-        dark ? 'bg-white shadow-[0_20px_50px_-20px_rgb(0_0_0/0.7)]' : 'border border-line bg-white shadow-soft focus-within:border-action focus-within:ring-4 focus-within:ring-action/10'
+        dark ? 'bg-white shadow-float' : 'border border-line bg-white shadow-soft focus-within:border-action focus-within:ring-4 focus-within:ring-action/10'
       }`}
     >
       <Search className="ml-3 size-5 shrink-0 text-muted" />

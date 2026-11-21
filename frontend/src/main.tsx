@@ -1,11 +1,12 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import './index.css';
 import { AuthProvider } from './lib/auth';
 import { SignIn, SignUp } from './pages/Auth';
 import { Home } from './pages/Home';
+import { NotFound } from './pages/NotFound';
 import { Product } from './pages/Product';
 import { Search } from './pages/Search';
 
@@ -16,11 +17,9 @@ const Leaderboard = lazy(() => import('./pages/Leaderboard').then((m) => ({ defa
 const ReviewQueue = lazy(() => import('./pages/ReviewQueue').then((m) => ({ default: m.ReviewQueue })));
 const DataSources = lazy(() => import('./pages/DataSources').then((m) => ({ default: m.DataSources })));
 const Wallet = lazy(() => import('./pages/Wallet').then((m) => ({ default: m.Wallet })));
+const AdminLayout = lazy(() => import('./pages/admin/AdminLayout').then((m) => ({ default: m.AdminLayout })));
+const AdminHome = lazy(() => import('./pages/admin/AdminHome').then((m) => ({ default: m.AdminHome })));
 const Recalls = lazy(() => import('./pages/Recalls').then((m) => ({ default: m.Recalls })));
-
-function NotFound() {
-  return <div className="container-page py-24 text-center text-muted">That page does not exist.</div>;
-}
 
 // After a deploy, an open tab asks for page files that no longer exist: reload once to get the new
 // version instead of showing nothing.
@@ -50,9 +49,14 @@ createRoot(document.getElementById('root')!).render(
             <Route path="wallet" element={<Wallet />} />
             <Route path="rewards" element={<Rewards />} />
             <Route path="leaderboard" element={<Leaderboard />} />
-            <Route path="review-queue" element={<ReviewQueue />} />
+            <Route path="review-queue" element={<Navigate to="/admin/review-queue" replace />} />
             <Route path="recalls" element={<Recalls />} />
-            <Route path="data-sources" element={<DataSources />} />
+            <Route path="data-sources" element={<Navigate to="/admin/data-sources" replace />} />
+            <Route path="admin" element={<AdminLayout />}>
+              <Route index element={<AdminHome />} />
+              <Route path="data-sources" element={<DataSources />} />
+              <Route path="review-queue" element={<ReviewQueue />} />
+            </Route>
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>

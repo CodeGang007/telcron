@@ -1,13 +1,12 @@
 import {
   ChevronDown,
-  ClipboardCheck,
   Coins,
-  Database,
   Home,
   LogOut,
   Megaphone,
   ScanLine,
   Search,
+  ShieldCheck,
   Trophy,
   Wallet,
   type LucideIcon,
@@ -87,8 +86,7 @@ function UserMenu() {
             {[
               { to: '/wallet', label: 'Digital Wallet', icon: Wallet },
               { to: '/rewards', label: 'TelCoins & badges', icon: Coins },
-              ...(staff ? [{ to: '/review-queue', label: 'Review queue', icon: ClipboardCheck }] : []),
-              ...(me.role === 'admin' ? [{ to: '/data-sources', label: 'Data sources', icon: Database }] : []),
+              ...(staff ? [{ to: '/admin', label: 'Admin', icon: ShieldCheck }] : []),
             ].map((i) => (
               <Link key={i.to} to={i.to} role="menuitem" className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition hover:bg-panel">
                 <i.icon className="size-4 text-muted" />{i.label}
@@ -124,7 +122,7 @@ function TabBar() {
           <li key={t.to}>
             <NavLink to={t.to} end={t.to === '/'} className={({ isActive }) => `flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium ${isActive ? 'text-brand-ink' : 'text-muted'}`}>
               {t.to === '/scan' ? (
-                <span className="-mt-6 grid size-14 place-items-center rounded-full bg-gradient-to-br from-brand-bright to-brand-deep text-white shadow-[0_10px_24px_-8px_rgb(226_55_68/0.8)] ring-4 ring-white">
+                <span className="-mt-6 grid size-14 place-items-center rounded-full bg-gradient-to-br from-brand-bright to-brand-deep text-white shadow-brand-sm ring-4 ring-white">
                   <t.icon className="size-6" />
                 </span>
               ) : (
@@ -156,7 +154,7 @@ export function Layout() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className={`fixed inset-x-0 top-0 z-30 transition duration-300 ${dark ? 'bg-transparent' : 'border-b border-line/80 bg-white/80 shadow-[0_1px_0_rgb(15_23_42/0.02)] backdrop-blur-xl'}`}>
+      <header className={`fixed inset-x-0 top-0 z-30 transition duration-300 ${dark ? 'bg-transparent' : 'border-b border-line/80 bg-white/80 shadow-hairline backdrop-blur-xl'}`}>
         <div className="container-page flex h-16 items-center justify-between gap-6">
           <Logo dark={dark} />
           <nav aria-label="Main" className="hidden items-center gap-1 lg:flex">

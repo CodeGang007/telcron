@@ -91,8 +91,8 @@ function WalletBody() {
       <motion.dl initial="hidden" animate="show" variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08 } } }} className="mb-10 grid gap-4 sm:grid-cols-3">
         {[
           { label: 'Products you own', value: list.length, icon: WalletIcon, cls: 'from-brand-bright to-brand-deep' },
-          { label: 'Verified safe', value: list.filter((i) => i.status_badge === 'verified').length, icon: ShieldCheck, cls: 'from-emerald-500 to-teal-600' },
-          { label: 'Need your attention', value: list.filter(needsAttention).length, icon: AlertTriangle, cls: 'from-amber-500 to-orange-600' },
+          { label: 'Verified safe', value: list.filter((i) => i.status_badge === 'verified').length, icon: ShieldCheck, cls: 'from-ok-bright to-ok-deep' },
+          { label: 'Need your attention', value: list.filter(needsAttention).length, icon: AlertTriangle, cls: 'from-gold to-warn-bright' },
         ].map((s) => (
           <motion.div key={s.label} variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }} className={`relative overflow-hidden rounded-3xl bg-gradient-to-br p-6 text-white shadow-lift ${s.cls}`}>
             <s.icon className="absolute -bottom-4 -right-4 size-24 opacity-15" />
