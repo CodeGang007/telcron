@@ -57,7 +57,9 @@ Card text for each new or rewritten card follows the table, numbered to match.
 | shown to Telcron at the Friday demo (a person says so) | Client Review |
 | accepted by the client | Done — moved by a person |
 
-**Ready for Demo holds only what the client can actually see** in the web app — a screen, a flow, a visible
+**Ready for Demo holds only what the client can actually see on the dev website.** A client-visible card whose
+work is not yet pushed and deployed stays in Testing with label `needs-push` and says so; move it to Ready for
+Demo after the release is live. It must be visible — a screen, a flow, a visible
 change. Never put internal work there. Internal work that passed QA goes straight to Done (the human's rule,
 2026-11-22). A client-visible card goes to Client Review and Done only when a person says so.
 
