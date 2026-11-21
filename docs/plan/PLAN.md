@@ -72,7 +72,7 @@ assistant (WO-015), the redesign.
 
 | # | Decision | Due (end of) | Blocks |
 |---|---|---|---|
-| D1 | Week 1 = Sat 14 Nov, go-live week = 16–22 Jan; holiday availability | W2 | All dates |
+| D1 | **Decided 2026-11-21:** Week 1 = Sat 14 Nov, go-live week = 16–22 Jan. Still open: holiday availability for W7 | W2 | W7 capacity |
 | D2 | QA and production: second/third small host, or the tech doc's target on a paid plan, or other — with monthly cost and which NFRs each option gives up (two zones, encryption at rest, least privilege, separate scaling) | W3 | QA in W4, prod in W10 |
 | D3 | AI provider for production (Groq free plan's limits and terms vs Bedrock on a paid plan vs other) and the agreed daily AI budget (§13) | W4 | Cost log, alarms, prod |
 | D4 | Phone code for Level 1: reinstate (then start SMS sender registration in W2 — it takes weeks, risk 10; costs money) or have Telcron accept email-only | W2 | W7 |
