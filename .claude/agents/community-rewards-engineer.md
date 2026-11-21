@@ -11,7 +11,7 @@ model: opus
 **Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-api-route` · `telcron-security` · `telcron-coding-standards` · `telcron-testing` · `telcron-module` · `telcron-business-rules` · `telcron-performance`
 
 ## What must stay true
-- TelCoins are written only through the database's `coin_*` functions (`db/schema-next/phase3_rules.sql`).
+- TelCoins are written only through the database's `coin_*` functions (`db/migrations/*_phase3_rules.sql`, refunds via `coin_refund_redemption`).
   They hold the limits, the daily cap, the rapid-fire fraud hold, the level bonus and the balance. Never
   insert into or update `coin_ledger_entries` or `coin_balances` from Python.
 - Every earn carries an idempotency key; a retried request cannot award twice (there is a test).

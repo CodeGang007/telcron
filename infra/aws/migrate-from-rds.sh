@@ -21,7 +21,7 @@
 #      Any difference stops here, with the API and Worker still stopped;
 #   6. keeps the dump in S3 at backups/rds-final/<UTC time>.dump (KEEP_COPY=0 skips; outside the
 #      nightly backups' 14-day clean-up);
-#   7. runs deploy-host.sh for the checked-out commit: newer migrations, phases 2-3 and reference
+#   7. runs deploy-host.sh for the checked-out commit: newer migrations and reference
 #      data, then the API and Worker start again.
 #
 # Stop writes on the old host first (docker compose stop api worker there), or they are lost.

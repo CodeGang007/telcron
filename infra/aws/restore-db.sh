@@ -6,8 +6,8 @@
 #   bash /opt/telcron/repo/infra/aws/restore-db.sh
 #
 # Without DUMP_KEY or DUMP_FILE it takes the newest object under backups/postgres/. Afterwards it runs
-# deploy-host.sh for the commit that is checked out, which brings the schema forward (newer migrations,
-# phases 2-3, reference data) and starts the API and Worker again.
+# deploy-host.sh for the commit that is checked out, which brings the schema forward (newer migrations and
+# reference data) and starts the API and Worker again.
 set -euo pipefail
 
 HERE=$(cd "$(dirname "$0")" && pwd)

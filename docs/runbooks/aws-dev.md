@@ -43,8 +43,8 @@ PostgreSQL about 300 MB (capped at 600 MB; `shared_buffers` 128 MB, 40 connectio
    points. When that has moved:
    - the EC2 host (`infra/aws/agent-backend.sh` → `deploy-host.sh`) checks out the commit, builds the
      backend image, builds the PostgreSQL and embedder images (cached), starts PostgreSQL and Redis,
-     updates the database roles and extensions, runs the migrations (dbmate), loads reference data and
-     phases 2-3, restarts the stack and seeds the admin;
+     updates the database roles and extensions, runs the migrations (dbmate, phases 1-3), loads reference data,
+     restarts the stack and seeds the admin;
    - the Lightsail host (`infra/aws/agent-web.sh`) copies the new web build into place.
 4. The `release` job waits until the API's `/health` and the web host's `/version.txt` both report the
    new commit, then runs read-only checks against the live site (`e2e/smoke.spec.ts`).
@@ -96,7 +96,7 @@ CONFIRM=replace-the-database DUMP_KEY=backups/postgres/2026/12/01.dump \
 
 It stops the API and Worker, drops and recreates the database owned by `telcron_app`, lets the
 superuser create the extensions, restores everything else as `telcron_app` in one transaction, then
-runs `deploy-host.sh` for the checked-out commit (newer migrations, phases 2-3, reference data) and
+runs `deploy-host.sh` for the checked-out commit (newer migrations, reference data) and
 starts the stack. The dump made at the cutover is kept separately under `backups/rds-final/` and is
 not touched by the 14-day clean-up.
 

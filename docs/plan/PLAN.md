@@ -64,7 +64,7 @@ assistant (WO-015), the redesign.
   shipped; WO-012 and WO-016 have no files.
 - Defects: DEF-002 (blocks the business API), DEF-004 (fixed by `/auth/resend` — close after QA), DEF-006,
   DEF-007 (item 1 blocks Medium/High review).
-- Phases 2–3 of the schema are applied by `make db-next`, not migrations (D11).
+- ~~Phases 2–3 of the schema are applied by `make db-next`, not migrations (D11).~~ Done by WO-022 (2026-11-22).
 - The schema author's after-the-fact review of how the backend uses the schema is still owed (D14).
 - Our branch `feat/agents-and-skills` describes the world before ADR-006/007 in 6 skills and 2 agents.
 

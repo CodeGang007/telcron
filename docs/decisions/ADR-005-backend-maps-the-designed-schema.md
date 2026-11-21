@@ -11,8 +11,7 @@ rules enforced in the database and its own test suite. The backend adopts it as 
 - The backend's tests build their database from the SQL in `db/`, in the order the schema's own tests use.
 - Rules the database owns are not repeated in Python: TelCoins go through the `coin_*` functions, risk
   alerts through `telcron_fanout_risk_event`, helpful counts and current passports through triggers.
-- The backend needs tables from phases 2–3, which are designed but not yet migrations. `make db-next`
-  applies `db/schema-next/` to a local database. Promoting them is the database owner's decision.
+- The backend needs tables from phases 2–3. Amended 2026-11-22: they are dbmate migrations since WO-022 (D11).
 
 What the database caught while converging, each now fixed and covered by a test: a rotated session
 could outlive its family; two accounts could verify one phone number; a certificate's status was read

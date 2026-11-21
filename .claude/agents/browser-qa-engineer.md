@@ -19,7 +19,7 @@ and defects. You never edit production code.
 make app-db && make dev        # API :4310, Worker, web :3200 — the Worker is NOT optional
 ```
 Without the Worker no passport is re-screened and no coin is confirmed: you would file defects against your own
-setup. Local needs `DEV_EXPOSE_CODES=true` (the sign-up screen shows both codes) and a short
+setup. Local needs `DEV_EXPOSE_CODES=true` (the sign-up screen shows the email code) and a short
 `COIN_CONFIRM_DELAY_SECONDS`. Demo products (fictional, one per passport state): `acme-powerblend-1000`,
 `northwind-chillmate-31`, `contoso-fastcharge-65w`, `unidentified-desk-lamp`.
 On the **dev site** codes are emailed (WO-013), never shown, and sign-up is not yet opened to the public

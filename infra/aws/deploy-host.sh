@@ -130,14 +130,9 @@ say "migrations"
 MIGRATE_DATABASE_URL="postgres://telcron_app:${APP_DB_URL_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable" \
   compose run --rm -T migrate up
 
-say "reference data and phases 2-3"
+say "reference data"
+# Phases 2-3 and their reference rows are migrations now (WO-022); `migrate up` above applies them.
 pg telcron_app -f /db/seeds/001_core_reference.sql
-if [ "$(pg telcron_app -Atc "select to_regclass('hazard_assessments') is not null")" != "t" ]; then
-  for f in phase2_schema phase2_rules phase3_schema phase3_rules; do
-    pg telcron_app -1 -f "/db/schema-next/$f.sql"
-  done
-fi
-pg telcron_app -f /db/schema-next/seed_reference.sql
 if [ "${LOAD_SAMPLE:-0}" = "1" ]; then
   say "fictional demo data"
   pg telcron_app -f /db/seeds/dev/sample_data.sql

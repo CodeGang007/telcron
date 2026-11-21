@@ -9,7 +9,7 @@ description: The catalogue of Telcron's business rules — verification levels, 
 `DEF-###` or an open point, never a quiet choice:
 
 1. The database: `docs/database/schema_spec.py` and `db/**/*_rules.sql` (CHECKs, triggers, `coin_*`).
-2. The reference data the database ships: `db/seeds/001_core_reference.sql`, `db/schema-next/seed_reference.sql`.
+2. The reference data the database ships: `db/seeds/001_core_reference.sql`, `db/migrations/*_phase2_3_reference.sql`.
 3. Decisions: `docs/decisions/ADR-*.md`.
 4. Feature List V2 (`../Resources/Telcron_Feature_List_V2.xlsx`, feature ids `TC-P1-###`).
 5. The technical documentation (`../Resources/Telcron — Technical Documentation_Updated.pdf`, sections `§n`).
@@ -43,7 +43,7 @@ Code reads them; code never hard-codes them.
 
 ## §2 TelCoins — `TC-P1-016/017/018`, tech doc §9
 **The ledger is the truth.** Every write goes through `coin_earn`, `coin_confirm_due`, `coin_spend`,
-`coin_redeem`, `coin_clawback`, `coin_apply_hold`, `coin_resolve_hold` (via `modules/rewards/service.py`).
+`coin_redeem`, `coin_refund_redemption` (WO-019), `coin_clawback`, `coin_apply_hold`, `coin_resolve_hold` (via `modules/rewards/service.py`).
 Never insert or update `coin_ledger_entries` or `coin_balances` directly.
 
 Earn rules (`coin_earn_rules`, reference data):

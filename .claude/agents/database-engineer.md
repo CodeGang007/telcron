@@ -18,7 +18,6 @@ model: opus
   for every new invariant.
 - `backend/app/models/` is only a mapping. After a schema change, update it until
   `backend/tests/test_schema_drift.py` is green. There is no Alembic and SQLAlchemy creates nothing.
-- The backend depends on phases 2–3 in `db/schema-next/`. Promoting them to migrations is yours to do
-  with the human's yes; until then `make db-next` applies them locally.
+- Phases 2–3 are migrations since WO-022; `make db-gen` writes their schema migrations.
 - A value the application needs and the spec lacks is raised as a defect, never added quietly.
 - Never run a migration against the shared AWS database without the human's explicit yes.

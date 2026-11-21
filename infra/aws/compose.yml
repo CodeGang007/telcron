@@ -100,7 +100,7 @@ services:
     stop_grace_period: 60s
     volumes:
       - pg_data:/var/lib/postgresql   # PG 18 images keep data under /var/lib/postgresql/18
-      - ../../db:/db:ro               # migrations, seeds and phases 2-3, for psql -f
+      - ../../db:/db:ro               # migrations and seeds, for psql -f
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d telcron"]
       interval: 5s

@@ -24,18 +24,21 @@ Sources: tech doc §1 and §10, Feature List V2, the Month-1 technical documenta
 | Admin | `admin` | Ingestion jobs, categories by configuration, everything the safety team does |
 | Business | API key | Read passports, screen a product, receive webhooks — **phase one target, not built** |
 
+Platform (D16): a phone-ready web app only; native apps are phase two. Market (D8): US; children's products,
+small kitchen appliances, chargers and small electronics.
+
 ## The journeys (tech doc §10.2) and their state on `main`
 | # | Journey | Built | Partial / missing |
 |---|---|---|---|
-| 1 | **Visitor finds a product** — search by text or barcode (`GET /products`), open it, read the passport with evidence and history | yes | `POST /identify` is barcode-only; photo identification waits for vectors (WO-004); camera scan screen |
-| 2 | **Sign-up to Level 1** — register, email code, phone code, Level 1, 100 coins pending | yes | codes are not sent anywhere yet (WO-005); on the dev site sign-up is closed; Google sign-in not built |
+| 1 | **Visitor finds a product** — search by text, meaning or barcode (`GET /products`), scan or photo (`POST /identify`), open it, read the passport with evidence and history | yes | photo safety check and location-data removal (WO-007, W4) |
+| 2 | **Sign-up to Level 1** — register, email code (resend once a minute), Level 1 = verified email (ADR-006, D4: no phone code in phase one), 100 coins pending | yes | on the dev site sign-up is closed (WO-021, human); Google sign-in (WO-025, W3) |
 | 3 | **Wallet** — save a product, see its badge and changes, remove it | yes | labels, watches, video verification and QR labels (phase two) |
 | 4 | **Contribute** — review (rating, title, body), helpful vote, hazard flag; coins pending → confirmed by the Worker | yes | photos on reviews and flags (WO-007), fact corrections |
-| 5 | **Evidence loop** — a review or confirmed flag triggers a re-screen, a new passport version and, if it changed, a risk event and alerts | yes (Worker) | real scoring (only `StubScorer`); email alerts |
-| 6 | **Coins** — balance, history, level, leaderboard | yes | redemptions (`POST /redemptions`), daily sign-in streaks |
-| 7 | **Safety team** — `GET /review-tasks` | list only | confirming/rejecting flags, resolving tasks and fraud holds (WO-006) |
+| 5 | **Evidence loop** — a review or confirmed flag triggers a re-screen, a new passport version and, if it changed, a risk event and alerts | yes (Worker) | model scorer (Groq/Gemini) with `StubScorer` fallback — a fallback answer is not AI; email alerts (W5) |
+| 6 | **Coins** — balance, history, level, leaderboard, daily streak, store | yes | store: only the hazard report and extra watches are on sale (D13, WO-019) |
+| 7 | **Safety team** — review queue under `/admin` (WO-055): confirm/reject flags, corrections, fraud holds | yes | Medium/High hazard review tasks (WO-034, W5) |
 | 8 | **Level 2** — ID document + selfie | no | WO-010 (needs a legal basis) |
-| 9 | **Ingestion** — admin starts a job, follows it; categories by configuration | no | WO-003 (sources and their access method undecided) |
+| 9 | **Ingestion** — admin starts a job (CPSC recalls), follows it; raw copies kept | yes | marketplace sources (D7: eBay, Best Buy official APIs, W3); categories by configuration (W3) |
 | 10 | **Business API** — keys, rate limits, `POST /screenings`, webhooks | screening endpoint only | keys and webhooks have no tables (DEF-002, WO-008) |
 
 Screens today (`frontend/src/main.tsx`): home, search, product (passport), sign-in, sign-up/verify, wallet,

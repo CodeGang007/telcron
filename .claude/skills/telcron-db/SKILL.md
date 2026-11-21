@@ -10,9 +10,8 @@ SQL, the ERD and the catalogue in `docs/database/schema-design.md`. Generated fi
 header: never hand-edit them. Hand-written rules live in `*_rules.sql`. Read `schema-design.md` before
 designing anything: it holds the decisions, the invariants and where each is enforced.
 
-- Phase 1 (38 core tables) is applied by dbmate from `db/migrations/`. Phases 2–3 are designed and tested
-  in `db/schema-next/` and not yet migrations. The backend needs them: `make db-next` applies them to the
-  LOCAL database, and `backend/tests/conftest.py` applies them to its own.
+- All three phases are applied by dbmate from `db/migrations/` (WO-022). The backend and schema tests build
+  their databases from `db/migrations` + `db/seeds/001_core_reference.sql` only. `make db-next` is retired.
 - Never edit an applied migration. Add a new one.
 
 ## The backend is a mapping, nothing more

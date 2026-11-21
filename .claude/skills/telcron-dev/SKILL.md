@@ -29,7 +29,8 @@ Worker → new passport. Without the Worker nothing is re-screened and no coin i
   (certificate issue), `unidentified-desk-lamp` (needs information). Its accounts have no password.
 - Local admin: `admin@telcron.example.com`, created by `uv run python -m app.seed` only when
   `SEED_ADMIN_PASSWORD` is set in `.env`.
-- With `DEV_EXPOSE_CODES=true` the sign-up screen shows the two codes; nothing is emailed or texted.
+- With `DEV_EXPOSE_CODES=true` the sign-up screen shows the email code; nothing is emailed. The API refuses to
+  start with it outside local/test.
 - `COIN_CONFIRM_DELAY_SECONDS=15` makes the app seed shorten the earn rules' confirmation delay locally.
 - Start and stop with `make dev` / `make dev-stop` only. Never kill dev servers by name: other projects'
   servers run on the same machines.
@@ -56,7 +57,7 @@ about a minute (the backend host builds the image first, a few minutes). `/healt
 - Passport did not change after a review: is the Worker running? `tail .dev-logs/worker.log`.
 - Stale passport: `docker compose exec redis redis-cli del telcron:passport:<product_id>`.
 - Failed jobs: `docker compose exec redis redis-cli lrange telcron:dead-letter 0 -1`.
-- `relation "hazard_assessments" does not exist`: phases 2-3 are missing. `make db-next`.
-- Start clean: `make db-reset`, then `make db-next` and `cd backend && uv run python -m app.seed`.
+- `relation "hazard_assessments" does not exist`: migrations are behind. `make db-migrate`.
+- Start clean: `make db-reset`, then `make app-db` (all three phases are dbmate migrations since WO-022).
 
 AWS dev is described in `docs/runbooks/aws-dev.md`: what runs where, how to look at it, how to sign in.
