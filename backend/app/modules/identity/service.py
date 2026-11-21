@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import ratelimit, security
@@ -96,6 +97,12 @@ async def _notify_existing_owner(email: str) -> bool:
     return True
 
 
+def _constraint(exc: IntegrityError) -> str | None:
+    """The constraint a violation names. SQLAlchemy's asyncpg adapter raises its DBAPI error
+    `from` asyncpg's, which carries the name."""
+    return getattr(exc.orig.__cause__, "constraint_name", None)
+
+
 async def register(db: AsyncSession, data: RegisterIn,
                    ip: str | None) -> tuple[dict[str, str], bool]:
     """The codes created (only for a new account) and whether the email went out. The answer is the
@@ -108,8 +115,16 @@ async def register(db: AsyncSession, data: RegisterIn,
     user = User(email=data.email, phone_e164=data.phone_e164, display_name=data.display_name,
                 password_hash=security.hash_password(data.password), password_changed_at=_now(),
                 referral_code=security.new_referral_code())
-    db.add(user)
-    await db.flush()
+    try:
+        async with db.begin_nested():  # a lost race rolls back to here, not the whole request
+            db.add(user)
+            await db.flush()
+    except IntegrityError as exc:
+        if _constraint(exc) != "users_email_key":
+            raise
+        # Another request created this address between the read and the insert (DEF-081): answer
+        # as for an address that already has an account. The password was already hashed above.
+        return {}, await _notify_existing_owner(data.email)
     # Phone codes only once an SMS route exists (ADR-006); the number, if given, is kept.
     channels = ("email", "phone") if get_settings().level1_requires_phone and data.phone_e164 \
         else ("email",)

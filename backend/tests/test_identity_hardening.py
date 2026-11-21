@@ -1,6 +1,7 @@
 """Sign-up and sign-in say nothing about who has an account (DEF-043), are rate limited (DEF-044),
 and keep codes, addresses and provider text out of responses, logs and auth_events (DEF-048)."""
 
+import asyncio
 import logging
 import uuid
 from datetime import timedelta
@@ -9,6 +10,7 @@ import pytest
 from helpers import API, PASSWORD, signup, verified_user
 from pydantic import ValidationError
 from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from app.core import ratelimit, security
@@ -64,6 +66,37 @@ async def test_register_answers_the_same_whether_or_not_the_address_has_an_accou
     to_owner = [subject for to, subject in ses if to == taken]
     assert to_owner[0].endswith("is your Telcron code")
     assert to_owner[1] == "Someone tried to create a Telcron account with your email"
+
+
+async def test_registrations_racing_for_one_new_address_all_answer_like_an_existing_one(
+        client, db, ses, monkeypatch):
+    """DEF-081: three sign-ups for one new address that all read "no account" before any of them
+    inserts. One creates it; the other two get the same 201 body, no code, and the owner a notice."""
+    monkeypatch.setattr(get_settings(), "dev_expose_codes", False)  # as deployed
+    # Hold each request after its existence read until all three have read: the race, every time.
+    barrier, real_execute, read = asyncio.Barrier(3), AsyncSession.execute, set()
+
+    async def execute(self, *args, **kwargs):
+        result = await real_execute(self, *args, **kwargs)
+        if self is not db and id(self) not in read:
+            read.add(id(self))
+            await asyncio.wait_for(barrier.wait(), 10)
+        return result
+
+    monkeypatch.setattr(AsyncSession, "execute", execute)
+    email = _email()
+    answers = await asyncio.gather(*(_register(client, email) for _ in range(3)))
+    monkeypatch.setattr(AsyncSession, "execute", real_execute)
+
+    assert [r.status_code for r in answers] == [201, 201, 201]
+    assert all(r.json() == {"email_sent": True, "dev_codes": None} for r in answers)
+    assert await db.scalar(select(func.count()).select_from(User).where(User.email == email)) == 1
+    user_id = await db.scalar(select(User.id).where(User.email == email))
+    assert await db.scalar(select(func.count()).select_from(VerificationToken)
+                           .where(VerificationToken.user_id == user_id)) == 1
+    subjects = sorted(subject for to, subject in ses if to == email)
+    assert subjects[0].endswith("is your Telcron code")
+    assert subjects[1:] == ["Someone tried to create a Telcron account with your email"] * 2
 
 
 async def test_a_locked_account_answers_like_a_wrong_password(client):
