@@ -12,6 +12,8 @@ test('a visitor searches and reads a passport without an account', async ({ page
   await expect(page.getByRole('heading', { level: 1 })).toContainText('before you buy');
   await page.getByLabel('Search by product name, brand or barcode').fill('blender');
   await page.keyboard.press('Enter');
+  // Wait for the results page: the home page's passport card can name the same product (DEF-037).
+  await expect(page).toHaveURL(/\/search\?q=blender/);
   await expect(page.getByRole('link', { name: /Acme Kitchen PowerBlend 1000/ })).toBeVisible();
   await page.getByRole('link', { name: /Acme Kitchen PowerBlend 1000/ }).click();
   await expect(passport(page).getByText('Recalled', { exact: true })).toBeVisible();
@@ -123,9 +125,10 @@ test('a hazard report is confirmed by the safety team, pays the reporter and bec
     .poll(async () => reportText(member, 'contoso-fastcharge-65w'), { timeout: 45_000 })
     .toContain(marker);
 
-  // A member who is not on the safety team has no queue.
+  // A member who is not on the safety team has no queue: the admin area is not revealed (WO-055).
   await member.goto('/review-queue');
-  await expect(member.getByText('This page is for the safety team.')).toBeVisible();
+  await expect(member).toHaveURL(/\/admin\/review-queue$/);
+  await expect(member.getByText('That page does not exist.')).toBeVisible();
 });
 
 test('an admin imports recall notices and visitors can search them', async ({ page }) => {
@@ -149,9 +152,10 @@ test('an admin imports recall notices and visitors can search them', async ({ pa
   await page.keyboard.press('Enter');
   await expect(page.getByRole('heading', { name: `Recall notices about “${word}”` })).toBeVisible();
   await expect(page.locator('li.card').first()).toContainText(new RegExp(word, 'i'));
-  // A member's pages are not an admin's: the data sources page refuses a visitor.
+  // The data sources page is in the admin area (WO-055): a visitor is asked to sign in.
   await page.goto('/data-sources');
-  await expect(page.getByText('This page is for administrators.')).toBeVisible();
+  await expect(page).toHaveURL(/\/admin\/data-sources$/);
+  await expect(page.getByText('Sign in to continue')).toBeVisible();
 });
 
 
