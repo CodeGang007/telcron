@@ -6,11 +6,14 @@
 # pulls; nothing outside can push to it, so GitHub holds no AWS credentials.
 #
 # Settings live in /opt/telcron/deploy.env (written once by setup-backend-host.sh):
-#   API_HOST, WEB_ORIGIN, DB_HOST, RDS_SECRET_ARN, [LOAD_SAMPLE], [REPO_URL], [RELEASE_BRANCH]
+#   API_HOST, WEB_ORIGIN, [LOAD_SAMPLE], [APP_SECRET_ID], [AWS_REGION], [REPO_URL], [RELEASE_BRANCH]
+# A host whose deploy.env still names DB_HOST / RDS_SECRET_ARN is the pre-ADR-007 layout; the deploy
+# script refuses to run there.
 set -euo pipefail
 
 ROOT=/opt/telcron
 set -a
+# shellcheck source=/dev/null
 . "$ROOT/deploy.env"
 set +a
 REPO_URL=${REPO_URL:-https://github.com/CodeGang007/telcron.git}

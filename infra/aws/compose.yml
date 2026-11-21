@@ -1,14 +1,25 @@
-# The application stack on the AWS dev host: reverse proxy with automatic HTTPS, API, Worker, Redis.
-# PostgreSQL is RDS, not a container. Started by infra/aws/deploy-host.sh, which writes the env file.
+# The whole backend on the single AWS dev host (EC2 t4g.small, arm64, 2 GB; ADR-007): reverse proxy with
+# automatic HTTPS, API, Worker, Redis, PostgreSQL and the embedding service. Started by
+# infra/aws/deploy-host.sh, which writes the two env files. Only Caddy publishes ports.
+#
+# Memory plan for 2 GB plus 2 GB swap: postgres ~300 MB (capped 600m), embedder ~500 MB (capped 700m),
+# api ~150 MB, worker ~100 MB, redis 96 MB, caddy ~30 MB.
 name: telcron-app
 
 x-backend: &backend
   image: ${BACKEND_IMAGE}
   restart: unless-stopped
   env_file: ${TELCRON_ENV_FILE:-/opt/telcron/.env}
+  environment:
+    # Internal network only, so no token (services/embedder/app.py accepts none when EMBED_TOKEN is unset).
+    EMBED_URL: http://embedder:8000
   depends_on:
+    postgres:
+      condition: service_healthy
     redis:
       condition: service_healthy
+    embedder:
+      condition: service_started   # the app must start even while the model is still downloading
 
 services:
   caddy:
@@ -51,7 +62,86 @@ services:
       timeout: 3s
       retries: 10
 
+  # PostgreSQL 18 with postgis, vector, citext, pg_trgm, btree_gist. Never published: the app reaches it
+  # on the compose network, deploy-host.sh and the backup through `docker compose exec`.
+  # The superuser password is read only when the data volume is first initialised; deploy-host.sh
+  # re-applies it on every deploy. Inside the container the Unix socket trusts local users (the
+  # official image's default), which is how the scripts on the host log in without a password.
+  postgres:
+    build: ./postgres
+    image: telcron-host-postgres:18   # not telcron-postgres:18, the local-dev image built from db/
+    restart: unless-stopped
+    env_file: ${TELCRON_PG_ENV_FILE:-/opt/telcron/postgres.env}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: telcron
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=40
+      - -c
+      - max_wal_size=512MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - jit=off
+      - -c
+      - log_min_duration_statement=2000
+    shm_size: 128m
+    mem_limit: 600m
+    stop_grace_period: 60s
+    volumes:
+      - pg_data:/var/lib/postgresql   # PG 18 images keep data under /var/lib/postgresql/18
+      - ../../db:/db:ro               # migrations, seeds and phases 2-3, for psql -f
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d telcron"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  # Text embeddings with an open model on the CPU (services/embedder). The model is fetched once into
+  # the models volume. First start takes a few minutes; the API copes until it answers.
+  embedder:
+    build: ../../services/embedder
+    image: telcron-embedder:local
+    restart: unless-stopped
+    mem_limit: 700m
+    volumes:
+      - embed_models:/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 300s
+
+  # Migrations (dbmate), run by deploy-host.sh with `compose run --rm migrate up`. Never started by `up`.
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: ${MIGRATE_DATABASE_URL:-}
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_NO_DUMP_SCHEMA: "true"
+      DBMATE_WAIT: "true"
+    volumes:
+      - ../../db:/db:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   caddy_data:
   caddy_config:
   redis_data:
+  pg_data:
+  embed_models:

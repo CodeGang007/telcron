@@ -3,46 +3,49 @@
 # Normally started by agent-backend.sh when the release branch moves; it can also be run by hand
 # through Session Manager.
 #
-# It reads secrets with the instance's own role. Nothing secret is passed in, printed or logged.
+# One host runs everything (ADR-007): Caddy, API, Worker, Redis, PostgreSQL and the embedder, in
+# infra/aws/compose.yml. It reads secrets with the instance's own role. Nothing secret is passed in,
+# printed, logged or put on a command line.
 #
-#   GIT_REF=<commit> API_HOST=<hostname> WEB_ORIGIN=<https://web host> DB_HOST=<rds endpoint> \
-#   RDS_SECRET_ARN=<arn> [BACKEND_IMAGE=<registry/telcron/backend:tag>] [APP_SECRET_ID=telcron/dev/app] \
+#   GIT_REF=<commit> API_HOST=<hostname> WEB_ORIGIN=<https://web host> \
+#   [BACKEND_IMAGE=<registry/telcron/backend:tag>] [APP_SECRET_ID=telcron/dev/app] \
 #   [AWS_REGION=us-east-2] [LOAD_SAMPLE=1] bash deploy-host.sh
 #
-# Without BACKEND_IMAGE the image is built on this host from the commit. With it, it is pulled.
-# The app secret must hold JWT_SECRET, APP_DB_PASSWORD and SEED_ADMIN_PASSWORD; LLM_API_KEY, MAIL_FROM, SMTP_PASSWORD and TAVILY_API_KEY are optional.
+# Without BACKEND_IMAGE the image is built on this host from the commit. With it, it is used as is
+# (pulled first when it is in ECR).
+# The app secret must hold JWT_SECRET, APP_DB_PASSWORD, SEED_ADMIN_PASSWORD and PG_SUPERUSER_PASSWORD;
+# LLM_API_KEY, MAIL_FROM, SMTP_PASSWORD and TAVILY_API_KEY are optional.
 set -euo pipefail
 
-: "${GIT_REF:?}" "${API_HOST:?}" "${WEB_ORIGIN:?}" "${DB_HOST:?}" "${RDS_SECRET_ARN:?}"
+: "${GIT_REF:?}" "${API_HOST:?}" "${WEB_ORIGIN:?}"
+# A host still set up for RDS (the layout before ADR-007) must not run this: it would start a second,
+# empty database next to the real one. It keeps running its last release until it is deleted.
+if [ -n "${DB_HOST:-}" ] || [ -n "${RDS_SECRET_ARN:-}" ]; then
+  echo "this host is set up for RDS (DB_HOST/RDS_SECRET_ARN in deploy.env); releases after ADR-007 run" >&2
+  echo "only on the single host. Not deploying. Stop this host's timer: systemctl disable --now telcron-deploy.timer" >&2
+  exit 1
+fi
 APP_SECRET_ID=${APP_SECRET_ID:-telcron/dev/app}
-export AWS_REGION=${AWS_REGION:-us-east-2}
-DB_NAME=${DB_NAME:-telcron}
 REPO_URL=${REPO_URL:-https://github.com/CodeGang007/telcron.git}
 ROOT=/opt/telcron
 REPO=$ROOT/repo
 
 say() { printf '==> %s\n' "$*"; }
 
-# Host networking so the containers can reach the instance metadata service for the role's credentials.
-aws() { docker run --rm --network host -e AWS_REGION -e AWS_DEFAULT_REGION="$AWS_REGION" public.ecr.aws/aws-cli/aws-cli "$@"; }
-field() { python3 -c 'import json,sys; print(json.load(sys.stdin)[sys.argv[1]])' "$1"; }
-psql_as() { # psql_as <user> <password> [psql arguments...]
-  local user=$1 password=$2
-  shift 2
-  docker run --rm -i --network host -e PGPASSWORD="$password" -e PGSSLMODE=require -v "$REPO/db:/db:ro" \
-    postgres:18-alpine psql -h "$DB_HOST" -U "$user" -d "$DB_NAME" -v ON_ERROR_STOP=1 -q "$@"
-}
-compose() { docker compose -f "$REPO/infra/aws/compose.yml" --env-file "$ROOT/.env" "$@"; }
-
 say "host"
-command -v docker >/dev/null || { apt-get update -q && apt-get install -y -q docker.io docker-compose-v2 && systemctl enable --now docker; }
-command -v git >/dev/null || apt-get install -y -q git
+command -v docker >/dev/null || { echo "docker is missing: run infra/aws/setup-backend-host.sh first" >&2; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo "the docker compose plugin is missing: run setup-backend-host.sh" >&2; exit 1; }
+command -v git >/dev/null || { echo "git is missing: run setup-backend-host.sh" >&2; exit 1; }
 mkdir -p "$ROOT"
 
 say "code at $GIT_REF"
 [ -d "$REPO/.git" ] || git clone -q --depth 1 "$REPO_URL" "$REPO"
 git -C "$REPO" fetch -q --depth 1 origin "$GIT_REF"
 git -C "$REPO" checkout -q --detach FETCH_HEAD
+
+# The helpers come from the commit being deployed.
+# shellcheck source=db-lib.sh
+. "$REPO/infra/aws/db-lib.sh"
 
 if [ -z "${BACKEND_IMAGE:-}" ]; then
   BACKEND_IMAGE="telcron-backend:${GIT_REF:0:12}"
@@ -52,73 +55,41 @@ fi
 
 say "secrets"
 app_secret=$(aws secretsmanager get-secret-value --secret-id "$APP_SECRET_ID" --query SecretString --output text)
-JWT_SECRET=$(field JWT_SECRET <<<"$app_secret")
-APP_DB_PASSWORD=$(field APP_DB_PASSWORD <<<"$app_secret")
-SEED_ADMIN_PASSWORD=$(field SEED_ADMIN_PASSWORD <<<"$app_secret")
+JWT_SECRET=$(json_field JWT_SECRET <<<"$app_secret")
+APP_DB_PASSWORD=$(json_field APP_DB_PASSWORD <<<"$app_secret")
+SEED_ADMIN_PASSWORD=$(json_field SEED_ADMIN_PASSWORD <<<"$app_secret")
+PG_SUPERUSER_PASSWORD=$(json_field PG_SUPERUSER_PASSWORD "" <<<"$app_secret")
+if [ -z "$PG_SUPERUSER_PASSWORD" ]; then
+  echo "the secret $APP_SECRET_ID has no PG_SUPERUSER_PASSWORD (the local PostgreSQL superuser's password)." >&2
+  echo "Add one (for example 64 hex characters) to the secret; nothing is generated here." >&2
+  exit 1
+fi
 # Optional: an API key for the hazard-scoring model. Without one the keyword placeholder scores.
-LLM_API_KEY=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("LLM_API_KEY", ""))' <<<"$app_secret")
+LLM_API_KEY=$(json_field LLM_API_KEY "" <<<"$app_secret")
 # Optional: the From address for verification codes. Without it codes are not emailed (WO-013).
-MAIL_FROM=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("MAIL_FROM", ""))' <<<"$app_secret")
+MAIL_FROM=$(json_field MAIL_FROM "" <<<"$app_secret")
 # Optional: an SMTP app password for MAIL_FROM (Gmail). With it codes go by SMTP, else by SES.
 # Spaces are dropped: Google shows the app password in groups of four.
-SMTP_PASSWORD=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("SMTP_PASSWORD", "").replace(" ", ""))' <<<"$app_secret")
+SMTP_PASSWORD=$(json_field SMTP_PASSWORD "" <<<"$app_secret")
+SMTP_PASSWORD=${SMTP_PASSWORD// /}
+MAIL_PROVIDER=log
+if [ -n "$MAIL_FROM" ]; then MAIL_PROVIDER=$([ -n "$SMTP_PASSWORD" ] && echo smtp || echo ses); fi
 # Optional: a Tavily key for product research's web search (WO-014).
-TAVILY_API_KEY=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("TAVILY_API_KEY", ""))' <<<"$app_secret")
+TAVILY_API_KEY=$(json_field TAVILY_API_KEY "" <<<"$app_secret")
 # Product photos go to the private media bucket (created with the host, named after the account);
 # Rekognition reads them. Both use the host's IAM role: no keys.
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 MEDIA_BUCKET=${MEDIA_BUCKET:-telcron-dev-media-$ACCOUNT_ID}
-MAIL_PROVIDER=log
-if [ -n "$MAIL_FROM" ]; then MAIL_PROVIDER=$([ -n "$SMTP_PASSWORD" ] && echo smtp || echo ses); fi
-master=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text)
-MASTER_USER=$(field username <<<"$master")
-MASTER_PASSWORD=$(field password <<<"$master")
+APP_DB_URL_PASSWORD=$(url_quote <<<"$APP_DB_PASSWORD")
 
-# The master password is managed and rotated by RDS, so the application does not use it. It logs in
-# as telcron_app, whose password lives in the app secret. For this dev environment that role holds
-# rds_superuser (it creates extensions and runs the migrations); production needs a narrower one.
-say "database role and extensions"
-psql_as "$MASTER_USER" "$MASTER_PASSWORD" -v app_password="$APP_DB_PASSWORD" <<'SQL'
-CREATE EXTENSION IF NOT EXISTS citext;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE EXTENSION IF NOT EXISTS btree_gist;
-CREATE EXTENSION IF NOT EXISTS postgis;
-CREATE EXTENSION IF NOT EXISTS vector;
-SELECT format('CREATE ROLE telcron_app LOGIN')
- WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'telcron_app') \gexec
-ALTER ROLE telcron_app PASSWORD :'app_password';
-GRANT rds_superuser TO telcron_app;
-GRANT ALL ON DATABASE telcron TO telcron_app;
-GRANT ALL ON SCHEMA public TO telcron_app;
-SQL
-
-say "migrations"
-docker run --rm --network host -v "$REPO/db:/db:ro" \
-  -e DATABASE_URL="postgres://telcron_app:${APP_DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}?sslmode=require" \
-  -e DBMATE_MIGRATIONS_DIR=/db/migrations -e DBMATE_NO_DUMP_SCHEMA=true \
-  ghcr.io/amacneil/dbmate:2 up
-
-say "reference data and phases 2-3"
-psql_as telcron_app "$APP_DB_PASSWORD" -f /db/seeds/001_core_reference.sql
-if [ "$(psql_as telcron_app "$APP_DB_PASSWORD" -Atc "select to_regclass('hazard_assessments') is not null")" != "t" ]; then
-  for f in phase2_schema phase2_rules phase3_schema phase3_rules; do
-    psql_as telcron_app "$APP_DB_PASSWORD" -1 -f "/db/schema-next/$f.sql"
-  done
-fi
-psql_as telcron_app "$APP_DB_PASSWORD" -f /db/schema-next/seed_reference.sql
-if [ "${LOAD_SAMPLE:-0}" = "1" ]; then
-  say "fictional demo data"
-  psql_as telcron_app "$APP_DB_PASSWORD" -f /db/seeds/dev/sample_data.sql
-fi
-
-say "environment file"
+say "environment files"
 umask 077
 cat > "$ROOT/.env" <<EOF
 ENV=dev
 BACKEND_IMAGE=$BACKEND_IMAGE
 API_HOST=$API_HOST
 WEB_ORIGIN=$WEB_ORIGIN
-DATABASE_URL=postgresql://telcron_app:${APP_DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}?ssl=require
+DATABASE_URL=postgresql://telcron_app:${APP_DB_URL_PASSWORD}@postgres:5432/${DB_NAME}
 REDIS_URL=redis://redis:6379
 JWT_SECRET=$JWT_SECRET
 AI_PROVIDER=$([ -n "$LLM_API_KEY" ] && echo llm || echo stub)
@@ -132,6 +103,42 @@ MEDIA_STORE=s3
 MEDIA_BUCKET=$MEDIA_BUCKET
 IMAGE_READER=rekognition
 EOF
+# Read by the postgres container only (the app containers never see the superuser's password). It
+# takes effect when the data volume is first created; the role is updated below on every deploy.
+cat > "$ROOT/postgres.env" <<EOF
+POSTGRES_PASSWORD=$PG_SUPERUSER_PASSWORD
+EOF
+
+say "database"
+compose build -q postgres embedder
+compose up -d --wait postgres redis
+# The application logs in as telcron_app, which owns the schema but is not a superuser. The
+# superuser creates the extensions (postgis and vector are not trusted extensions), so the
+# migration's own CREATE EXTENSION IF NOT EXISTS finds them there. Passwords travel on stdin.
+{
+  echo "ALTER ROLE postgres PASSWORD $(sql_literal "$PG_SUPERUSER_PASSWORD");"
+  echo "SELECT 'CREATE ROLE telcron_app LOGIN' WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'telcron_app') \\gexec"
+  echo "ALTER ROLE telcron_app NOSUPERUSER NOCREATEROLE NOCREATEDB PASSWORD $(sql_literal "$APP_DB_PASSWORD");"
+  echo "ALTER DATABASE $DB_NAME OWNER TO telcron_app;"
+  for ext in $DB_EXTENSIONS; do echo "CREATE EXTENSION IF NOT EXISTS $ext;"; done
+} | pg postgres
+
+say "migrations"
+MIGRATE_DATABASE_URL="postgres://telcron_app:${APP_DB_URL_PASSWORD}@postgres:5432/${DB_NAME}?sslmode=disable" \
+  compose run --rm -T migrate up
+
+say "reference data and phases 2-3"
+pg telcron_app -f /db/seeds/001_core_reference.sql
+if [ "$(pg telcron_app -Atc "select to_regclass('hazard_assessments') is not null")" != "t" ]; then
+  for f in phase2_schema phase2_rules phase3_schema phase3_rules; do
+    pg telcron_app -1 -f "/db/schema-next/$f.sql"
+  done
+fi
+pg telcron_app -f /db/schema-next/seed_reference.sql
+if [ "${LOAD_SAMPLE:-0}" = "1" ]; then
+  say "fictional demo data"
+  pg telcron_app -f /db/seeds/dev/sample_data.sql
+fi
 
 say "start"
 case "$BACKEND_IMAGE" in
