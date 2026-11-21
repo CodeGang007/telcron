@@ -1462,6 +1462,7 @@ Catalogue of what coins buy.
 | `quantity` | integer | yes |  |  |  |
 | `is_active` | boolean |  |  | `true` |  |
 
+**Rules (triggers/functions):** Phase one sells only pdf_report and watchlist_slots items; the rest are is_active = false (D13, WO-019). coin_redeem() refuses an inactive item.  
 **Checks:** `cost_coins > 0`; `quantity IS NULL OR quantity > 0`
 
 #### `redemptions` — phase 3
@@ -1481,6 +1482,7 @@ A redemption; its spend is exactly one ledger entry. Fulfilment evidence recorde
 | `fulfilled_at` | timestamptz | yes |  |  |  |
 | `created_at` | timestamptz |  |  | `now()` |  |
 
+**Rules (triggers/functions):** coin_redeem(): spend + redemption in one transaction, idempotent on its key. coin_refund_redemption(): a processing or failed redemption with nothing delivered gets one confirmed refund entry reversing its spend and becomes refunded; a repeat returns the same entry and pays nothing. No redemption is left processing (WO-019): one that cannot be fulfilled is refunded.  
 **Checks:** `(status = 'fulfilled') = (fulfilled_at IS NOT NULL)`  
 **Indexes:** `(user_id, created_at DESC)`
 
