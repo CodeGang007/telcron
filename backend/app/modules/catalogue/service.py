@@ -2,9 +2,10 @@
 
 import json
 import uuid
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -22,6 +23,7 @@ from app.models import (
     ProductAlias,
     ProductCertification,
     Recall,
+    Review,
     ScreeningMatch,
     SearchQuery,
 )
@@ -72,10 +74,54 @@ async def search(db: AsyncSession, q: str, limit: int, user_id: uuid.UUID | None
         return [_summary(r) for r in exact]
     rank = func.greatest(func.word_similarity(q, Product.canonical_name),
                          func.word_similarity(q, func.coalesce(Brand.name, "")))
-    rows = (await db.execute(_summary_query().where(or_(
+    words = _summary_query().where(or_(
         Product.canonical_name.ilike(f"%{q}%"), Brand.name.ilike(f"%{q}%"), rank > 0.35))
-        .order_by(rank.desc(), Product.canonical_name).offset(offset).limit(limit))).all()
-    return [_summary(r) for r in rows]
+    meaning = await _by_meaning(db, q)
+    if not meaning:  # no embedder, or it is down: words alone
+        rows = (await db.execute(words.order_by(rank.desc(), Product.canonical_name)
+                                 .offset(offset).limit(limit))).all()
+        return [_summary(r) for r in rows]
+    # Both lists, fused by reciprocal rank: a product found by its name and by its meaning ranks
+    # first; one found only by meaning ("phone that caught fire") still appears.
+    by_words = (await db.execute(words.order_by(rank.desc(), Product.canonical_name)
+                                 .limit(CANDIDATES))).all()
+    score: dict[uuid.UUID, float] = {}
+    for i, row in enumerate(by_words):
+        score[row.id] = score.get(row.id, 0) + 1 / (RRF_K + i)
+    for i, product_id in enumerate(meaning):
+        score[product_id] = score.get(product_id, 0) + 1 / (RRF_K + i)
+    order = sorted(score, key=lambda k: -score[k])[offset:offset + limit]
+    if not order:
+        return []
+    rows = {r.id: r for r in (await db.execute(_summary_query().where(Product.id.in_(order)))).all()}
+    return [_summary(rows[i]) for i in order if i in rows]
+
+
+CANDIDATES = 50
+RRF_K = 60
+CLOSE = 0.38  # cosine distance under which a product is about the query (calibrated, WO-015)
+NEAREST = """
+    SELECT pe.product_id FROM product_embeddings pe JOIN products p ON p.id = pe.product_id
+    WHERE pe.model_code = :model AND p.status = 'active'
+      AND (pe.embedding::vector(DIMS)) <=> CAST(:v AS vector(DIMS)) < :close
+    ORDER BY (pe.embedding::vector(DIMS)) <=> CAST(:v AS vector(DIMS)) LIMIT :n"""
+
+
+async def _by_meaning(db: AsyncSession, q: str) -> list[uuid.UUID]:
+    from app.modules.assistant import embedder
+    from app.modules.assistant.index import vector_literal
+    if not embedder.enabled() or len(q) < 3:
+        return []
+    try:
+        [vector] = await embedder.embed([q], "query")
+    except embedder.EmbedderUnavailable:
+        return []
+    # The only value written into the SQL is the vector's length, an integer: the HNSW index is on
+    # `embedding::vector(<dims>)`, so the query must cast the same way to use it.
+    sql = NEAREST.replace("DIMS", str(int(len(vector))))
+    rows = await db.execute(text(sql), {"model": get_settings().embed_model,
+                                        "v": vector_literal(vector), "close": CLOSE, "n": CANDIDATES})
+    return list(rows.scalars())
 
 
 async def find_product(db: AsyncSession, id_or_slug: str) -> Product | None:
@@ -166,3 +212,52 @@ async def passport_view(db: AsyncSession, product: Product) -> dict[str, Any] | 
     }
     await redis.set(key, json.dumps(view), ex=get_settings().passport_cache_seconds)
     return view
+
+
+ALTERNATIVES = """
+    SELECT pe2.product_id, (pe2.embedding::vector(DIMS)) <=> (pe.embedding::vector(DIMS)) AS distance
+    FROM product_embeddings pe
+    JOIN product_embeddings pe2 ON pe2.model_code = pe.model_code AND pe2.product_id <> pe.product_id
+    WHERE pe.product_id = :product AND pe.model_code = :model
+    ORDER BY 2 LIMIT 40"""
+
+
+async def alternatives(db: AsyncSession, product: Product, limit: int = 6) -> dict[str, Any]:
+    """Products like this one that Telcron has verified: a current passport with the "verified"
+    badge and a trust score at least as high as this product's (or 60 when it has none). Closest in
+    meaning first when vectors exist, otherwise the same category by trust score."""
+    mine = await db.get(Passport, product.current_passport_id) if product.current_passport_id else None
+    floor = max(Decimal(60), mine.trust_score or Decimal(0)) if mine else Decimal(60)
+    order: list[uuid.UUID] = []
+    closeness: dict[uuid.UUID, float] = {}
+    dims = await db.scalar(text("""SELECT m.dimensions FROM embedding_models m
+        JOIN product_embeddings pe ON pe.model_code = m.code
+        WHERE pe.product_id = :p AND m.code = :m"""), {"p": product.id, "m": get_settings().embed_model})
+    if dims:
+        rows = await db.execute(text(ALTERNATIVES.replace("DIMS", str(int(dims)))),
+                                {"product": product.id, "model": get_settings().embed_model})
+        for product_id, distance in rows:
+            order.append(product_id)
+            closeness[product_id] = round(1 - float(distance), 3)
+    safe = (_summary_query().where(Passport.status_badge == "verified",
+                                   Passport.trust_score >= floor, Product.id != product.id))
+    if order:
+        rows = {r.id: r for r in (await db.execute(safe.where(Product.id.in_(order)))).all()}
+        picked = [rows[i] for i in order if i in rows and closeness[i] >= 0.55][:limit * 2]
+    else:
+        picked = []
+    how = "meaning" if picked else "category"
+    if not picked:  # no vectors, or nothing close: the same category
+        picked = (await db.execute(safe.where(Product.category_id == product.category_id)
+                                   .order_by(Passport.trust_score.desc()).limit(limit * 2))).all()
+    stats = {pid: (float(avg), n) for pid, avg, n in (await db.execute(
+        select(Review.product_id, func.avg(Review.rating), func.count()).where(
+            Review.product_id.in_([r.id for r in picked]), Review.status == "published",
+            Review.deleted_at.is_(None)).group_by(Review.product_id))).all()}
+    # Safety first, then what owners say, then how alike they are.
+    picked.sort(key=lambda r: (-(float(r.trust_score or 0)), -stats.get(r.id, (0, 0))[0],
+                               -(closeness.get(r.id) or 0)))
+    return {"basis": how, "trust_floor": float(floor),
+            "items": [{**_summary(r), "closeness": closeness.get(r.id),
+                       "rating": round(stats[r.id][0], 1) if r.id in stats else None,
+                       "reviews": stats.get(r.id, (0, 0))[1]} for r in picked[:limit]]}

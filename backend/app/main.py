@@ -10,6 +10,7 @@ from sqlalchemy import text
 from app.core.config import get_settings
 from app.core.db import engine
 from app.core.redis import close_redis, get_redis
+from app.modules.assistant.router import router as assistant
 from app.modules.catalogue.router import router as catalogue
 from app.modules.community.router import router as community
 from app.modules.identity.router import router as identity
@@ -43,7 +44,7 @@ app.add_middleware(CORSMiddleware, allow_origins=[get_settings().web_origin],
 
 # The route table of contents. Only tech-lead edits this list.
 for router in (identity, catalogue, community, wallet, rewards, screening, moderation, ingestion,
-               research):
+               research, assistant):
     app.include_router(router, prefix="/api/v1")
 
 

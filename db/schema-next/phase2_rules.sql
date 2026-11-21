@@ -36,6 +36,10 @@ CREATE TRIGGER media_embeddings_dims BEFORE INSERT OR UPDATE ON media_embeddings
     FOR EACH ROW EXECUTE FUNCTION telcron_embedding_dims_check();
 CREATE TRIGGER recall_embeddings_dims BEFORE INSERT OR UPDATE ON recall_embeddings
     FOR EACH ROW EXECUTE FUNCTION telcron_embedding_dims_check();
+CREATE TRIGGER product_embeddings_dims BEFORE INSERT OR UPDATE ON product_embeddings
+    FOR EACH ROW EXECUTE FUNCTION telcron_embedding_dims_check();
+CREATE TRIGGER evidence_embeddings_dims BEFORE INSERT OR UPDATE ON evidence_embeddings
+    FOR EACH ROW EXECUTE FUNCTION telcron_embedding_dims_check();
 
 -- Creates the HNSW index for an embedding model when it is activated (one index per model+table).
 CREATE OR REPLACE FUNCTION telcron_create_embedding_index(p_table text, p_model text) RETURNS void

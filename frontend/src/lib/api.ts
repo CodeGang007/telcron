@@ -105,6 +105,8 @@ const MESSAGES: Record<string, string> = {
   photo_identification_unavailable: 'Reading photos is not available right now. Type the details instead.',
   photo_unreadable: 'That photo could not be read. Try a JPEG or PNG under 3 MB.',
   unknown_category: 'Choose one of the listed categories.',
+  assistant_quota_reached: 'You have asked a lot today. The assistant is available again tomorrow.',
+  thread_not_found: 'That conversation is not available.',
   research_not_due: 'This product was searched recently. It can be searched again tomorrow.',
   product_not_found: 'We could not find that product.',
   invalid_barcode: 'That is not a valid barcode. Check the digits and try again.',

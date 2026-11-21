@@ -7,8 +7,8 @@ dimension cites evidence; assessments and passports are insert-only; a passport'
 next one and its badge agrees with its screening. This module orders its writes to satisfy those
 rules and never works around them.
 
-Vector retrieval (Titan + pgvector) is not wired — WO-004. Recall candidates come from
-identifier equality and name similarity only.
+Recall candidates come from identifier equality, name similarity, and (WO-015) closeness in meaning
+between the product's vector and the recalls' vectors (bge-small + pgvector).
 """
 
 import time
@@ -19,6 +19,7 @@ from decimal import Decimal
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.events import audit, emit
 from app.domain import passport as passport_rules
 from app.domain.hazard import DimensionScore, total_score
@@ -58,6 +59,15 @@ SETTING = text("select coalesce((select (value #>> '{}')::numeric from app_setti
                "where key = :key), cast(:fallback as numeric))")
 BAND = text("select label from scoring_bands where context_code = :context "
             "and score_range @> cast(:total as numeric)")
+MEANING = text("""
+    SELECT re.recall_id, re.embedding <=> pe.embedding AS distance, max(rp.brand_name)
+    FROM product_embeddings pe
+    JOIN recall_embeddings re ON re.model_code = pe.model_code
+    JOIN recall_products rp ON rp.recall_id = re.recall_id
+    WHERE pe.product_id = :product AND pe.model_code = :model
+      AND re.embedding <=> pe.embedding < 0.2
+    GROUP BY re.recall_id, re.embedding, pe.embedding
+    ORDER BY 2 LIMIT 10""")
 ALERT_THRESHOLD = text("select alert_threshold from scoring_contexts where code = :context")
 
 
@@ -107,6 +117,17 @@ async def _recall_candidates(db: AsyncSession, product: Product, brand: str | No
         if brand and recall_brand and _norm(brand) == _norm(recall_brand):
             found[recall.id] = (recall, "near_match", Decimal(str(round(float(score), 3))),
                                 float(score), "Similar product name and the same brand.")
+    # By meaning (WO-015): recalls whose text is about what this product's vector is about, where
+    # both have vectors for the active model. The same brand is still required for a near match.
+    rows = (await db.execute(MEANING, {"product": product.id,
+                                       "model": get_settings().embed_model})).all()
+    for recall_id, distance, recall_brand in rows:
+        if recall_id in found or not (brand and recall_brand and _norm(brand) == _norm(recall_brand)):
+            continue
+        recall = await db.get(Recall, recall_id)
+        closeness = round(1 - float(distance), 3)
+        found[recall_id] = (recall, "near_match", Decimal(str(closeness)), closeness,
+                            "Recall text close in meaning to this product, and the same brand.")
     return list(found.values())
 
 
@@ -133,6 +154,8 @@ async def _issue(db: AsyncSession, product: Product, screening: Screening,
     await db.refresh(product)
     audit(db, action="passport.issued", entity_type="passport", entity_id=passport.id,
           changes={"version": passport.version, "badge": passport.status_badge})
+    # Its vectors follow what is known about it (WO-015); done in the Worker.
+    emit(db, "product", product.id, "ProductIndexRequested", {"product_id": str(product.id)})
     return passport
 
 

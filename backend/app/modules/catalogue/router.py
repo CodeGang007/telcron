@@ -85,6 +85,15 @@ async def get_passport(id_or_slug: str, db: Db) -> dict[str, Any]:
     return view
 
 
+@router.get("/products/{id_or_slug}/alternatives")
+async def get_alternatives(id_or_slug: str, db: Db) -> dict[str, Any]:
+    """Similar products Telcron has verified as at least as safe as this one."""
+    product = await service.find_product(db, id_or_slug)
+    if product is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "product_not_found")
+    return await service.alternatives(db, product)
+
+
 @router.get("/media/{asset_id}", include_in_schema=False)
 async def media(asset_id: uuid.UUID, db: Db) -> RedirectResponse:
     """A product photo: a short-lived link into the private bucket. Only photos a member confirmed

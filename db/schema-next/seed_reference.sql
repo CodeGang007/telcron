@@ -25,8 +25,13 @@ INSERT INTO embedding_models (code, modality, dimensions, is_active) VALUES
     ('titan-embed-text-v2:1024', 'text',       1024, true),
     ('nova-mm-embed-v1:1024',    'multimodal', 1024, false),
     ('clip-vit-l-14:768',        'image',      768,  false),
-    ('bge-small-en-v1.5:384',    'text',       384,  false)
+    ('bge-small-en-v1.5:384',    'text',       384,  true)
 ON CONFLICT (code) DO NOTHING;
+-- WO-015: the text model in use is the open-source bge-small, served by our embedder; Titan is not
+-- available on the account's plan. One HNSW index per table for it (no-ops once they exist).
+UPDATE embedding_models SET is_active = (code = 'bge-small-en-v1.5:384') WHERE modality = 'text';
+SELECT telcron_create_embedding_index(t, 'bge-small-en-v1.5:384')
+FROM unnest(ARRAY['recall_embeddings', 'product_embeddings', 'evidence_embeddings']) AS t;
 
 -- Phase 3 — TelCoins (TC-P1-016/017/018)
 INSERT INTO coin_earn_rules (code, amount, counts_toward_daily_cap, per_subject_limit, lifetime_limit) VALUES

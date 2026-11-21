@@ -18,6 +18,8 @@ import { useCallback, useState, type FormEvent } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { FactForm, FlagForm } from '../components/Contribute';
+import { Alternatives, StoreLinks } from '../components/Alternatives';
+import { Assistant } from '../components/Assistant';
 import { Research } from '../components/Research';
 import { CategoryTile, EmptyState, Notice, Pager, Skeleton, Stars, StatusBadge, TrustRing, scoreTone } from '../components/ui';
 import { api, apiUrl, explain, post, type Dimension, type Passport, type ProductDetail, type Review } from '../lib/api';
@@ -202,6 +204,10 @@ export function Product() {
             <p className="eyebrow">{p.category}</p>
             <h1 className="mt-1 max-w-2xl font-display text-3xl font-extrabold tracking-tight sm:text-4xl">{p.name}</h1>
             <p className="mt-2 text-muted">{[p.brand, p.model_number].filter(Boolean).join(' · ')}</p>
+            <details className="group mt-3">
+              <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted hover:text-ink">Where to buy<span className="transition group-open:rotate-180">▾</span></summary>
+              <div className="mt-2"><StoreLinks product={p} /></div>
+            </details>
           </div>
         </div>
         <div className="flex gap-2">
@@ -284,6 +290,7 @@ export function Product() {
       </section>
 
       <div className="mt-8"><Research slug={p.slug} onRated={rated} /></div>
+      <Assistant slug={p.slug} name={p.name} />
 
       {pass?.hazard && (
         <section className="mt-8 grid gap-8 lg:grid-cols-[1.4fr_1fr]">
@@ -320,6 +327,8 @@ export function Product() {
           </div>
         </section>
       )}
+
+      <div className="mt-8"><Alternatives slug={p.slug} category={p.category} /></div>
 
       <section aria-labelledby="reviews" className="mt-12 grid gap-8 lg:grid-cols-[1fr_24rem]">
         <div>

@@ -1,6 +1,7 @@
 """The Worker service: one arq worker per job queue, in one process.
 
-Wired: ingest, screening, coins, alerts, and a nightly recall sync. NOT wired (no consumer runs,
+Wired: ingest, screening, coins, alerts, index (vectors), a nightly recall sync and a nightly
+vector catch-up. NOT wired (no consumer runs,
 by design — a queue with a placeholder consumer would swallow jobs): media and identity.
 """
 
@@ -14,14 +15,17 @@ from typing import Any
 from arq import Retry, cron
 from arq.worker import Worker, func
 
+from app.core.db import SessionLocal
 from app.core.events import DEAD_LETTER_KEY, ROUTES, queue_name
 from app.core.redis import redis_settings
+from app.modules.assistant import embedder
+from app.modules.assistant.index import backfill
 from app.modules.ingestion.service import run_job, schedule_nightly
-from app.workers.handlers import alerts, coins, ingest, screening
+from app.workers.handlers import alerts, coins, index, ingest, screening
 
 log = logging.getLogger("telcron.worker")
 HANDLERS = {"ingest": ingest.handle, "screening": screening.handle, "coins": coins.handle,
-            "alerts": alerts.handle}
+            "alerts": alerts.handle, "index": index.handle}
 MAX_TRIES = 5
 DONE_TTL = 7 * 24 * 3600
 
@@ -54,6 +58,16 @@ async def nightly_recall_sync(ctx: dict[str, Any]) -> str:
     return f"recall sync: {stats}"
 
 
+async def nightly_vectors(ctx: dict[str, Any]) -> str:
+    """04:00 UTC: vectors for any product or recall that has none yet."""
+    if not embedder.enabled():
+        return "no embedder"
+    async with SessionLocal() as db:
+        done = await backfill(db)
+        await db.commit()
+    return f"vectors: {done}"
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     workers = [Worker(functions=[func(handle, name="handle", max_tries=MAX_TRIES)],
@@ -61,7 +75,8 @@ async def main() -> None:
                       handle_signals=False, max_jobs=10, poll_delay=0.5, keep_result=3600)
                for q in HANDLERS]
     # One more worker for the schedule; arq runs a cron job once however many workers are up.
-    workers.append(Worker(cron_jobs=[cron(nightly_recall_sync, hour=3, minute=0)],
+    workers.append(Worker(cron_jobs=[cron(nightly_recall_sync, hour=3, minute=0),
+                                     cron(nightly_vectors, hour=4, minute=0)],
                           queue_name=queue_name("schedule"), redis_settings=redis_settings(),
                           handle_signals=False, poll_delay=5, keep_result=3600))
     tasks = [asyncio.create_task(w.async_run()) for w in workers]

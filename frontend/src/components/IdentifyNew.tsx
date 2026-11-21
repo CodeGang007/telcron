@@ -30,6 +30,23 @@ async function shrink(file: File): Promise<string> {
   return canvas.toDataURL('image/jpeg', 0.85);
 }
 
+function Steps({ at }: { at: number }) {
+  const steps = ['Barcode', 'Photos', 'Check details', 'Research'];
+  return (
+    <ol className="flex items-center gap-2 text-xs font-semibold" aria-label="Progress">
+      {steps.map((s, i) => (
+        <li key={s} className="flex flex-1 items-center gap-2" aria-current={i === at ? 'step' : undefined}>
+          <span className={`grid size-6 shrink-0 place-items-center rounded-full transition ${i < at ? 'bg-ok text-white' : i === at ? 'bg-ink text-white' : 'bg-panel text-muted'}`}>
+            {i < at ? <Check className="size-3.5" /> : i + 1}
+          </span>
+          <span className={`hidden sm:inline ${i <= at ? 'text-ink' : 'text-muted'}`}>{s}</span>
+          {i < steps.length - 1 && <span className={`h-px flex-1 ${i < at ? 'bg-ok' : 'bg-line'}`} />}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /** A product no database knows: a photo gives a suggestion, the member checks it, then it is added. */
 export function IdentifyNew({ barcode, onCancel }: { barcode: string | null; onCancel: () => void }) {
   const { me } = useAuth();
@@ -90,6 +107,7 @@ export function IdentifyNew({ barcode, onCancel }: { barcode: string | null; onC
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card space-y-6 !p-8">
+      <Steps at={busy ? 3 : suggestion || manual ? 2 : taken.length ? 1 : barcode ? 1 : 0} />
       <div className="flex items-start gap-4">
         <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-gold-tint text-amber-600"><Sparkles className="size-6" /></span>
         <div>

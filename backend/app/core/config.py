@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     media_bucket: str | None = None
     # `rekognition` reads text and labels from a photo before the vision model; `none` skips it.
     image_reader: str = "none"
+    # Embeddings (WO-015): our own embedder service (services/embedder). Unset = no vectors; search
+    # and the assistant fall back to text matching and recency.
+    embed_url: str | None = None
+    embed_token: str | None = None
+    embed_model: str = "bge-small-en-v1.5:384"
     aws_region: str = "us-east-2"
     # Level 1 needs a verified phone too. Off until an SMS route exists (ADR-006).
     level1_requires_phone: bool = False
