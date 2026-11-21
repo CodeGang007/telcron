@@ -21,14 +21,14 @@ Friday that closes each week (tech doc §15.5). *Assumption — D1.*
 | W4 | Sat 5 – Fri 11 Dec | Media pipeline, photos on contributions, certificates, QA environment | **M2 Scan to passport** |
 | W5 | Sat 12 – Fri 18 Dec | Wallet watches and email alerts; Medium/High review; AI log and cache | — |
 | W6 | Sat 19 – Fri 25 Dec | Evidence loop; evaluation set; trust formula; metrics | **M3 Evidence loop** |
-| W7 | Sat 26 Dec – Fri 1 Jan | Level 2 identity (half capacity: holidays) | — |
+| W7 | Sat 26 Dec – Fri 1 Jan | Level 2 identity (full week, D1) | — |
 | W8 | Sat 2 – Fri 8 Jan | Business API, second source, alarms, restore rehearsal | **M4 Feature complete** (in QA) |
 | W9 | Sat 9 – Fri 15 Jan | Feature freeze: regression, load, security, replay rehearsal | **M5 Release candidate** |
 | W10 | Sat 16 – Fri 22 Jan 2027 | Acceptance, production, launch ingestion, go-live, handover | **M6 Go-live** |
 
 **Capacity.** The tech doc assumes three full-time developers (§2.3, §15.1). The real team is smaller, with
 agents doing much of the build; every week below is sized to be cut from the bottom of its list.
-**Holidays.** 25 Dec closes W6 and 1 Jan closes W7; W7 is half capacity. If more is lost, the first
+**Holidays.** 25 Dec closes W6 and 1 Jan closes W7; W7 is a full working week (D1). If more is lost, the first
 candidate to leave the release is the business API — but M4 includes it, so that is decision D12, not a default.
 
 ## 2. Where Telcron stands (2026-11-21)
@@ -72,22 +72,22 @@ assistant (WO-015), the redesign.
 
 | # | Decision | Due (end of) | Blocks |
 |---|---|---|---|
-| D1 | **Decided 2026-11-21:** Week 1 = Sat 14 Nov, go-live week = 16–22 Jan. Still open: holiday availability for W7 | W2 | W7 capacity |
+| D1 | **Decided 2026-11-21:** Week 1 = Sat 14 Nov, go-live week = 16–22 Jan; W7 is a full working week | W2 | — |
 | D2 | QA and production: second/third small host, or the tech doc's target on a paid plan, or other — with monthly cost and which NFRs each option gives up (two zones, encryption at rest, least privilege, separate scaling) | W3 | QA in W4, prod in W10 |
 | D3 | AI provider for production (Groq free plan's limits and terms vs Bedrock on a paid plan vs other) and the agreed daily AI budget (§13) | W4 | Cost log, alarms, prod |
-| D4 | Phone code for Level 1: reinstate (then start SMS sender registration in W2 — it takes weeks, risk 10; costs money) or have Telcron accept email-only | W2 | W7 |
+| D4 | **Decided 2026-11-21:** email only for Level 1 (ADR-006 stands); phone code is phase two | W2 | — |
 | D5 | Level 2 provider and the legal basis and retention for ID images (risk 5) | W4 | W7 |
 | D6 | Business accounts in the schema (DEF-002, schema Q8) | W4 | W5 tables, W8 API |
-| D7 | Which two marketplace sources, API or scraping each, and Telcron's legal confirmation (risk 4) | W2 | W3, W8 |
-| D8 | Three launch categories and the countries (risk 3) | W2 | W3 config, evals, launch ingestion |
+| D7 | **Decided 2026-11-21:** eBay and Best Buy, both through their official APIs. Telcron's written legal OK still to be recorded before each is enabled | W2 | W3, W8 |
+| D8 | **Decided 2026-11-21:** US only; categories: children's products, small kitchen appliances, chargers and small electronics | W2 | — |
 | D9 | Passport trust-score formula (ADR-004, risk 2) | W5 | W6 |
 | D10 | The AI accuracy bar for go-live (§14.1, risk 6) | W6 | M5 |
-| D11 | Promote phases 2–3 to migrations | W2 | Clean QA/prod databases |
+| D11 | **Decided 2026-11-21:** promote phases 2–3 to migrations in W2 | W2 | — |
 | D12 | If W7 slips: what leaves the release (business API conflicts with M4) | W6 | M4 |
-| D13 | Redemptions: switch off the four phase-two items; is the printable hazard report acceptable | W2 | W2 fix |
+| D13 | **Decided 2026-11-21:** switch off the four phase-two items, refund any stuck redemptions; the printable hazard report stays | W2 | — |
 | D14 | The schema author's review of the backend's use of the schema | W3 | Confidence in WO-011 |
 | D15 | Production email sender (Gmail SMTP vs SES) for codes and alerts | W4 | W5 email alerts |
-| D16 | A phone-ready web app (no native apps) is acceptable for launch (risk 9) | W2 | Scope |
+| D16 | **Decided 2026-11-21:** phone-ready web app only; native apps are phase two (Telcron's written OK to be recorded) | W2 | — |
 
 Contradictions to keep in `docs/requirements/open-points.md`: session length (`TC-P1-002` 90 min/20 min idle vs
 §8.2 1 h/30 d — code follows §8.2); reviews per product (code enforces one, schema allows more).

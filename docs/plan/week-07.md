@@ -1,4 +1,4 @@
-# Week 7 · Sat 26 Dec – Fri 1 Jan · Level 2 identity (half capacity)
+# Week 7 · Sat 26 Dec – Fri 1 Jan · Level 2 identity (full week)
 
 ## Goal
 Fully Verified members, with ID images that never outlive the match. Holiday week: two work orders only.

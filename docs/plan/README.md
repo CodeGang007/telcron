@@ -15,7 +15,7 @@ the catalogue, screening, community and rewards. Its outcome is in PLAN §2 and 
 | W4 | Sat 5 – Fri 11 Dec | Media pipeline, photos on contributions, certificates, QA environment | [week-04.md](week-04.md) |
 | W5 | Sat 12 – Fri 18 Dec | Wallet watches and email alerts; Medium/High review; AI log and cache | [week-05.md](week-05.md) |
 | W6 | Sat 19 – Fri 25 Dec | Evidence loop; evaluation set; trust formula; metrics | [week-06.md](week-06.md) |
-| W7 | Sat 26 Dec – Fri 1 Jan | Level 2 identity (half capacity) | [week-07.md](week-07.md) |
+| W7 | Sat 26 Dec – Fri 1 Jan | Level 2 identity (full week) | [week-07.md](week-07.md) |
 | W8 | Sat 2 – Fri 8 Jan | Business API, second source, alarms, restore rehearsal | [week-08.md](week-08.md) |
 | W9 | Sat 9 – Fri 15 Jan | Feature freeze: regression, load, security, replay rehearsal | [week-09.md](week-09.md) |
 | W10 | Sat 16 – Fri 22 Jan 2027 | Acceptance, production, launch ingestion, go-live, handover | [week-10.md](week-10.md) |
