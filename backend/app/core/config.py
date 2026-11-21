@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.groq.com/openai/v1"
     llm_model: str = "openai/gpt-oss-120b"
     vision_model: str = "qwen/qwen3.8-27b"
+    # Used when the main model's daily token allowance is spent (each model has its own on the
+    # free plan): research reading, hazard scoring and the assistant keep working.
+    llm_fallback_model: str = "openai/gpt-oss-20b"
     passport_cache_seconds: int = 24 * 3600
     # Local demos only: the application seed shortens every earn rule's confirmation delay to this.
     coin_confirm_delay_seconds: int | None = None

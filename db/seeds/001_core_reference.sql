@@ -35,6 +35,7 @@ INSERT INTO data_sources (code, name, kind, base_url, country_codes) VALUES
     ('web_search',   'Web search (product research)',  'internal',                NULL,                                                    '{}'),
     ('regulator_web','Web search of safety regulators','recall_authority',        NULL,                                                    '{}'),
     ('community_web','Owner reports: forums, social media, marketplace reviews', 'social', NULL,                                          '{}'),
+    ('review_web',   'Expert and owner reviews (web search)', 'social',                NULL,                                                    '{}'),
     ('uk_opss',      'UK Product Safety Alerts and Recalls', 'recall_authority',  'https://www.gov.uk/product-safety-alerts-reports-recalls', '{GB}')
 ON CONFLICT (code) DO NOTHING;
 UPDATE data_sources SET is_enabled = false WHERE code IN ('reddit', 'tiktok', 'nhtsa', 'ul_productiq', 'intertek_etl');

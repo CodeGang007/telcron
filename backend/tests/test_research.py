@@ -50,7 +50,30 @@ async def test_the_reader_keeps_only_findings_its_sources_say(monkeypatch):
                            brand="Lumina")
     assert [(f.hit.url, f.kind) for f in found] == [(PAGE.url, "recall")]
     assert audit == {"injected": 1, "raw": 5, "bad_reference": 2, "ungrounded": 1,
-                     "other_product": 1}
+                     "other_product": 1, "failed_batches": 0}
+
+
+async def test_a_long_result_list_is_read_in_batches_and_a_failed_batch_is_not_fatal(monkeypatch):
+    """Seen live: one call with ~30 results broke the per-minute limit and nothing was read."""
+    monkeypatch.setattr(get_settings(), "llm_api_key", "test")
+    hits = [web.Hit(f"Lumina LF-30 owner report {i}", f"https://forum.example.org/{i}",
+                    f"Lumina LF-30 fan motor overheated and stopped after {i} weeks.") for i in range(20)]
+    calls = []
+
+    async def chat(body, seconds=90):
+        import json
+        calls.append(body["messages"][1]["content"].count("\n   "))
+        if len(calls) == 2:
+            raise web.ResearchUnavailable("rate limited")
+        return {"choices": [{"message": {"content": json.dumps({"findings": [
+            {"n": 1, "kind": "complaint", "finding": "Lumina LF-30 fan motor overheated and stopped",
+             "about_this_product": True}]})}}]}
+    monkeypatch.setattr(web, "_chat", chat)
+    monkeypatch.setattr(web, "PAUSE", 0)
+    audit: dict[str, int] = {}
+    found = await web.read("Lumina LF-30 desk fan", hits, audit, brand="Lumina")
+    assert calls == [8, 8, 4]  # three calls of at most eight results
+    assert len(found) == 2 and audit["failed_batches"] == 1
 
 
 async def test_research_stores_cited_findings_and_rates_the_product(client, db, monkeypatch):
@@ -74,7 +97,7 @@ async def test_research_stores_cited_findings_and_rates_the_product(client, db, 
     async def registry(words, category, limit=5):
         return [uk], []
 
-    async def read(label, hits, audit=None, brand=None):
+    async def read(label, hits, audit=None, brand=None, progress=None, category=None):
         assert [h.url for h in hits][:1] == [uk.url]  # official registries first
         return [web.Finding(uk, "recall", "Product Recall for Lumina LF-30 Desk Fan presenting "
                             "a risk of fire.", True),
@@ -83,6 +106,9 @@ async def test_research_stores_cited_findings_and_rates_the_product(client, db, 
     monkeypatch.setattr(web, "search", searched)
     monkeypatch.setattr(registries, "search", registry)
     monkeypatch.setattr(web, "read", read)
+    queued = (await client.get(f"{API}/products/{product['slug']}/research")).json()
+    assert queued["status"] == "queued" and queued["progress"]["percent"] > 0
+    assert queued["stats"] is None  # no half-filled stats while it waits (it crashed the page)
     stats = await service.run(job.id)
     assert stats["findings"] == 2 and stats["pages"] == 3
 
@@ -95,6 +121,7 @@ async def test_research_stores_cited_findings_and_rates_the_product(client, db, 
     cited = {c["url"] for d in after["hazard"]["dimensions"] for c in d["citations"]}
     assert cited and cited <= {uk.url, PAGE.url}  # every citation is a page the search returned
     summary = (await client.get(f"{API}/products/{product['slug']}/research")).json()
+    assert summary["progress"] is None and summary["status"] == "succeeded"
     assert {f["url"] for f in summary["findings"]} == {uk.url, PAGE.url}
     assert {f["source"] for f in summary["findings"]} == {"uk_opss", "web_search"}
     # Asked again within the day: refused, the searches are rationed.

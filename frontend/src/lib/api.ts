@@ -137,7 +137,7 @@ export type ProductSummary = {
   image_url: string | null;
 };
 export type Finding = {
-  kind: 'recall' | 'safety_warning' | 'complaint' | 'certification' | 'no_issue_found' | 'general';
+  kind: 'recall' | 'safety_warning' | 'complaint' | 'review' | 'certification' | 'no_issue_found' | 'general';
   title: string; source: string; about_this_product: boolean; url: string; finding: string; found_at: string;
 };
 export type Research = {
@@ -145,6 +145,7 @@ export type Research = {
   // A queued or running search has empty stats: every field may be missing.
   stats: Partial<{ cpsc_notices: number; cpsc_new: number; pages: number; findings: number; errors: string[] }> | null;
   findings: Finding[];
+  progress: { stage: string; percent: number } | null;
 };
 export type Citation = { id: string; kind: string; excerpt: string | null; url: string | null };
 export type Dimension = {

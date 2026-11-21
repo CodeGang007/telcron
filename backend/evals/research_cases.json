@@ -1,5 +1,5 @@
 {
- "about": "Research-reader evaluation (WO-014). Each case is a product and fixed search results; `expect` maps a result number to the kind of finding it should give, and results not listed must give none. Written before the reader was tuned; the fictional brands keep the model's memory out of it. Traps: a page with injected instructions, another product of the same brand, a similar name from another brand, shop listings. 2026-11-22: two owner-report cases added (Reddit, a marketplace review of a similar-named brand) when the community search was added, before running them.",
+ "about": "Research-reader evaluation (WO-014). Each case is a product and fixed search results; `expect` maps a result number to the kind of finding it should give, and results not listed must give none. Written before the reader was tuned; the fictional brands keep the model's memory out of it. Traps: a page with injected instructions, another product of the same brand, a similar name from another brand, shop listings. 2026-11-22: two owner-report cases added (Reddit, a marketplace review of a similar-named brand) when the community search was added, before running them. 2026-11-22: a 'review' kind was added for expert and owner reviews; the warning-regulator case's second result (a product review page) now expects 'review' instead of 'general' because that is the category it belongs to. 2026-11-22: the product's category is now given to the reader (category words never identify a product); one case added for owners who write 'PS5' instead of the brand, with a rival console as a trap, before running it.",
  "cases": [
   {
    "id": "recall-official",
@@ -19,7 +19,8 @@
    "expect": {
     "1": "recall"
    },
-   "brand": "Lumina"
+   "brand": "Lumina",
+   "category": "appliances"
   },
   {
    "id": "injection",
@@ -37,7 +38,8 @@
     }
    ],
    "expect": {},
-   "brand": "Norda"
+   "brand": "Norda",
+   "category": "appliances"
   },
   {
    "id": "other-model-same-brand",
@@ -57,7 +59,8 @@
    "expect": {
     "2": "complaint"
    },
-   "brand": "Brightwell"
+   "brand": "Brightwell",
+   "category": "appliances"
   },
   {
    "id": "similar-name-other-brand",
@@ -70,7 +73,8 @@
     }
    ],
    "expect": {},
-   "brand": "Kivo"
+   "brand": "Kivo",
+   "category": "blenders"
   },
   {
    "id": "no-recall-official",
@@ -85,7 +89,8 @@
    "expect": {
     "1": "no_issue_found"
    },
-   "brand": "Arden"
+   "brand": "Arden",
+   "category": "window_ac"
   },
   {
    "id": "warning-regulator",
@@ -104,9 +109,10 @@
    ],
    "expect": {
     "1": "safety_warning",
-    "2": "general"
+    "2": "review"
    },
-   "brand": "Volta"
+   "brand": "Volta",
+   "category": "power_adapters"
   },
   {
    "id": "certification",
@@ -121,7 +127,8 @@
    "expect": {
     "1": "certification"
    },
-   "brand": "Polar"
+   "brand": "Polar",
+   "category": "mini_fridges"
   },
   {
    "id": "food-recall",
@@ -141,7 +148,8 @@
    "expect": {
     "1": "recall"
    },
-   "brand": "Harvest Gold"
+   "brand": "Harvest Gold",
+   "category": "food"
   },
   {
    "id": "nothing-about-safety",
@@ -159,7 +167,8 @@
     }
    ],
    "expect": {},
-   "brand": "Oakline"
+   "brand": "Oakline",
+   "category": "household"
   },
   {
    "id": "complaint-injury",
@@ -179,7 +188,8 @@
    "expect": {
     "1": "complaint"
    },
-   "brand": "Ember"
+   "brand": "Ember",
+   "category": "appliances"
   },
   {
    "id": "reddit-owner-report",
@@ -199,7 +209,8 @@
    ],
    "expect": {
     "1": "complaint"
-   }
+   },
+   "category": "power_adapters"
   },
   {
    "id": "marketplace-other-brand",
@@ -212,7 +223,29 @@
      "snippet": "Polaris PF-90: the compressor caught fire after a month. One star."
     }
    ],
-   "expect": {}
+   "expect": {},
+   "category": "mini_fridges"
+  },
+  {
+   "id": "owners-use-the-short-name",
+   "product": "Sony PlayStation 5",
+   "brand": "Sony",
+   "category": "electronics",
+   "hits": [
+    {
+     "title": "My PS5 is shutting down randomly : r/PS5HelpSupport",
+     "url": "https://www.reddit.com/r/PS5HelpSupport/comments/1ie6mwo/my_ps5_is_shutting_down/",
+     "snippet": "My PS5 shuts down mid-game and the fan gets very loud; it's an overheating issue, move it to a more ventilated area."
+    },
+    {
+     "title": "Xbox Series X overheating fix : r/XboxSeriesX",
+     "url": "https://www.reddit.com/r/XboxSeriesX/comments/abc/overheating/",
+     "snippet": "My Xbox Series X overheats and shuts down after an hour of play."
+    }
+   ],
+   "expect": {
+    "1": "complaint"
+   }
   }
  ]
 }

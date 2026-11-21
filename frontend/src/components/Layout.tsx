@@ -20,6 +20,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Logo, LogoMark } from './Logo';
+import { ResearchTracker } from './ResearchTracker';
 
 type Item = { to: string; label: string; icon: LucideIcon };
 const NAV: Item[] = [
@@ -229,6 +230,7 @@ export function Layout() {
       </footer>
 
       <TabBar />
+      <ResearchTracker />
       <Toaster position="top-center" richColors closeButton toastOptions={{ className: 'font-sans' }} />
     </div>
   );

@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { explain, post, type ProductSummary } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { track } from '../lib/researching';
 
 type Suggestion = {
   request_id: string; brand: string | null; name: string | null; model: string | null;
@@ -97,6 +98,7 @@ export function IdentifyNew({ barcode, onCancel }: { barcode: string | null; onC
         r.new ? 'Added, screened, and now being researched' : r.linked ? 'Linked to the product already in the registry' : 'Already in the registry',
         { description: r.new ? 'We are searching recall registries and the web for it.' : undefined },
       );
+      if (r.new) track(r.slug, form.name.trim() || 'your product');
       navigate(`/products/${r.slug}`);
     } catch (err) {
       toast.error(explain(err));

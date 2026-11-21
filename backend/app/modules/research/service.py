@@ -45,7 +45,15 @@ from app.modules.ingestion.service import _store_recall
 from . import registries, web
 
 SOURCE = "web_search"
-DAILY_CAP = 10  # three Tavily searches a run; the free plan is 1,000 searches a month
+PROGRESS_TTL = 3600
+
+
+async def _progress(product_id: uuid.UUID, stage: str, percent: int) -> None:
+    """Where a running search is, for the page's progress bar (Redis: it changes every few
+    seconds and needs no history)."""
+    await (await get_redis()).set(f"telcron:research:{product_id}",
+                                  json.dumps({"stage": stage, "percent": percent}), ex=PROGRESS_TTL)
+DAILY_CAP = 8  # four Tavily searches a run; the free plan is 1,000 searches a month
 PREFIX = "web_"
 
 
@@ -171,6 +179,7 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
                              "errors": []}
 
     # 1. Official recalls, imported as recalls: the screening decides whether one is this product's.
+    await _progress(product.id, "Checking official recall registries", 10)
     if brand:
         try:
             records = await cpsc.search(brand)
@@ -195,6 +204,7 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
     #    pages, then what each says about safety.
     hits: list[web.Hit] = []
     query = f"{label} recall safety warning hazard"
+    await _progress(product.id, "Searching the web, regulators, owner reports and reviews", 25)
     try:
         hits += await web.search(query)
     except web.ResearchUnavailable as exc:
@@ -206,11 +216,22 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
     hits = [h for h in dict((web.same_page(h.url), h) for h in hits).values()
             if web.same_page(h.url) not in known]
     stats["pages"] = len(hits)
+    read_audit: dict[str, int] = {}
+    await _progress(product.id, f"Reading {len(hits)} pages", 45)
+
+    async def reading(done: int, total: int) -> None:
+        await _progress(product.id, f"Reading {len(hits)} pages ({done} of {total} batches)",
+                        45 + int(40 * done / max(total, 1)))
     try:
-        findings = await web.read(label, hits, brand=brand)
+        findings = await web.read(label, hits, read_audit, brand=brand, progress=reading,
+                                  category=category)
     except web.ResearchUnavailable as exc:
         findings = []
         stats["errors"].append(f"reader: {exc}"[:200])
+    if read_audit.get("failed_batches"):
+        stats["errors"].append(f"reader: {read_audit['failed_batches']} of "
+                               f"{-(-len(hits) // web.BATCH)} reading calls failed")
+    stats["unread"] = read_audit.get("failed_batches", 0) * web.BATCH
     stats["official_recalls"] = 0
     for finding in findings:
         stats["official_recalls"] += await _store(db, product, job, finding, query, brand)
@@ -218,6 +239,7 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
     await db.flush()
 
     # 3. Rated again from everything known now.
+    await _progress(product.id, "Rating the product from what was found", 90)
     from app.modules.screening.service import screen_product
     await screen_product(db, product.id, "rescreen")
     return stats
@@ -246,7 +268,8 @@ async def run(job_id: uuid.UUID) -> dict[str, Any]:
         product_id = job.params["product_id"]
         await db.commit()
     # The new passport version replaces the cached one (as the screening handler does).
-    await (await get_redis()).delete(f"telcron:passport:{product_id}")
+    redis = await get_redis()
+    await redis.delete(f"telcron:passport:{product_id}", f"telcron:research:{product_id}")
     return stats
 
 
@@ -261,6 +284,10 @@ async def summary(db: AsyncSession, product: Product) -> dict[str, Any]:
         .order_by(EvidenceItem.created_at.desc()).limit(40))).all()
     last = await _latest(db, product.id)
     s = get_settings()
+    progress = None
+    if last is not None and last.status in ("queued", "running"):
+        raw = await (await get_redis()).get(f"telcron:research:{product.id}")
+        progress = json.loads(raw) if raw else {"stage": "Waiting its turn in the queue", "percent": 3}
     cooled = last is None or (last.status not in ("queued", "running") and last.created_at
                               <= datetime.now(UTC) - timedelta(hours=s.research_cooldown_hours))
     return {
@@ -270,6 +297,7 @@ async def summary(db: AsyncSession, product: Product) -> dict[str, Any]:
         # A queued or running search has no stats yet: say so rather than send an empty object.
         "stats": last.stats if last and last.status not in ("queued", "running") else None,
         "can_request": s.research_enabled and cooled,
+        "progress": progress,
         "findings": [{"kind": a.removeprefix(PREFIX), "title": v,
                       "source": m.split("+")[0], "about_this_product": float(c or 0) >= 0.9,
                       "url": u, "finding": (e or "").split(": ", 1)[-1], "found_at": t.isoformat()}

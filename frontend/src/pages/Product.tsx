@@ -322,7 +322,7 @@ export function Product() {
         )}
       </section>
 
-      <div className="mt-8"><ErrorBoundary section="research section"><Research slug={p.slug} onRated={rated} /></ErrorBoundary></div>
+      <div className="mt-8"><ErrorBoundary section="research section"><Research slug={p.slug} name={p.name} onRated={rated} /></ErrorBoundary></div>
       <ErrorBoundary section="assistant"><Assistant slug={p.slug} name={p.name} /></ErrorBoundary>
 
       {pass?.hazard && (
