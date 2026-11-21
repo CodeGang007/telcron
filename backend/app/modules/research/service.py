@@ -68,23 +68,50 @@ async def _latest(db: AsyncSession, product_id: uuid.UUID) -> IngestionJob | Non
         .order_by(IngestionJob.created_at.desc()).limit(1))).scalar_one_or_none()
 
 
+RETRY_AFTER = timedelta(minutes=15)  # a run whose reading failed may be retried this soon
+MAX_REREADS = 6                      # automatic re-reads of unread pages, per product per day
+
+
+def _unread(job: IngestionJob | None) -> list[dict[str, str]]:
+    return list((job.stats or {}).get("unread_pages") or []) if job is not None else []
+
+
+def _due(last: IngestionJob | None, now: datetime) -> bool:
+    """A new run may start: nothing is running, and the last one is old enough (a day after a
+    complete one; a quarter of an hour after one whose reading failed)."""
+    if last is None:
+        return True
+    if last.status in ("queued", "running"):
+        return False
+    reading_failed = any(str(e).startswith("reader") for e in (last.stats or {}).get("errors", []))
+    wait = RETRY_AFTER if (last.status == "failed" or _unread(last) or reading_failed) else \
+        timedelta(hours=get_settings().research_cooldown_hours)
+    return last.created_at <= now - wait
+
+
 async def request(db: AsyncSession, product: Product, user_id: uuid.UUID | None,
                   trigger: str = "event") -> IngestionJob | None:
-    """Queue a research run, unless one ran recently or today's searches are spent."""
+    """Queue a research run, unless one is not due or today's searches are spent. When the last
+    run left pages unread (the AI allowance was spent), only those are read again: no new search,
+    so it costs nothing from the search allowance."""
     s = get_settings()
     if not s.research_enabled:
         return None
     last = await _latest(db, product.id)
     now = datetime.now(UTC)
-    if last is not None and (last.status in ("queued", "running")
-                             or last.created_at > now - timedelta(hours=s.research_cooldown_hours)):
+    if not _due(last, now):
         return None
-    today = await db.scalar(select(func.count()).select_from(IngestionJob).where(
-        IngestionJob.data_source_code == SOURCE, IngestionJob.created_at > now - timedelta(days=1)))
-    if today >= DAILY_CAP:
-        return None
-    job = IngestionJob(data_source_code=SOURCE, trigger=trigger,
-                       params={"product_id": str(product.id)}, triggered_by_user_id=user_id)
+    params: dict[str, Any] = {"product_id": str(product.id)}
+    if _unread(last):
+        params["reread"] = str(last.id)
+    else:
+        today = await db.scalar(select(func.count()).select_from(IngestionJob).where(
+            IngestionJob.data_source_code == SOURCE, IngestionJob.created_at > now - timedelta(days=1),
+            ~IngestionJob.params.has_key("reread")))
+        if today >= DAILY_CAP:
+            return None
+    job = IngestionJob(data_source_code=SOURCE, trigger=trigger, params=params,
+                       triggered_by_user_id=user_id)
     db.add(job)
     await db.flush()
     emit(db, "ingestion_job", job.id, "ResearchRequested", {"job_id": str(job.id)})
@@ -178,9 +205,10 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
     stats: dict[str, Any] = {"cpsc_notices": 0, "cpsc_new": 0, "pages": 0, "findings": 0,
                              "errors": []}
 
+    reread = job.params.get("reread")
     # 1. Official recalls, imported as recalls: the screening decides whether one is this product's.
     await _progress(product.id, "Checking official recall registries", 10)
-    if brand:
+    if brand and not reread:
         try:
             records = await cpsc.search(brand)
             stats["cpsc_notices"] = len(records)
@@ -204,14 +232,19 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
     #    pages, then what each says about safety.
     hits: list[web.Hit] = []
     query = f"{label} recall safety warning hazard"
-    await _progress(product.id, "Searching the web, regulators, owner reports and reviews", 25)
-    try:
-        hits += await web.search(label, category)
-    except web.ResearchUnavailable as exc:
-        stats["errors"].append(f"web: {exc}"[:200])
-    official, failed = await registries.search(f"{brand or ''} {name}".strip()[:120], category)
-    hits = official + hits  # official registries first: the reader keeps the first of a URL
-    stats["errors"] += failed
+    if reread:  # only the pages an earlier run could not read: no new searches
+        earlier = await db.get(IngestionJob, uuid.UUID(reread))
+        hits = [web.Hit(**p) for p in _unread(earlier)]
+        stats["reread_of"] = reread
+    else:
+        await _progress(product.id, "Searching the web, regulators, owner reports and reviews", 25)
+        try:
+            hits += await web.search(label, category)
+        except web.ResearchUnavailable as exc:
+            stats["errors"].append(f"web: {exc}"[:200])
+        official, failed = await registries.search(f"{brand or ''} {name}".strip()[:120], category)
+        hits = official + hits  # official registries first: the reader keeps the first of a URL
+        stats["errors"] += failed
     known = {web.same_page(u) for u in await _known_urls(db, product.id)}
     hits = [h for h in dict((web.same_page(h.url), h) for h in hits).values()
             if web.same_page(h.url) not in known]
@@ -222,16 +255,20 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
     async def reading(done: int, total: int) -> None:
         await _progress(product.id, f"Reading {len(hits)} pages ({done} of {total} batches)",
                         45 + int(40 * done / max(total, 1)))
+    unread: list[web.Hit] = []
     try:
         findings = await web.read(label, hits, read_audit, brand=brand, progress=reading,
-                                  category=category)
+                                  category=category, unread=unread)
     except web.ResearchUnavailable as exc:
         findings = []
         stats["errors"].append(f"reader: {exc}"[:200])
+    # Kept, so a later run reads them without searching again.
+    stats["unread_pages"] = [{"title": h.title, "url": h.url, "snippet": h.snippet[:700],
+                              "source": h.source} for h in unread]
     if read_audit.get("failed_batches"):
         stats["errors"].append(f"reader: {read_audit['failed_batches']} of "
                                f"{-(-len(hits) // web.BATCH)} reading calls failed")
-    stats["unread"] = read_audit.get("failed_batches", 0) * web.BATCH
+    stats["unread"] = len(unread)
     stats["reader"] = read_audit  # what was dropped and why, so an empty result can be explained
     stats["official_recalls"] = 0
     for finding in findings:
@@ -289,8 +326,7 @@ async def summary(db: AsyncSession, product: Product) -> dict[str, Any]:
     if last is not None and last.status in ("queued", "running"):
         raw = await (await get_redis()).get(f"telcron:research:{product.id}")
         progress = json.loads(raw) if raw else {"stage": "Waiting its turn in the queue", "percent": 3}
-    cooled = last is None or (last.status not in ("queued", "running") and last.created_at
-                              <= datetime.now(UTC) - timedelta(hours=s.research_cooldown_hours))
+    cooled = _due(last, datetime.now(UTC))
     return {
         "enabled": s.research_enabled,
         "status": last.status if last else None,
@@ -299,8 +335,36 @@ async def summary(db: AsyncSession, product: Product) -> dict[str, Any]:
         "stats": last.stats if last and last.status not in ("queued", "running") else None,
         "can_request": s.research_enabled and cooled,
         "progress": progress,
+        "unread": len(_unread(last)),
         "findings": [{"kind": a.removeprefix(PREFIX), "title": v,
                       "source": m.split("+")[0], "about_this_product": float(c or 0) >= 0.9,
                       "url": u, "finding": (e or "").split(": ", 1)[-1], "found_at": t.isoformat()}
                      for a, v, m, c, u, e, t in rows],
     }
+
+
+async def reread_due() -> int:
+    """Every 20 minutes (Worker cron): products whose last run left pages unread, read again
+    (no new search), up to MAX_REREADS times a day each."""
+    now = datetime.now(UTC)
+    queued = 0
+    async with SessionLocal() as db:
+        latest = (await db.execute(select(IngestionJob).where(
+            IngestionJob.data_source_code == SOURCE, IngestionJob.created_at > now - timedelta(days=1))
+            .order_by(IngestionJob.created_at.desc()))).scalars().all()
+        seen: set[str] = set()
+        for job in latest:
+            pid = job.params.get("product_id")
+            if pid in seen:
+                continue
+            seen.add(pid)
+            if not _unread(job) or not _due(job, now):
+                continue
+            tries = sum(1 for j in latest if j.params.get("product_id") == pid and "reread" in j.params)
+            if tries >= MAX_REREADS:
+                continue
+            product = await db.get(Product, uuid.UUID(pid))
+            if product is not None and await request(db, product, None, trigger="schedule"):
+                queued += 1
+        await db.commit()
+    return queued

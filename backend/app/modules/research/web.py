@@ -321,7 +321,7 @@ async def _read_batch(product: str, batch: list[Hit], temperature: float = 0) ->
 async def read(product: str, hits: list[Hit], audit: dict[str, int] | None = None,
                brand: str | None = None,
                progress: Callable[[int, int], Awaitable[None]] | None = None,
-               category: str | None = None) -> list[Finding]:
+               category: str | None = None, unread: list[Hit] | None = None) -> list[Finding]:
     """What the results say about the product, each tied to the result it came from. Read in
     batches so each call fits the provider's per-minute limit; a batch that fails is counted
     (`audit["failed_batches"]`) and the others still count. Raises only if every batch failed.
@@ -362,6 +362,8 @@ async def read(product: str, hits: list[Hit], audit: dict[str, int] | None = Non
         except (httpx.HTTPError, KeyError, IndexError, ResearchUnavailable) as exc:
             audit["failed_batches"] += 1
             last_error = f"{type(exc).__name__}: {exc}"[:300]
+            if unread is not None:
+                unread.extend(batch)  # the caller keeps them to read again later
             continue
         audit["raw"] += len(rows)
         used: set[int] = set()
@@ -388,6 +390,8 @@ async def read(product: str, hits: list[Hit], audit: dict[str, int] | None = Non
                 continue
             used.add(n)
             out.append(Finding(hit, row["kind"], text[:400], True))
-    if audit["failed_batches"] and audit["failed_batches"] * BATCH >= len(hits):
+    if audit["failed_batches"] and audit["failed_batches"] * BATCH >= len(hits) and unread is None:
         raise ResearchUnavailable(f"every reading call failed: {last_error}")
+    if audit["failed_batches"] and unread is not None and len(unread) >= len(hits):
+        audit["all_failed"] = 1
     return out

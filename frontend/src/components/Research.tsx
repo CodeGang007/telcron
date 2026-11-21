@@ -98,8 +98,9 @@ export function Research({ slug, name, onRated }: { slug: string; name: string; 
           </p>
         </div>
         {member && data.enabled && (
-          <button className="btn-ghost btn-sm" onClick={ask} disabled={asking || busy || !data.can_request} title={data.can_request ? 'Search again now' : 'Searched in the last day'}>
-            <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />{busy ? 'Searching…' : 'Search again'}
+          <button className="btn-ghost btn-sm" onClick={ask} disabled={asking || busy || !data.can_request}
+            title={data.can_request ? (data.unread ? 'Read the pages that were left' : 'Search again now') : data.unread ? 'Available a quarter of an hour after the last try' : 'Searched in the last day'}>
+            <RefreshCw className={`size-4 ${busy ? 'animate-spin' : ''}`} />{busy ? 'Searching…' : data.unread ? 'Read the rest' : 'Search again'}
           </button>
         )}
       </div>
@@ -112,6 +113,13 @@ export function Research({ slug, name, onRated }: { slug: string; name: string; 
           </div>
           <p className="mt-2 text-xs text-action/80">This takes a minute or two. You can keep using Telcron: we tell you when it is done, and the passport updates itself.</p>
         </motion.div>
+      )}
+
+      {!busy && data.unread > 0 && (
+        <p className="mt-5 flex items-start gap-2 rounded-2xl bg-warn-tint px-4 py-3 text-sm text-warn">
+          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+          {data.unread} page{data.unread === 1 ? '' : 's'} could not be read yet: the free AI allowance was used up. Telcron reads them again automatically every 20 minutes{data.can_request ? ', or use “Read the rest” now.' : '.'}
+        </p>
       )}
 
       {findings.length > 0 ? (
@@ -141,13 +149,13 @@ export function Research({ slug, name, onRated }: { slug: string; name: string; 
         <p className="mt-5 rounded-2xl bg-panel px-4 py-3 text-sm text-muted">
           {!data.status
             ? 'Not searched yet.'
-            : (data.stats?.errors ?? []).some((e) => e.startsWith('reader'))
-              ? `Searched ${data.searched_at ? new Date(data.searched_at).toLocaleDateString() : ''}: ${data.stats?.pages ?? 0} pages found, but reading them failed (the AI service was busy). Use "Search again" to retry.`
+ : data.unread > 0
+              ? `Searched ${data.searched_at ? new Date(data.searched_at).toLocaleDateString() : ''}: ${data.stats?.pages ?? 0} pages found; nothing kept yet from the pages read so far.`
               : `Searched ${data.searched_at ? new Date(data.searched_at).toLocaleDateString() : ''}: ${data.stats?.pages ?? 0} pages read, none said anything about this product's safety or reliability.`}
         </p>
       )}
-      {!busy && (data.stats?.errors?.length ?? 0) > 0 && (
-        <p className="mt-3 text-xs text-muted">Some sources did not answer last time: {(data.stats?.errors ?? []).map((e) => e.split(':')[0]).join(', ')}.</p>
+      {!busy && !data.unread && (data.stats?.errors?.filter((e) => !e.startsWith('reader')).length ?? 0) > 0 && (
+        <p className="mt-3 text-xs text-muted">Some sources did not answer last time: {(data.stats?.errors ?? []).filter((e) => !e.startsWith('reader')).map((e) => e.split(':')[0]).join(', ')}.</p>
       )}
     </section>
   );

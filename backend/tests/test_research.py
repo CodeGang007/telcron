@@ -4,7 +4,7 @@ stored as cited evidence, and the product rated again from it."""
 import uuid
 
 from helpers import API, verified_user
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.core.config import get_settings
 from app.models import IdentificationRequest, IngestionJob, ProductAlias
@@ -99,7 +99,7 @@ async def test_research_stores_cited_findings_and_rates_the_product(client, db, 
     async def registry(words, category, limit=5):
         return [uk], []
 
-    async def read(label, hits, audit=None, brand=None, progress=None, category=None):
+    async def read(label, hits, audit=None, brand=None, progress=None, category=None, unread=None):
         assert [h.url for h in hits][:1] == [uk.url]  # official registries first
         return [web.Finding(uk, "recall", "Product Recall for Lumina LF-30 Desk Fan presenting "
                             "a risk of fire.", True),
@@ -241,3 +241,51 @@ async def test_marketplace_listings_are_real_product_pages_and_can_be_checked(cl
     checked = await client.post(f"{API}/products/{made['slug']}/marketplace/check", headers=member,
                                 json={"title": found["items"][0]["title"], "url": found["items"][0]["url"]})
     assert checked.status_code == 200 and checked.json()["new"] is True
+
+
+async def test_unread_pages_are_read_again_without_searching_again(client, db, monkeypatch):
+    """Seen live: the AI's daily allowance ran out mid-run; the pages it could not read are kept and
+    read later, and 'Search again' is open again after a quarter of an hour, not a day."""
+    from datetime import timedelta
+    _, _, member = await verified_user(client)
+    made = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": f"Desk Lamp D{uuid.uuid4().hex[:4]}", "brand": "Lumina",
+        "category": "household"})).json()
+    pid = (await client.get(f"{API}/products/{made['slug']}")).json()["id"]
+    # Its own job: earlier tests may have spent today's search allowance (the daily cap).
+    await db.execute(update(IngestionJob).where(IngestionJob.params["product_id"].astext == pid)
+                     .values(status="cancelled"))
+    job = IngestionJob(data_source_code="web_search", trigger="admin", params={"product_id": pid})
+    db.add(job)
+    await db.commit()
+    searches = []
+
+    async def searched(label, category=None):
+        searches.append(label)
+        return [PAGE]
+
+    async def nobody_reads(label, hits, audit=None, brand=None, progress=None, category=None,
+                           unread=None):
+        unread.extend(hits)
+        return []
+    monkeypatch.setattr(web, "search", searched)
+    monkeypatch.setattr(web, "read", nobody_reads)
+    first = await service.run(job.id)
+    assert first["unread"] == 1 and len(searches) == 1
+    state = (await client.get(f"{API}/products/{made['slug']}/research")).json()
+    assert state["unread"] == 1 and state["can_request"] is False  # not yet: a quarter of an hour
+    await db.execute(update(IngestionJob).where(IngestionJob.id == job.id).values(
+        created_at=IngestionJob.created_at - timedelta(minutes=20)))
+    await db.commit()
+    assert (await client.get(f"{API}/products/{made['slug']}/research")).json()["can_request"]
+
+    async def reads(label, hits, audit=None, brand=None, progress=None, category=None, unread=None):
+        return [web.Finding(PAGE, "recall", "Lumina is recalling the LF-30 desk fan because its "
+                            "motor can overheat and catch fire.", True)]
+    monkeypatch.setattr(web, "read", reads)
+    again = await client.post(f"{API}/products/{made['slug']}/research", headers=member)
+    assert again.status_code == 202
+    retry = await db.get(IngestionJob, uuid.UUID(again.json()["job_id"]))
+    assert retry.params["reread"] == str(job.id)
+    second = await service.run(retry.id)
+    assert second["findings"] == 1 and second["unread"] == 0 and len(searches) == 1  # no new search

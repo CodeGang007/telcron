@@ -147,6 +147,7 @@ export type Research = {
   stats: Partial<{ cpsc_notices: number; cpsc_new: number; pages: number; findings: number; errors: string[] }> | null;
   findings: Finding[];
   progress: { stage: string; percent: number } | null;
+  unread: number;
 };
 export type Citation = { id: string; kind: string; excerpt: string | null; url: string | null };
 export type Dimension = {

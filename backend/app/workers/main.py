@@ -70,6 +70,12 @@ async def nightly_vectors(ctx: dict[str, Any]) -> str:
     return f"vectors: {done}"
 
 
+async def reread_research(ctx: dict[str, Any]) -> str:
+    """Every 20 minutes: pages research could not read (the AI allowance was spent), read again."""
+    from app.modules.research.service import reread_due
+    return f"re-reads queued: {await reread_due()}"
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
     workers = [Worker(functions=[func(handle, name="handle", max_tries=MAX_TRIES)],
@@ -79,7 +85,8 @@ async def main() -> None:
                for q in HANDLERS]
     # One more worker for the schedule; arq runs a cron job once however many workers are up.
     workers.append(Worker(cron_jobs=[cron(nightly_recall_sync, hour=3, minute=0),
-                                     cron(nightly_vectors, hour=4, minute=0)],
+                                     cron(nightly_vectors, hour=4, minute=0),
+                                     cron(reread_research, minute={0, 20, 40})],
                           queue_name=queue_name("schedule"), redis_settings=redis_settings(),
                           handle_signals=False, poll_delay=5, keep_result=3600))
     tasks = [asyncio.create_task(w.async_run()) for w in workers]
