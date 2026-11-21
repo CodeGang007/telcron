@@ -10,7 +10,7 @@
 #   [AWS_REGION=us-east-2] [LOAD_SAMPLE=1] bash deploy-host.sh
 #
 # Without BACKEND_IMAGE the image is built on this host from the commit. With it, it is pulled.
-# The app secret must hold JWT_SECRET, APP_DB_PASSWORD and SEED_ADMIN_PASSWORD; LLM_API_KEY is optional.
+# The app secret must hold JWT_SECRET, APP_DB_PASSWORD and SEED_ADMIN_PASSWORD; LLM_API_KEY and MAIL_FROM are optional.
 set -euo pipefail
 
 : "${GIT_REF:?}" "${API_HOST:?}" "${WEB_ORIGIN:?}" "${DB_HOST:?}" "${RDS_SECRET_ARN:?}"
@@ -57,6 +57,8 @@ APP_DB_PASSWORD=$(field APP_DB_PASSWORD <<<"$app_secret")
 SEED_ADMIN_PASSWORD=$(field SEED_ADMIN_PASSWORD <<<"$app_secret")
 # Optional: an API key for the hazard-scoring model. Without one the keyword placeholder scores.
 LLM_API_KEY=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("LLM_API_KEY", ""))' <<<"$app_secret")
+# Optional: the From address for verification codes. Without it codes are not emailed (WO-013).
+MAIL_FROM=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("MAIL_FROM", ""))' <<<"$app_secret")
 master=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text)
 MASTER_USER=$(field username <<<"$master")
 MASTER_PASSWORD=$(field password <<<"$master")
@@ -111,6 +113,8 @@ JWT_SECRET=$JWT_SECRET
 AI_PROVIDER=$([ -n "$LLM_API_KEY" ] && echo llm || echo stub)
 LLM_API_KEY=$LLM_API_KEY
 DEV_EXPOSE_CODES=false
+MAIL_PROVIDER=$([ -n "$MAIL_FROM" ] && echo ses || echo log)
+MAIL_FROM=$MAIL_FROM
 EOF
 
 say "start"
