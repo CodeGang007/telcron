@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     llm_api_key: str | None = None
     llm_base_url: str = "https://api.groq.com/openai/v1"
     llm_model: str = "openai/gpt-oss-120b"
+    vision_model: str = "qwen/qwen3.8-27b"
     passport_cache_seconds: int = 24 * 3600
     # Local demos only: the application seed shortens every earn rule's confirmation delay to this.
     coin_confirm_delay_seconds: int | None = None

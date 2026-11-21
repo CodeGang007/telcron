@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
-from app.core.deps import Db, OptionalUser
+from app.core.deps import Db, Level1User, OptionalUser
 from app.core.paging import Offset, page
 
 from . import identify as identify_service
@@ -28,6 +28,32 @@ async def search_products(db: Db, user: OptionalUser, response: Response, offset
 async def identify(data: IdentifyIn, db: Db, user: OptionalUser) -> dict[str, Any]:
     """A scanned or typed barcode -> a product with a passport. Photo identification is not built."""
     return await identify_service.by_barcode(db, data.barcode, user.id if user else None)
+
+
+class PhotoIn(BaseModel):
+    image: str = Field(max_length=5_000_000)  # a data: URL, resized in the browser
+    barcode: str | None = Field(None, max_length=40)
+
+
+class ConfirmIn(BaseModel):
+    name: str = Field(min_length=3, max_length=200)
+    brand: str | None = Field(None, max_length=120)
+    model: str | None = Field(None, max_length=80)
+    category: str
+    barcode: str | None = Field(None, max_length=40)
+    request_id: str | None = None
+
+
+@router.post("/identify/photo")
+async def identify_photo(data: PhotoIn, db: Db, user: Level1User) -> dict[str, Any]:
+    """A suggestion of what a photographed product is, for the member to check. Stores nothing else."""
+    return await identify_service.suggest_from_photo(db, data.image, data.barcode, user.id)
+
+
+@router.post("/identify/confirm")
+async def identify_confirm(data: ConfirmIn, db: Db, user: Level1User) -> dict[str, Any]:
+    """Add a product a member has identified (from a photo or by hand) and screen it."""
+    return await identify_service.confirm(db, data.model_dump(), user.id)
 
 
 @router.get("/products/{id_or_slug}")

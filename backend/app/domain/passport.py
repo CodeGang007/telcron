@@ -51,6 +51,10 @@ def build(recall_verdict: str, cert_statuses: list[str],
     recall = RECALL_COMPONENT[recall_verdict]
     cert = certification_component(cert_statuses)
     hazard = None if hazard_total is None else Decimal(100) - hazard_total
+    if recall_verdict == "no_match_found" and hazard is None and not cert_statuses:
+        # Nothing was checked: no certificate is known and no evidence was scored. The absence of a
+        # recall notice alone is not a clean bill of health, so no badge and no score yet.
+        return PassportResult(1, "needs_information", None, recall, None, None)
     # Tier 2 requires a trust score, so a missing hazard component drops out of the mean
     # instead of counting as zero or as a hundred.
     parts = [(recall, RECALL_WEIGHT), (cert, CERT_WEIGHT)]

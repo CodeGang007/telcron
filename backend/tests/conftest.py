@@ -98,3 +98,13 @@ async def db():
 
     async with SessionLocal() as session:
         yield session
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def no_open_facts(monkeypatch):
+    """No test reaches the real Open Facts databases; a test that wants them replaces this."""
+    from app.modules.catalogue import openfacts
+
+    async def unknown(gtin):
+        return None
+    monkeypatch.setattr(openfacts, "lookup", unknown)

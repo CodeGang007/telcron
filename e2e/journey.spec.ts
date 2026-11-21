@@ -167,3 +167,35 @@ test('a barcode leads straight to the product passport', async ({ page }) => {
   await page.getByRole('button', { name: 'Look it up' }).click();
   await expect(page.getByText('That is not a valid barcode')).toBeVisible();
 });
+
+/** An EAN-13 with a correct check digit under an unused prefix, different on every run. */
+function freshBarcode(): string {
+  const body = `890777${String(Date.now()).slice(-6)}`;
+  const sum = [...body].reduce((t, d, i) => t + Number(d) * (i % 2 === 0 ? 1 : 3), 0);
+  return body + String((10 - (sum % 10)) % 10);
+}
+
+test('a product no database knows is identified by a member and screened', async ({ page }) => {
+  await newMember(page, 'Scanner Test');
+  await page.goto('/scan');
+  // A valid barcode no product database has: an unused company prefix, a fresh number each run.
+  const barcode = freshBarcode();
+  await page.getByLabel('Barcode number').fill(barcode);
+  await page.getByRole('button', { name: 'Look it up' }).click();
+  await expect(page.getByRole('heading', { name: 'New to Telcron: tell us what it is' })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'Type the details instead' }).click();
+  const form = page.getByRole('form', { name: 'Confirm the product' });
+  const name = `Test Desk Fan ${Date.now()}`;
+  await form.getByLabel('Product name').fill(name);
+  await form.getByLabel('Brand').fill('Lumina');
+  await form.getByLabel('Category').selectOption('appliances');
+  await form.getByRole('button', { name: 'Add it and screen it' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(name);
+  await expect(passport(page)).toContainText(/Version \d+/);
+  // Scanned again, the barcode now goes straight to it.
+  await page.goto('/scan');
+  await page.getByLabel('Barcode number').fill(barcode);
+  await page.getByRole('button', { name: 'Look it up' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toContainText('Lumina');
+});
+

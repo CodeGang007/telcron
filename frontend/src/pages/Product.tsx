@@ -222,7 +222,7 @@ export function Product() {
             <div className="space-y-6">
               <dl className="grid gap-3 sm:grid-cols-3">
                 {[
-                  ['Recalls', pass.recall_component, recalls.length ? `${recalls.length} found` : 'None found'],
+                  ['Recalls', pass.recall_component, recalls.length ? `${recalls.length} found` : 'No notice names it'],
                   ['Certificates', pass.certification_component, p.certifications.length ? `${p.certifications.length} on record` : 'None on record'],
                   ['Hazard', pass.hazard_component, pass.hazard?.label ? `${pass.hazard.label} hazard` : 'Not yet scored'],
                 ].map(([k, v, text]) => (
@@ -238,6 +238,15 @@ export function Product() {
                 ))}
               </dl>
 
+              {pass.tier === 1 && (
+                <div className="rounded-2xl border border-gold/40 bg-gold-tint/60 p-5">
+                  <p className="font-semibold">Identified, but not checked yet</p>
+                  <p className="mt-1 text-sm text-muted">
+                    No recall notice names this product, but no certificate, report or review has been checked either, so it has no trust score yet.
+                    It is re-screened automatically as evidence arrives{canContribute ? ': a review from you would be the first.' : '.'}
+                  </p>
+                </div>
+              )}
               {recalls.map((r) => (
                 <motion.div key={r.recall_id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="relative overflow-hidden rounded-2xl border border-danger/30 bg-danger-tint p-5">
                   <span className="absolute -right-6 -top-6 size-24 rounded-full bg-danger/10" />

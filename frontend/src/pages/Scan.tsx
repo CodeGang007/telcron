@@ -6,10 +6,11 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Notice, PageTitle } from '../components/ui';
-import { explain, post } from '../lib/api';
+import { IdentifyNew } from '../components/IdentifyNew';
+import { ApiError, explain, post } from '../lib/api';
 
 type Identified = { slug: string; name: string; new: boolean };
-type Phase = 'idle' | 'camera' | 'looking' | 'error';
+type Phase = 'idle' | 'camera' | 'looking' | 'error' | 'unknown';
 
 // Retail barcodes only: a QR code or a shipping label on the same box is not the product.
 const RETAIL = [BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E];
@@ -26,6 +27,7 @@ export function Scan() {
   const [stage, setStage] = useState(0);
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [unknown, setUnknown] = useState<string | null>(null);
 
   const stopCamera = useCallback(() => {
     controls.current?.stop();
@@ -46,6 +48,11 @@ export function Scan() {
       toast.success(found.new ? 'New product added and screened' : 'Product found', { description: found.name });
       navigate(`/products/${found.slug}`);
     } catch (e) {
+      if (e instanceof ApiError && e.code === 'product_not_identified') {
+        setUnknown(barcode.replace(/[\s-]/g, ''));
+        setPhase('unknown');
+        return;
+      }
       setError(`${explain(e)} (read: ${barcode})`);
       setPhase('error');
     } finally {
@@ -96,6 +103,9 @@ export function Scan() {
         Point your camera at the barcode on the box. We find the product, check it against recall notices and certificates, and show you its passport.
       </PageTitle>
 
+      {phase === 'unknown' ? (
+        <IdentifyNew barcode={unknown} onCancel={() => { setUnknown(null); setPhase('idle'); }} />
+      ) : (
       <div className="grid gap-8 lg:grid-cols-[1.3fr_1fr]">
         <div className="relative aspect-[4/3] overflow-hidden rounded-[2rem] bg-night shadow-lift">
           <video ref={video} className={`h-full w-full object-cover ${phase === 'camera' ? '' : 'hidden'}`} muted playsInline />
@@ -181,9 +191,10 @@ export function Scan() {
           </label>
 
           {error && phase !== 'error' && <Notice tone="error">{error}</Notice>}
-          <p className="text-xs text-muted">Products we have not seen before are looked up in UPCitemdb&apos;s public database, added to the registry and screened on the spot.</p>
+          <p className="text-xs text-muted">New products are looked up in UPCitemdb and the Open Food, Beauty and Products Facts databases. If none knows it, you can identify it from a photo.</p>
         </div>
       </div>
+      )}
     </div>
   );
 }

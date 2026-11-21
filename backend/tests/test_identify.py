@@ -5,7 +5,7 @@ from helpers import API, verified_user
 from sqlalchemy import select
 
 from app.models import IdentificationRequest
-from app.modules.catalogue import identify, upcitemdb
+from app.modules.catalogue import identify, openfacts, upcitemdb, vision
 
 KETTLE = {"title": "Brewmaster 1.7L Electric Kettle", "brand": "Brewmaster", "model": "BM-17",
           "category": "Home & Garden > Kitchen & Dining > Kitchen Appliances > Electric Kettles",
@@ -54,7 +54,8 @@ async def test_an_unknown_barcode_is_looked_up_added_and_screened(client, db, mo
     body = r.json()
     assert r.status_code == 200 and body["new"] is True and body["name"] == KETTLE["title"]
     passport = (await client.get(f"{API}/products/{body['slug']}/passport")).json()
-    assert passport["version"] == 1 and passport["tier"] == 2
+    # Identified, but nothing is checked yet: no badge or score until there is evidence.
+    assert (passport["version"], passport["tier"], passport["status_badge"]) == (1, 1, "needs_information")
     # Scanned again: answered by the registry, no second product, no second lookup.
     again = (await client.post(f"{API}/identify", json={"barcode": "036000291452"})).json()
     assert (again["slug"], again["new"], len(calls)) == (body["slug"], False, 1)
@@ -66,7 +67,8 @@ async def test_an_unknown_barcode_is_looked_up_added_and_screened(client, db, mo
 
 @pytest.mark.parametrize("outcome, status, detail", [
     (None, 404, "product_not_identified"),
-    (upcitemdb.LookupUnavailable("HTTP 429"), 503, "lookup_unavailable"),
+    # UPCitemdb's daily limit alone is not a failure: the open databases are asked next.
+    (upcitemdb.LookupUnavailable("HTTP 429"), 404, "product_not_identified"),
 ])
 async def test_what_cannot_be_identified_says_why(client, monkeypatch, outcome, status, detail):
     async def fake(gtin):
@@ -87,3 +89,85 @@ async def test_a_bad_barcode_and_the_daily_quota(client, db, monkeypatch):
     codes = [r.status_code for r in [await client.post(
         f"{API}/identify", headers=member, json={"barcode": "012345678905"}) for _ in range(21)]]
     assert codes[:20] == [404] * 20 and codes[20] == 429
+
+
+async def test_a_barcode_unknown_in_the_us_is_found_in_the_open_databases(client, monkeypatch):
+    async def not_in_us(gtin):
+        return None
+
+    async def openfacts_knows(gtin):
+        return {"title": "Masala Chai Tea 250 g", "brand": "Chaiwala", "model": None,
+                "category": "Food Beverages, Teas", "source": "openfacts"}
+    monkeypatch.setattr(upcitemdb, "lookup", not_in_us)
+    monkeypatch.setattr(openfacts, "lookup", openfacts_knows)
+    r = await client.post(f"{API}/identify", json={"barcode": "8901314077981"})
+    assert r.status_code == 200 and r.json()["name"] == "Masala Chai Tea 250 g"
+
+
+async def test_an_unknown_product_is_identified_from_a_photo_and_confirmed(client, db, monkeypatch):
+    async def nobody(gtin):
+        return None
+    monkeypatch.setattr(upcitemdb, "lookup", nobody)
+    monkeypatch.setattr(openfacts, "lookup", nobody)
+    seen = {}
+
+    async def reads(data_url):
+        seen["url"] = data_url
+        return {"brand": "Lumina", "name": "Lumina Desk Fan 30cm", "model": "LF-30",
+                "category": "appliances", "confidence": 0.7}
+    monkeypatch.setattr(vision, "read_photo", reads)
+    barcode = "8907770000006"
+    assert (await client.post(f"{API}/identify", json={"barcode": barcode})).status_code == 404
+
+    photo = {"image": "data:image/jpeg;base64,/9j/AAAA", "barcode": barcode}
+    assert (await client.post(f"{API}/identify/photo", json=photo)).status_code == 401  # members only
+    _, _, member = await verified_user(client)
+    suggestion = (await client.post(f"{API}/identify/photo", headers=member, json=photo)).json()
+    got = (suggestion["brand"], suggestion["model"], suggestion["category"])
+    assert got == ("Lumina", "LF-30", "appliances")
+    assert seen["url"].startswith("data:image/jpeg")
+    # A suggestion is not a product: nothing was added yet.
+    assert (await client.post(f"{API}/identify", json={"barcode": barcode})).status_code == 404
+
+    # The member corrects the name and confirms.
+    r = await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": "Lumina Desk Fan 30 cm", "brand": "Lumina", "model": "LF-30", "category": "appliances",
+        "barcode": barcode, "request_id": suggestion["request_id"]})
+    body = r.json()
+    assert r.status_code == 200 and body["new"] is True and body["name"] == "Lumina Desk Fan 30 cm"
+    passport = (await client.get(f"{API}/products/{body['slug']}/passport")).json()
+    assert passport["version"] == 1
+    # The barcode now finds it straight away, and confirming again does not add a second product.
+    found = (await client.post(f"{API}/identify", json={"barcode": barcode})).json()
+    assert (found["slug"], found["new"]) == (body["slug"], False)
+    again = await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": "Another name", "category": "appliances", "barcode": barcode})
+    assert again.json() == {**found}
+    row = (await db.execute(select(IdentificationRequest).where(
+        IdentificationRequest.extracted["from_photo"].astext == "true"))).scalars().first()
+    assert row.status == "identified" and row.extracted["model"] == "LF-30"
+
+
+async def test_a_product_without_a_barcode_can_be_added_by_hand(client):
+    _, _, member = await verified_user(client)
+    r = await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": "Handmade Wooden Rattle", "category": "household"})
+    assert r.status_code == 200 and r.json()["new"] is True
+    branded = await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": "Oak Teether", "brand": "Woodly", "category": "household"})
+    assert branded.json()["name"] == "Woodly Oak Teether"  # the brand leads, the name is kept
+    bad = await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": "Thing", "category": "rockets"})
+    assert bad.json()["detail"] == "unknown_category"
+
+
+async def test_every_database_down_is_a_503(client, monkeypatch):
+    async def down(gtin):
+        raise upcitemdb.LookupUnavailable("HTTP 429")
+
+    async def also_down(gtin):
+        raise openfacts.LookupUnavailable("no answer")
+    monkeypatch.setattr(upcitemdb, "lookup", down)
+    monkeypatch.setattr(openfacts, "lookup", also_down)
+    r = await client.post(f"{API}/identify", json={"barcode": "012345678905"})
+    assert (r.status_code, r.json()["detail"]) == (503, "lookup_unavailable")

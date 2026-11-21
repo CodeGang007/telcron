@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.events import audit
 from app.models import Brand, Category, IdentificationRequest, Product, ProductAlias
 
-from . import upcitemdb
+from . import openfacts, upcitemdb, vision
 
 QUOTA = text("select telcron_setting_int('identify.daily_quota', 20)")
 # Category in the product database -> the registry's category code. First match wins.
@@ -81,8 +81,9 @@ async def _registry_hit(db: AsyncSession, gtin: str) -> Product | None:
                                     Product.status == "active").limit(1))).scalar_one_or_none()
 
 
-async def _add_to_registry(db: AsyncSession, gtin: str, item: dict[str, Any],
-                           user_id: uuid.UUID | None) -> Product:
+async def _add_to_registry(db: AsyncSession, gtin: str | None, item: dict[str, Any],
+                           user_id: uuid.UUID | None, *, source: str = "upcitemdb",
+                           how: str = "barcode", confidence: Decimal = Decimal("0.9")) -> Product:
     brand_name = (item.get("brand") or "").strip() or None
     brand = None
     if brand_name:
@@ -100,24 +101,27 @@ async def _add_to_registry(db: AsyncSession, gtin: str, item: dict[str, Any],
             Product.status == "active"))).scalar_one_or_none()
         if existing:
             db.add(ProductAlias(product_id=existing.id, alias_type="gtin", alias_value=gtin,
-                                data_source_code="upcitemdb", confidence=Decimal("0.9")))
+                                data_source_code=source, confidence=confidence))
             return existing
-    category = (await db.execute(select(Category).where(
-        Category.code == category_code(item.get("category"))))).scalar_one()
+    code = item.get("category_code") or category_code(item.get("category"))
+    category = (await db.execute(select(Category).where(Category.code == code))).scalar_one_or_none() \
+        or (await db.execute(select(Category).where(Category.code == "household"))).scalar_one()
     name = (item.get("title") or f"Product {gtin}").strip()[:300]
+    tail = gtin[-6:] if gtin else uuid.uuid4().hex[:6]
     product = Product(
         category_id=category.id, brand_id=brand.id if brand else None, canonical_name=name,
         model_number=model, model_number_normalized=model_norm or None,
         description=(item.get("description") or "").strip()[:2000] or None,
-        identification_source="barcode", identity_confidence=Decimal("0.9"),
-        public_slug=slug(brand_name or "", name[:50], gtin[-6:]) or f"product-{gtin}",
+        identification_source=how, identity_confidence=confidence,
+        public_slug=slug(brand_name or "", name[:50], tail) or f"product-{tail}",
         created_by_user_id=user_id)
     db.add(product)
     await db.flush()
-    db.add(ProductAlias(product_id=product.id, alias_type="gtin", alias_value=gtin,
-                        data_source_code="upcitemdb", confidence=Decimal("0.9")))
+    if gtin:
+        db.add(ProductAlias(product_id=product.id, alias_type="gtin", alias_value=gtin,
+                            data_source_code=source, confidence=confidence))
     audit(db, action="product.identified", entity_type="product", entity_id=product.id,
-          actor_user_id=user_id, changes={"gtin": gtin, "source": "upcitemdb"})
+          actor_user_id=user_id, changes={"gtin": gtin, "source": source, "how": how})
     return product
 
 
@@ -142,25 +146,116 @@ async def by_barcode(db: AsyncSession, code: str, user_id: uuid.UUID | None) -> 
     if product is not None:
         request.cache_hit = True
     else:
-        try:
-            item = await upcitemdb.lookup(gtin)
-        except upcitemdb.LookupUnavailable as exc:
+        item, errors = None, []
+        for client in (upcitemdb, openfacts):  # US retail first, then the worldwide open databases
+            try:
+                item = await client.lookup(gtin)
+            except (upcitemdb.LookupUnavailable, openfacts.LookupUnavailable) as exc:
+                errors.append(f"{client.__name__.rsplit('.', 1)[-1]}: {exc}"[:200])
+                continue
+            if item is not None:
+                break
+        if item is None and len(errors) == 2:
             request.status, request.completed_at = "failed", datetime.now(UTC)
-            request.extracted = {"error": str(exc)[:300]}
+            request.extracted = {"errors": errors}
             await db.commit()
-            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "lookup_unavailable") from exc
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "lookup_unavailable")
         if item is None:
             request.status, request.completed_at = "needs_input", datetime.now(UTC)
             await db.commit()
             raise HTTPException(status.HTTP_404_NOT_FOUND, "product_not_identified")
         request.extracted = {k: item.get(k) for k in ("title", "brand", "model", "category")}
-        product = await _add_to_registry(db, gtin, item, user_id)
+        product = await _add_to_registry(db, gtin, item, user_id,
+                                         source="upcitemdb" if item.get("source") != "openfacts"
+                                         else "telcron")
         created = product.current_passport_id is None
     request.status, request.resolved_product_id = "identified", product.id
     request.confidence = Decimal("1") if request.cache_hit else Decimal("0.9")
     request.completed_at = datetime.now(UTC)
     await db.flush()
     if created:  # screened now, so the person who scanned it sees a passport, not a blank page
+        from app.modules.screening.service import screen_product
+        await screen_product(db, product.id, "initial")
+    return {"slug": product.public_slug, "name": product.canonical_name, "new": created}
+
+
+# ------------------------------------------------- a product no database knows: photo, then a person
+
+MAX_PHOTO_BYTES = 3_500_000  # the provider takes at most 4 MB of base64
+CATEGORY_CODES = ("blenders", "mini_fridges", "window_ac", "power_adapters", "smartphones",
+                  "electronics", "appliances", "food", "household")
+
+
+async def suggest_from_photo(db: AsyncSession, data_url: str, barcode: str | None,
+                             user_id: uuid.UUID) -> dict[str, Any]:
+    """What the photo appears to show, and registry products that look like it. Nothing is stored
+    except the attempt: a person confirms or corrects the suggestion first."""
+    if not data_url.startswith("data:image/") or len(data_url) > MAX_PHOTO_BYTES * 4 // 3 + 100:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "photo_unreadable")
+    # Recorded as a text identification: the database (rightly) wants an image request to keep its
+    # image, and photos are not stored until the media pipeline exists. `extracted.from_photo` marks it.
+    request = IdentificationRequest(user_id=user_id, input_type="text", text_query="(photo)",
+                                    barcode_value=gtin14(barcode) if barcode else None)
+    db.add(request)
+    try:
+        answer = await vision.read_photo(data_url)
+    except vision.VisionUnavailable as exc:
+        request.status, request.completed_at = "failed", datetime.now(UTC)
+        request.extracted = {"error": str(exc)[:300], "from_photo": True}
+        await db.commit()
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
+                            "photo_identification_unavailable") from exc
+    clean = {k: (str(answer.get(k)).strip()[:200] if answer.get(k) else None)
+             for k in ("brand", "name", "model")}
+    code = answer.get("category") if answer.get("category") in CATEGORY_CODES else "household"
+    try:
+        confidence = max(0.0, min(1.0, float(answer.get("confidence") or 0)))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    request.status, request.completed_at = "needs_input", datetime.now(UTC)
+    seen_text = str(answer.get("visible_text") or "")[:500]
+    request.extracted = {**clean, "category": code, "visible_text": seen_text, "from_photo": True}
+    request.text_query = " ".join(v for v in (clean["brand"], clean["name"], clean["model"]) if v)[:300] \
+        or "(photo, nothing read)"
+    request.confidence = Decimal(str(round(confidence, 3)))
+    await db.flush()
+    from .service import search
+    query = " ".join(v for v in (clean["brand"], clean["name"]) if v)
+    similar = await search(db, query, 4, None) if query else []
+    return {"request_id": str(request.id), **clean, "category": code, "confidence": confidence,
+            "similar": similar}
+
+
+async def confirm(db: AsyncSession, data: dict[str, Any], user_id: uuid.UUID) -> dict[str, Any]:
+    """A member says what the product is (from the photo's suggestion, corrected, or typed). It is
+    added once, under its barcode if it has one, and screened at once."""
+    gtin = gtin14(data["barcode"]) if data.get("barcode") else None
+    if data.get("barcode") and gtin is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "invalid_barcode")
+    if gtin and (known := await _registry_hit(db, gtin)) is not None:
+        return {"slug": known.public_slug, "name": known.canonical_name, "new": False}
+    if data["category"] not in CATEGORY_CODES:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "unknown_category")
+    request = None
+    if data.get("request_id"):
+        request = (await db.execute(select(IdentificationRequest).where(
+            IdentificationRequest.id == data["request_id"],
+            IdentificationRequest.user_id == user_id))).scalar_one_or_none()
+    how = "ai_image" if request is not None else "manual"
+    name, brand = data["name"].strip(), (data.get("brand") or "").strip()
+    title = name if not brand or name.lower().startswith(brand.lower()) else f"{brand} {name}"
+    item = {"title": title, "brand": brand or None, "model": data.get("model"),
+            "category_code": data["category"]}
+    # Confirmed by a verified member: above the identity floor, so it is screened; below a barcode
+    # database's confidence, because one person said so.
+    product = await _add_to_registry(db, gtin, item, user_id, source="user_upload", how=how,
+                                     confidence=Decimal("0.8"))
+    created = product.current_passport_id is None
+    if request is not None:
+        request.status, request.resolved_product_id = "identified", product.id
+        request.fallback_manufacturer, request.fallback_model = data.get("brand"), data.get("model")
+    await db.flush()
+    if created:
         from app.modules.screening.service import screen_product
         await screen_product(db, product.id, "initial")
     return {"slug": product.public_slug, "name": product.canonical_name, "new": created}

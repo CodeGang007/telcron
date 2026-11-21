@@ -77,7 +77,7 @@ async def test_a_job_imports_recalls_and_rescreens_what_they_affect(client, db):
     slug = "heatwave-1500-heater"
     pid = await product_id(db, slug)
     before = (await client.get(f"{API}/products/{slug}/passport")).json()
-    assert before["status_badge"] == "verified"
+    assert before["status_badge"] == "needs_information"  # nothing checked yet
     _, admin = await staff_user(client, db, role="admin")
 
     job = await start_job(client, admin, date_start="2026-10-01", date_end="2026-10-31")
