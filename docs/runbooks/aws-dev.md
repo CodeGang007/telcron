@@ -29,6 +29,14 @@ superuser; the `postgres` superuser creates the extensions. Memory plan for 2 GB
 PostgreSQL about 300 MB (capped at 600 MB; `shared_buffers` 128 MB, 40 connections), embedder about
 500 MB (capped at 700 MB), API 150 MB, Worker 100 MB, Redis 96 MB, Caddy 30 MB.
 
+The compose network is `app`, a fixed private range declared in `infra/aws/compose.yml`, with Caddy on a
+fixed address in it. The API believes X-Forwarded-For only from that address (`TRUSTED_PROXIES`, set in
+the same file), so per-IP rate limits count each visitor, not Caddy. Caddy discards any X-Forwarded-For
+the visitor sent and writes the real one (its default with no `trusted_proxies`); uvicorn's own
+proxy-header handling is off (`backend/Dockerfile`). If Caddy's address or the range changes, change
+`TRUSTED_PROXIES` with it. The first release after this change creates the network and leaves the old,
+empty `telcron-app_default` behind; `docker network rm telcron-app_default` removes it (no cost either way).
+
 ## How a release happens
 
 1. A push to `main` runs `.github/workflows/pipeline.yml`: a dependency scan (`tools/dependency-scan.sh`:

@@ -10,9 +10,13 @@ x-backend: &backend
   image: ${BACKEND_IMAGE}
   restart: unless-stopped
   env_file: ${TELCRON_ENV_FILE:-/opt/telcron/.env}
+  networks: [app]
   environment:
     # Internal network only, so no token (services/embedder/app.py accepts none when EMBED_TOKEN is unset).
     EMBED_URL: http://embedder:8000
+    # The one proxy whose X-Forwarded-For the API believes (backend/app/core/ratelimit.py): Caddy's fixed
+    # address on the `app` network below. Without it every member would share Caddy's per-IP rate limit.
+    TRUSTED_PROXIES: 172.30.250.10/32
   depends_on:
     postgres:
       condition: service_healthy
@@ -25,6 +29,9 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    networks:
+      app:
+        ipv4_address: 172.30.250.10   # = TRUSTED_PROXIES above; keep the two in step
     ports:
       - "${HTTP_PORT:-80}:80"
       - "${HTTPS_PORT:-443}:443"
@@ -53,6 +60,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    networks: [app]
     command: ["redis-server", "--save", "60", "1", "--maxmemory", "96mb", "--maxmemory-policy", "noeviction"]
     volumes:
       - redis_data:/data
@@ -71,6 +79,7 @@ services:
     build: ./postgres
     image: telcron-host-postgres:18   # not telcron-postgres:18, the local-dev image built from db/
     restart: unless-stopped
+    networks: [app]
     env_file: ${TELCRON_PG_ENV_FILE:-/opt/telcron/postgres.env}
     environment:
       POSTGRES_USER: postgres
@@ -114,6 +123,7 @@ services:
     build: ../../services/embedder
     image: telcron-embedder:local
     restart: unless-stopped
+    networks: [app]
     mem_limit: 700m
     volumes:
       - embed_models:/models
@@ -128,6 +138,7 @@ services:
   migrate:
     image: ghcr.io/amacneil/dbmate:2
     profiles: ["tools"]
+    networks: [app]
     environment:
       DATABASE_URL: ${MIGRATE_DATABASE_URL:-}
       DBMATE_MIGRATIONS_DIR: /db/migrations
@@ -138,6 +149,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+# A fixed private range, so Caddy's address is known and the API trusts exactly that one proxy. It must
+# not overlap the VPC's range or another docker network on the host; nothing on it is published. Named
+# `app` rather than redefining `default`, so an existing host gets a new network instead of a conflict.
+networks:
+  app:
+    ipam:
+      config:
+        - subnet: 172.30.250.0/24
 
 volumes:
   caddy_data:

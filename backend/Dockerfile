@@ -22,5 +22,7 @@ USER telcron
 ENV PATH="/app/.venv/bin:$PATH"
 EXPOSE 8000
 
-# Behind the reverse proxy in the same compose network; port 8000 is never published.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# Behind the reverse proxy in the same compose network; port 8000 is never published. Uvicorn's own
+# proxy-header handling is off: it would replace the peer address with whatever X-Forwarded-For says.
+# The app alone decides whom to believe (TRUSTED_PROXIES, backend/app/core/ratelimit.py).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--no-proxy-headers"]
