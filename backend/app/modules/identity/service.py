@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import security
+from app.core import ratelimit, security
 from app.core.config import get_settings
 from app.core.events import audit
 from app.models import AuthEvent, TrustScoreEvent, User, VerificationToken
@@ -44,7 +44,7 @@ async def _issue_code(db: AsyncSession, user: User, channel: str) -> str:
     return code
 
 
-async def _deliver(db: AsyncSession, user: User, code: str | None) -> bool:
+async def _deliver(db: AsyncSession, user: User, code: str | None, ip: str | None) -> bool:
     """Email the code. A refusal does not undo the sign-up: it is recorded and the member can ask
     for a new code."""
     if code is None:
@@ -52,19 +52,22 @@ async def _deliver(db: AsyncSession, user: User, code: str | None) -> bool:
     try:
         await mailer.send_code(user.email, code)
     except mailer.SendFailed as exc:
+        # The provider's error code only: its text can carry the address (DEF-048).
         db.add(AuthEvent(user_id=user.id, event_type="otp_failed", email_attempted=user.email,
-                         failure_reason=f"email_not_sent: {exc}"[:200]))
+                         failure_reason=f"email_not_sent:{exc.code}"[:200], ip_address=ip))
         return False
     # Recorded only once the provider has taken the message (not before trying).
-    db.add(AuthEvent(user_id=user.id, event_type="otp_sent", email_attempted=user.email))
+    db.add(AuthEvent(user_id=user.id, event_type="otp_sent", email_attempted=user.email,
+                     ip_address=ip))
     return True
 
 
 RESEND_GAP = timedelta(seconds=60)
 
 
-async def resend(db: AsyncSession, email: str) -> dict[str, str] | None:
-    """A new email code, at most one a minute. Says nothing about whether the address exists."""
+async def resend(db: AsyncSession, email: str, ip: str | None) -> dict[str, str] | None:
+    """A new email code, at most one a minute and MAIL_PER_ADDRESS_PER_DAY a day. Says nothing
+    about whether the address exists."""
     user = (await db.execute(select(User).where(User.email == email))).scalar_one_or_none()
     if user is None or user.status in BLOCKED or user.email_verified_at is not None:
         return None
@@ -73,15 +76,34 @@ async def resend(db: AsyncSession, email: str) -> dict[str, str] | None:
         .order_by(VerificationToken.created_at.desc()).limit(1))
     if last is not None and _now() - last < RESEND_GAP:
         return None
+    if not await ratelimit.allow_mail(email):
+        return None
     code = await _issue_code(db, user, "email")
-    await _deliver(db, user, code)
+    await _deliver(db, user, code, ip)
     return {"email": code}
 
 
+async def _notify_existing_owner(email: str) -> bool:
+    """Someone signed up with an address that has an account. Its owner is told by email, and the
+    caller gets the answer a new sign-up gets (DEF-043). Never a code: a code here would let whoever
+    knows the address confirm an account they do not own."""
+    if not await ratelimit.allow_mail(email):
+        return True  # over the daily cap nothing is sent, and the answer must not say so
+    try:
+        await mailer.send_signup_notice(email)
+    except mailer.SendFailed:
+        return False
+    return True
+
+
 async def register(db: AsyncSession, data: RegisterIn,
-                   ip: str | None) -> tuple[User, dict[str, str], bool]:
-    if (await db.execute(select(User.id).where(User.email == data.email))).first():
-        raise HTTPException(status.HTTP_409_CONFLICT, "email_taken")
+                   ip: str | None) -> tuple[dict[str, str], bool]:
+    """The codes created (only for a new account) and whether the email went out. The answer is the
+    same whether or not the address already has an account."""
+    existing = (await db.execute(select(User.id).where(User.email == data.email))).first()
+    if existing:
+        security.hash_password(data.password)  # the same argon2 work a new account costs
+        return {}, await _notify_existing_owner(data.email)
     # A new account is `pending` (the database default) until its email is confirmed.
     user = User(email=data.email, phone_e164=data.phone_e164, display_name=data.display_name,
                 password_hash=security.hash_password(data.password), password_changed_at=_now(),
@@ -92,13 +114,15 @@ async def register(db: AsyncSession, data: RegisterIn,
     channels = ("email", "phone") if get_settings().level1_requires_phone and data.phone_e164 \
         else ("email",)
     codes = {ch: await _issue_code(db, user, ch) for ch in channels}
-    sent = await _deliver(db, user, codes.get("email"))
+    await ratelimit.allow_mail(data.email)  # counted; a new account's first code always goes out
+    sent = await _deliver(db, user, codes.get("email"), ip)
     audit(db, action="user.registered", entity_type="user", entity_id=user.id,
           actor_user_id=user.id)
-    return user, codes, sent
+    return codes, sent
 
 
-async def verify(db: AsyncSession, email: str, channel: str, code: str) -> User:
+async def verify(db: AsyncSession, email: str, channel: str, code: str,
+                 ip: str | None = None) -> User:
     user = (await db.execute(select(User).where(User.email == email).with_for_update())
             ).scalar_one_or_none()
     bad = HTTPException(status.HTTP_400_BAD_REQUEST, "invalid_or_expired_code")
@@ -116,7 +140,7 @@ async def verify(db: AsyncSession, email: str, channel: str, code: str) -> User:
         # The attempt must survive the 400, so it is committed on its own.
         token.attempt_count += 1
         db.add(AuthEvent(user_id=user.id, event_type="otp_failed", email_attempted=email,
-                         failure_reason=f"{channel}_code_mismatch"))
+                         failure_reason=f"{channel}_code_mismatch", ip_address=ip))
         await db.commit()
         raise bad
 
@@ -135,7 +159,8 @@ async def verify(db: AsyncSession, email: str, channel: str, code: str) -> User:
             user.status = "active"
     else:
         user.phone_verified_at = user.phone_verified_at or _now()
-    db.add(AuthEvent(user_id=user.id, event_type=VERIFIED[channel], email_attempted=email))
+    db.add(AuthEvent(user_id=user.id, event_type=VERIFIED[channel], email_attempted=email,
+                     ip_address=ip))
 
     phone_ok = user.phone_verified_at is not None or not get_settings().level1_requires_phone
     if user.email_verified_at and phone_ok and user.verification_level < 1:
@@ -174,14 +199,21 @@ async def login(db: AsyncSession, email: str, password: str, ip: str | None,
     s = get_settings()
     user = (await db.execute(select(User).where(User.email == email).with_for_update())
             ).scalar_one_or_none()
+    # One answer for unknown, inactive, locked and wrong, in about the same time (DEF-043).
     denied = HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid_credentials")
     if user is None or user.status in BLOCKED or not user.password_hash:
+        security.verify_dummy(password)
         db.add(AuthEvent(event_type="login_failed", email_attempted=email,
                          failure_reason="unknown_or_inactive", ip_address=ip))
         await db.commit()
         raise denied
     if user.locked_until and user.locked_until > _now():
-        raise HTTPException(status.HTTP_423_LOCKED, "account_locked")
+        # Even the right password is refused until the lock ends; the attempt does not extend it.
+        security.verify_password(user.password_hash, password)
+        db.add(AuthEvent(user_id=user.id, event_type="login_failed", email_attempted=email,
+                         failure_reason="locked", ip_address=ip))
+        await db.commit()
+        raise denied
     if not security.verify_password(user.password_hash, password):
         user.failed_login_count += 1
         event = "login_failed"
@@ -247,3 +279,14 @@ async def logout(db: AsyncSession, refresh_token: str) -> None:
             SessionRow.family_id == row.family_id, SessionRow.revoked_at.is_(None))
             .values(revoked_at=_now(), revoke_reason="logout"))
         db.add(AuthEvent(user_id=row.user_id, event_type="logout"))
+
+
+async def record_throttled(db: AsyncSession, scope: str, email: str, ip: str | None) -> None:
+    """The request that crossed a sign-in or code limit is an auth event; the ones after it are
+    not recorded, so a flood cannot fill the table."""
+    event = {"login": "login_failed", "verify": "otp_failed"}.get(scope)
+    if event is None:
+        return
+    db.add(AuthEvent(event_type=event, email_attempted=email, failure_reason="rate_limited",
+                     ip_address=ip))
+    await db.commit()

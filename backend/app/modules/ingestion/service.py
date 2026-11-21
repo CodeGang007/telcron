@@ -8,12 +8,13 @@ one bad record marks the job `partial`, it does not lose the rest.
 
 import hashlib
 import json
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, null, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import SessionLocal
@@ -27,8 +28,9 @@ from app.models import (
     SourceRecord,
 )
 
-from . import cpsc
+from . import cpsc, raw_store
 
+log = logging.getLogger("telcron.ingestion")
 Fetch = Callable[[date, date], Awaitable[list[dict]]]
 SOURCES: dict[str, Fetch] = {cpsc.SOURCE: cpsc.fetch}
 PARSERS = {cpsc.SOURCE: cpsc.parse}
@@ -79,12 +81,41 @@ async def create_job(db: AsyncSession, source: str, params: dict[str, Any], trig
     return job
 
 
+def canonical(record: dict) -> bytes:
+    """The bytes a record is hashed and kept as: the same content always gives the same bytes."""
+    return json.dumps(record, sort_keys=True, separators=(",", ":")).encode()
+
+
+async def keep_raw(source: str, body: bytes, digest: bytes, stats: dict[str, Any]) -> str | None:
+    """Put a new record's bytes in the raw store; its key, or None when the store is off or the
+    upload failed. A failure is logged and counted and costs nothing else: the record is then
+    kept in the database instead, so no row is ever lost to the store."""
+    if not raw_store.enabled():
+        return None
+    key = raw_store.key_for(source, digest, datetime.now(UTC).date())
+    try:
+        await raw_store.put(key, body)
+    except Exception as exc:
+        stats["raw_copy_failed"] = stats.get("raw_copy_failed", 0) + 1
+        log.warning("raw copy not stored: source=%s sha256=%s error=%s", source, digest.hex(),
+                    type(exc).__name__)
+        return None
+    stats["raw_copied"] = stats.get("raw_copied", 0) + 1
+    return key
+
+
 async def _store_recall(db: AsyncSession, source: str, record: dict, digest: bytes,
-                        job_id: uuid.UUID) -> tuple[str, list[uuid.UUID]]:
-    """Returns ('new' | 'changed', the registry products worth re-screening)."""
+                        job_id: uuid.UUID, storage_key: str | None = None,
+                        ) -> tuple[str, list[uuid.UUID]]:
+    """Returns ('new' | 'changed', the registry products worth re-screening). A record kept in the
+    raw store is pointed to, not repeated: the schema holds exactly one of payload and key
+    (source_records_chk1)."""
     parsed = PARSERS[source](record)
+    # SQL NULL, not JSON null: a JSONB column maps Python None to the JSON value.
     raw = SourceRecord(data_source_code=source, record_type="recall",
-                       external_id=parsed.external_id, payload=record, payload_sha256=digest,
+                       external_id=parsed.external_id,
+                       payload=null() if storage_key else record,
+                       payload_storage_key=storage_key, payload_sha256=digest,
                        ingestion_job_id=job_id)
     db.add(raw)
     await db.flush()
@@ -158,8 +189,8 @@ async def run_job(job_id: uuid.UUID, fetch: Fetch | None = None) -> dict[str, An
         rescreen: set[uuid.UUID] = set()
         first_error = None
         for record in records:
-            digest = hashlib.sha256(json.dumps(record, sort_keys=True, separators=(",", ":"))
-                                    .encode()).digest()
+            body = canonical(record)
+            digest = hashlib.sha256(body).digest()
             external_id = str(record.get("RecallID"))
             if (await db.execute(select(SourceRecord.id).where(
                     SourceRecord.data_source_code == source,
@@ -169,8 +200,11 @@ async def run_job(job_id: uuid.UUID, fetch: Fetch | None = None) -> dict[str, An
                 stats["unchanged"] += 1
                 continue
             try:
+                # Upload before the savepoint opens: no transaction waits on the network.
+                key = await keep_raw(source, body, digest, stats)
                 async with db.begin_nested():
-                    outcome, affected = await _store_recall(db, source, record, digest, job.id)
+                    outcome, affected = await _store_recall(db, source, record, digest, job.id,
+                                                            key)
                 stats[outcome] += 1
                 rescreen.update(affected)
             except Exception as exc:

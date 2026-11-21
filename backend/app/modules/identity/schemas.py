@@ -11,7 +11,7 @@ class RegisterIn(BaseModel):
 
 
 class RegisterOut(BaseModel):
-    user_id: str
+    """The same for a new address and one that already has an account (DEF-043): no account id."""
     # False when the mail provider refused the code (the member can ask for a new one).
     email_sent: bool = False
     # Present only when DEV_EXPOSE_CODES is on. Never in a deployed environment.

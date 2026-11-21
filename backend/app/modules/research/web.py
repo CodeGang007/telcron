@@ -22,11 +22,15 @@ from app.core.config import get_settings
 TAVILY = "https://api.tavily.com/search"
 TAVILY_USAGE = "https://api.tavily.com/usage"
 SEARCHES_PER_RUN = 4
-# Government product-safety regulators: the second search looks only here.
+# Government product-safety regulators: the second search looks only here, and only a page on one
+# of these exact hosts counts as official (DEF-041: no wildcard subdomains, so a page on some other
+# *.gov.uk or *.canada.ca site is never a regulator's notice). "www." is ignored when comparing.
 REGULATORS = ["cpsc.gov", "saferproducts.gov", "fda.gov", "nhtsa.gov", "ec.europa.eu",
-              "productsafety.gov.au", "accc.gov.au", "recalls-rappels.canada.ca", "canada.ca",
-              "gov.uk", "productrecalls.govt.nz", "consumer.go.jp", "fssai.gov.in", "gc.ca"]
+              "productsafety.gov.au", "accc.gov.au", "recalls-rappels.canada.ca", "gov.uk",
+              "productrecalls.govt.nz", "consumer.go.jp", "fssai.gov.in"]
 OFFICIAL_SOURCES = ("regulator_web", "uk_opss", "openfda")
+# Registries whose URLs registries.py builds itself (never a URL a search returned).
+TRUSTED_REGISTRIES = ("uk_opss", "openfda")
 # Where owners talk about products: the third search looks only here (search-engine results and
 # their snippets, with links; nothing is scraped).
 # Shop listings and search pages say what is for sale, not what happened to owners; review pages
@@ -51,10 +55,44 @@ def same_page(url: str) -> str:
 
 
 def official(hit: "Hit") -> bool:
-    """Published by a government product-safety body: a registry we query, or a regulator's site."""
+    """Published by a government product-safety body: a registry we query, or a page on one of the
+    regulators' own hosts. A search result tagged `regulator_web` is still checked by host: the
+    search provider may return pages from elsewhere."""
     host = re.sub(r"^https?://", "", hit.url).split("/")[0].lower().split(":")[0]
-    return hit.source in OFFICIAL_SOURCES or any(
-        host == d or host.endswith("." + d) for d in REGULATORS)
+    return hit.source in TRUSTED_REGISTRIES or host.removeprefix("www.") in REGULATORS
+
+
+def plain_text(text: str) -> str:
+    return " " + " ".join(re.findall(r"[a-z0-9]+", text.lower())) + " "
+
+
+def name_in_page(name: str, brand: str | None, hit: "Hit") -> bool:
+    """The page prints this product's name: every distinctive word of it (not the brand, not a
+    generic word like "mini" or "black") is in the page's title or text. A notice that names only
+    the brand does not (DEF-041)."""
+    brand_words = set(re.findall(r"[a-z0-9]+", (brand or "").lower()))
+    words = [w for w in re.findall(r"[a-z0-9]+", name.lower())
+             if len(w) >= 3 and w not in STOP and w not in GENERIC and w not in brand_words]
+    page = plain_text(f"{hit.title} {hit.snippet}")
+    return bool(words) and all(f" {w} " in page for w in words)
+
+
+NOTICE_LABEL = re.compile(r"^\s*(UK OPSS|FDA [a-z]+ recall [\w-]*|Product (Safety )?(Recall|Alert|"
+                          r"Report|Withdrawal)|Recall(ed)?|Safety alert)\s*:\s*", re.I)
+SITE_SUFFIX = re.compile(r"\s+[|–-]\s+(GOV\.UK|CPSC\.gov|FDA|Health Canada|.*\.gov[a-z.]*)\s*$", re.I)
+
+
+def printed_name(hit: "Hit") -> str:
+    """The product as the notice itself names it: its title without the registry's labels and the
+    site's name (openFDA puts the product in the text: "Product: ...")."""
+    if hit.source == "openfda" and (m := re.search(r"Product: ([^.]{3,300})", hit.snippet)):
+        return m.group(1).strip()
+    title = hit.title
+    while (stripped := NOTICE_LABEL.sub("", title, count=1)) != title:
+        title = stripped
+    return SITE_SUFFIX.sub("", title).strip()[:300] or hit.title[:300]
+
+
 MAX_RESULTS = 8
 KINDS = ("recall", "safety_warning", "complaint", "review", "certification", "no_issue_found",
          "general")

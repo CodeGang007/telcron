@@ -1,16 +1,19 @@
 """Recall ingestion: parsing with exact answers, then a job end to end with the feed replaced."""
 
 import copy
+import hashlib
 import json
 import pathlib
+import re
 from datetime import date
 
 import httpx
 from helpers import API, product_id, staff_user, verified_user
 from sqlalchemy import func, select
 
-from app.models import OutboxEvent, Recall, RecallProduct
-from app.modules.ingestion import cpsc
+from app.core.config import get_settings
+from app.models import OutboxEvent, Recall, RecallProduct, SourceRecord
+from app.modules.ingestion import cpsc, raw_store
 from app.modules.ingestion.service import normalized, run_job
 from app.workers.handlers import screening
 
@@ -147,3 +150,82 @@ async def test_an_unreachable_source_fails_the_job_visibly(client, db):
     view = (await client.get(f"{API}/jobs/{job['id']}", headers=admin)).json()
     assert view["status"] == "failed" and "ConnectError" in view["error"]
     assert (await client.get(f"{API}/jobs", headers=admin)).json()[0]["id"] == job["id"]
+
+
+def test_a_raw_copy_is_named_by_source_day_and_content():
+    digest = hashlib.sha256(b"{}").digest()
+    assert raw_store.key_for("cpsc", digest, date(2026, 11, 2)) == (
+        f"raw/cpsc/2026/11/02/{digest.hex()}.json")
+
+
+def fresh_records(first_id: int) -> list[dict]:
+    """The feed's records under ids no other test imports, so each test sees them as new."""
+    records = copy.deepcopy(RECORDS)
+    for n, record in enumerate(records):
+        record["RecallID"], record["RecallNumber"] = first_id + n, f"27-RAW-{first_id + n}"
+    return records
+
+
+async def rows_of(db, job_id) -> list[SourceRecord]:
+    return list((await db.execute(select(SourceRecord).where(
+        SourceRecord.ingestion_job_id == job_id))).scalars())
+
+
+async def test_with_the_raw_store_on_each_new_record_is_kept_outside_the_database(
+        client, db, monkeypatch):
+    stored: dict[str, bytes] = {}
+
+    async def put(key: str, body: bytes) -> None:
+        stored[key] = body
+    monkeypatch.setattr(get_settings(), "raw_store", "s3")
+    monkeypatch.setattr(raw_store, "put", put)
+    _, admin = await staff_user(client, db, role="admin")
+    records = fresh_records(990100)
+
+    job = await start_job(client, admin)
+    stats = await run_job(job["id"], fetch=feed(records))
+    assert (stats["new"], stats["raw_copied"], stats["errors"]) == (3, 3, 0)
+    rows = await rows_of(db, job["id"])
+    assert len(rows) == 3
+    for row in rows:
+        assert re.fullmatch(r"raw/cpsc/\d{4}/\d{2}/\d{2}/[0-9a-f]{64}\.json",
+                            row.payload_storage_key)
+        # The stored bytes are the record: they hash to the row's content hash.
+        assert hashlib.sha256(stored[row.payload_storage_key]).digest() == row.payload_sha256
+        assert row.payload is None  # the schema keeps exactly one copy (source_records_chk1)
+
+    # A repeat of the same content stores nothing, in the database or outside it.
+    again = await start_job(client, admin)
+    assert (await run_job(again["id"], fetch=feed(records)))["unchanged"] == 3
+    assert len(stored) == 3 and await rows_of(db, again["id"]) == []
+
+
+async def test_with_the_raw_store_off_nothing_leaves_the_database(client, db, monkeypatch):
+    async def must_not_call(key: str, body: bytes) -> None:
+        raise AssertionError("the raw store is off")
+    monkeypatch.setattr(raw_store, "put", must_not_call)
+    _, admin = await staff_user(client, db, role="admin")
+
+    job = await start_job(client, admin)
+    stats = await run_job(job["id"], fetch=feed(fresh_records(990200)))
+    assert stats["new"] == 3 and "raw_copied" not in stats
+    rows = await rows_of(db, job["id"])
+    assert len(rows) == 3
+    assert all(r.payload is not None and r.payload_storage_key is None for r in rows)
+
+
+async def test_a_failed_upload_keeps_the_record_in_the_database(client, db, monkeypatch):
+    async def down(key: str, body: bytes) -> None:
+        raise ConnectionError("store unreachable")
+    monkeypatch.setattr(get_settings(), "raw_store", "s3")
+    monkeypatch.setattr(raw_store, "put", down)
+    _, admin = await staff_user(client, db, role="admin")
+
+    job = await start_job(client, admin)
+    stats = await run_job(job["id"], fetch=feed(fresh_records(990300)))
+    assert (stats["new"], stats["errors"], stats["raw_copy_failed"]) == (3, 0, 3)
+    view = (await client.get(f"{API}/jobs/{job['id']}", headers=admin)).json()
+    assert view["status"] == "succeeded"
+    rows = await rows_of(db, job["id"])
+    assert len(rows) == 3
+    assert all(r.payload is not None and r.payload_storage_key is None for r in rows)

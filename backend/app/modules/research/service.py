@@ -13,6 +13,7 @@ and the cool-down and the daily cap are counted from those jobs.
 
 import hashlib
 import json
+import logging
 import re
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -40,10 +41,11 @@ from app.models import (
     SourceRecord,
 )
 from app.modules.ingestion import cpsc
-from app.modules.ingestion.service import _store_recall
+from app.modules.ingestion.service import _store_recall, canonical, keep_raw
 
 from . import registries, web
 
+log = logging.getLogger("telcron.research")
 SOURCE = "web_search"
 PROGRESS_TTL = 3600
 
@@ -97,6 +99,13 @@ def _due(last: IngestionJob | None, now: datetime) -> bool:
     return last.created_at <= now - wait
 
 
+async def _cached_searches_left() -> int | None:
+    """The balance as last asked of the provider, if that is still cached; None otherwise. Never
+    calls out: what an anonymous page view reads (DEF-042)."""
+    cached = await (await get_redis()).get(USAGE_KEY)
+    return None if cached in (None, b"", "") else int(cached)
+
+
 async def _searches_left() -> int | None:
     """The search plan's balance, asked of the provider at most every ten minutes."""
     redis = await get_redis()
@@ -108,12 +117,33 @@ async def _searches_left() -> int | None:
     return left
 
 
-async def blocked(db: AsyncSession, product: Product, last: IngestionJob | None = None
-                  ) -> str | None:
+# Research runs one member may start in a day, so one account cannot spend the shared allowance
+# (DEF-049). Read from the setting `research_per_user_per_day` once core/config.py has it; this is
+# the default until then.
+PER_USER_DAILY = 5
+
+
+def _per_user_daily() -> int:
+    return int(getattr(get_settings(), "research_per_user_per_day", PER_USER_DAILY))
+
+
+async def user_blocked(db: AsyncSession, user_id: uuid.UUID) -> str | None:
+    """research_user_daily_limit when this member has started their day's share of searches
+    (re-reads of unread pages cost no search and are not counted)."""
+    started = await db.scalar(select(func.count()).select_from(IngestionJob).where(
+        IngestionJob.data_source_code == SOURCE, IngestionJob.triggered_by_user_id == user_id,
+        IngestionJob.created_at > datetime.now(UTC) - timedelta(days=1),
+        ~IngestionJob.params.has_key("reread")))
+    return "research_user_daily_limit" if started >= _per_user_daily() else None
+
+
+async def blocked(db: AsyncSession, product: Product, last: IngestionJob | None = None,
+                  ask_provider: bool = True) -> str | None:
     """Why a research run cannot start now, as an error code; None when it can.
     research_not_due: this product was searched recently (or is being searched).
     research_daily_limit / research_month_limit: the shared web-search allowance is spent.
-    A re-read of pages left unread costs no search, so only the first reason applies to it."""
+    A re-read of pages left unread costs no search, so only the first reason applies to it.
+    With `ask_provider` False the search plan's balance is read from the cache only."""
     if not get_settings().research_enabled:
         return "research_disabled"
     last = last if last is not None else await _latest(db, product.id)
@@ -127,7 +157,7 @@ async def blocked(db: AsyncSession, product: Product, last: IngestionJob | None 
         ~IngestionJob.params.has_key("reread")))
     if today >= DAILY_CAP:
         return "research_daily_limit"
-    left = await _searches_left()
+    left = await _searches_left() if ask_provider else await _cached_searches_left()
     if left is not None and left < web.SEARCHES_PER_RUN + RESERVE:
         return "research_month_limit"
     return None
@@ -137,7 +167,10 @@ async def request(db: AsyncSession, product: Product, user_id: uuid.UUID | None,
                   trigger: str = "event") -> IngestionJob | None:
     """Queue a research run, unless `blocked` says why not. When the last run left pages unread
     (the AI allowance was spent), only those are read again: no new search, so it costs nothing
-    from the search allowance."""
+    from the search allowance. A member's own request also counts against their daily share
+    (`user_blocked`); a product they add past it is caught up later by the Worker's cron."""
+    if user_id is not None and trigger != "admin" and await user_blocked(db, user_id):
+        return None
     last = await _latest(db, product.id)
     if await blocked(db, product, last):
         return None
@@ -166,12 +199,21 @@ COUNTRY = {"gov.uk": "GB", "gc.ca": "CA", "canada.ca": "CA", "cpsc.gov": "US",
 
 async def _official_recall(db: AsyncSession, product: Product, brand: str | None,
                            finding: web.Finding, raw: SourceRecord) -> bool:
-    """A government notice that this product is recalled becomes a recall in the registry, tied to
-    the product by brand and name; by model number too when the notice prints it. The screening
-    then judges it like any other recall: the model number makes it a match, brand and name a
-    near match."""
+    """A government notice that this product is recalled becomes a recall in the registry, holding
+    what the notice itself prints (DEF-041): its product name, the brand only if it names it, and
+    this product's model number only if it prints it. A notice becomes a recall only when it prints
+    this product's model number or its name; one that names only the brand stays evidence, so it
+    cannot become a near match on every product of that brand. The screening then judges it like
+    any other recall: the model number makes it a match, a similar name and the brand a near
+    match."""
     hit = finding.hit
     if finding.kind != "recall" or not web.official(hit) or not brand:
+        return False
+    page = re.sub(r"[^A-Z0-9]", "", f"{hit.title} {hit.snippet}".upper())
+    prints_model = bool(product.model_number_normalized
+                        and len(product.model_number_normalized) >= 4
+                        and product.model_number_normalized in page)
+    if not prints_model and not web.name_in_page(product.canonical_name, brand, hit):
         return False
     source = hit.source if hit.source in web.OFFICIAL_SOURCES else "regulator_web"
     key = web.same_page(hit.url)
@@ -192,13 +234,13 @@ async def _official_recall(db: AsyncSession, product: Product, brand: str | None
     country = next((c for d, c in COUNTRY.items() if host.endswith(d)), None)
     if country:
         db.add(RecallRegion(recall_id=recall.id, country_code=country))
-    named = RecallProduct(recall_id=recall.id, product_name=product.canonical_name,
-                          brand_name=brand)
+    brand_words = " ".join(re.findall(r"[a-z0-9]+", brand.lower()))
+    named = RecallProduct(recall_id=recall.id, product_name=web.printed_name(hit),
+                          brand_name=brand if f" {brand_words} " in web.plain_text(
+                              f"{hit.title} {hit.snippet}") else None)
     db.add(named)
     await db.flush()
-    page = re.sub(r"[^A-Z0-9]", "", f"{hit.title} {hit.snippet}".upper())
-    if product.model_number_normalized and len(product.model_number_normalized) >= 4 \
-            and product.model_number_normalized in page:
+    if prints_model:
         db.add(RecallProductIdentifier(recall_product_id=named.id, identifier_type="model_number",
                                        value=product.model_number,
                                        value_normalized=product.model_number_normalized))
@@ -247,14 +289,16 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
             records = await cpsc.search(brand)
             stats["cpsc_notices"] = len(records)
             for record in records:
-                digest = hashlib.sha256(json.dumps(record, sort_keys=True, separators=(",", ":"))
-                                        .encode()).digest()
+                body = canonical(record)
+                digest = hashlib.sha256(body).digest()
                 if (await db.execute(select(SourceRecord.id).where(
                         SourceRecord.data_source_code == cpsc.SOURCE,
                         SourceRecord.payload_sha256 == digest))).first():
                     continue
+                key = await keep_raw(cpsc.SOURCE, body, digest, stats)
                 async with db.begin_nested():
-                    _, affected = await _store_recall(db, cpsc.SOURCE, record, digest, job.id)
+                    _, affected = await _store_recall(db, cpsc.SOURCE, record, digest, job.id,
+                                                      key)
                 stats["cpsc_new"] += 1
                 for other in affected:  # products elsewhere in the registry this notice names
                     if other != product.id:
@@ -338,6 +382,8 @@ async def run(job_id: uuid.UUID) -> dict[str, Any]:
         job.status = "partial" if stats["errors"] else "succeeded"
         job.error = "; ".join(stats["errors"])[:500] or None
         product_id = job.params["product_id"]
+        if stats["errors"]:  # the detail stays here and in the job row, never in a response
+            log.warning("research job %s finished with errors: %s", job_id, job.error)
         await db.commit()
     # The new passport version replaces the cached one (as the screening handler does).
     redis = await get_redis()
@@ -345,7 +391,26 @@ async def run(job_id: uuid.UUID) -> dict[str, Any]:
     return stats
 
 
-async def summary(db: AsyncSession, product: Product) -> dict[str, Any]:
+ERROR_SOURCE = re.compile(r"[a-z][a-z0-9_]{0,40}")
+
+
+def _public_stats(stats: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A run's stats as a page may see them: each error reduced to the code of the source that
+    failed ("cpsc", "web", "reader", "uk_opss" ...), never the provider's own text (DEF-049)."""
+    if stats is None:
+        return None
+    codes = []
+    for error in stats.get("errors") or []:
+        head = str(error).split(":", 1)[0].strip()
+        code = head if ERROR_SOURCE.fullmatch(head) else "other"
+        if code not in codes:
+            codes.append(code)
+    return {**stats, "errors": codes}
+
+
+async def summary(db: AsyncSession, product: Product, signed_in: bool = False) -> dict[str, Any]:
+    """What is known, for anyone. Only a signed-in caller's view may ask the search provider for
+    its balance; an anonymous one reads the cached balance and never calls out (DEF-042)."""
     rows = (await db.execute(
         select(ProductTraceability.attribute, ProductTraceability.value,
                ProductTraceability.match_method, ProductTraceability.confidence,
@@ -360,14 +425,15 @@ async def summary(db: AsyncSession, product: Product) -> dict[str, Any]:
     if last is not None and last.status in ("queued", "running"):
         raw = await (await get_redis()).get(f"telcron:research:{product.id}")
         progress = json.loads(raw) if raw else {"stage": "Waiting its turn in the queue", "percent": 3}
-    reason = await blocked(db, product, last)
+    reason = await blocked(db, product, last, ask_provider=signed_in)
     return {
         "enabled": s.research_enabled,
         "blocked": reason,
         "status": last.status if last else None,
         "searched_at": (last.finished_at or last.created_at).isoformat() if last else None,
         # A queued or running search has no stats yet: say so rather than send an empty object.
-        "stats": last.stats if last and last.status not in ("queued", "running") else None,
+        "stats": _public_stats(last.stats) if last and last.status not in ("queued", "running")
+        else None,
         "can_request": reason is None,
         "progress": progress,
         "unread": len(_unread(last)),
