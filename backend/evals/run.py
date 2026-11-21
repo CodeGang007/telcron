@@ -37,14 +37,16 @@ def band(score) -> str:
 
 async def evaluate() -> dict:
     cases = json.loads((HERE / "cases.json").read_text())["cases"]
-    scorer = get_scorer()
     graded = agreed = cites = valid_cites = 0
     rows = []
+    answered_by: dict[str, str] = {}
     for case in cases:
+        scorer = get_scorer()  # one per case: a fallback in one case must not colour the next
         refs = [EvidenceRef(f"{case['id']}-{i}", kind, text)
                 for i, (kind, text) in enumerate(case["evidence"])]
         results = {r.code: r for r in await scorer.score(case["product"], DIMENSIONS, refs)}
         offered = {r.id for r in refs}
+        answered_by[case["id"]] = getattr(scorer, "model_code", "?")
         for code, expected in case["expect"].items():
             got = band(results[code].score) if code in results else "none"
             graded += 1
@@ -56,9 +58,8 @@ async def evaluate() -> dict:
             valid_cites += sum(c in offered for c in r.citations)
     report = {
         "at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "scorer": getattr(scorer, "model_code", "?"),
-        "prompt_version": getattr(scorer, "prompt_version", "?"),
-        "fallback_error": getattr(scorer, "error", None),
+        "scorer": ", ".join(sorted(set(answered_by.values()))),
+        "answered_by": answered_by,
         "cases": len(cases), "graded": graded,
         "agreement": round(agreed / graded, 3) if graded else 0.0,
         "citation_validity": round(valid_cites / cites, 3) if cites else 1.0,
@@ -73,7 +74,7 @@ def main() -> None:
     parser.add_argument("--min-agreement", type=float, default=0.0)
     args = parser.parse_args()
     report = asyncio.run(evaluate())
-    print(f"scorer {report['scorer']} ({report['prompt_version']}): "  # noqa: T201
+    print(f"answered by {report['scorer']}: "  # noqa: T201
           f"agreement {report['agreement']:.0%} on {report['graded']} graded dimensions, "
           f"citation validity {report['citation_validity']:.0%}")
     for miss in report["misses"]:
