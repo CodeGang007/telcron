@@ -40,9 +40,13 @@ class Settings(BaseSettings):
     seed_admin_password: str | None = None
     # The commit this build was made from; baked into the image, reported by /health.
     git_sha: str = "dev"
-    # Verification codes by email: `log` (local, codes shown in the sign-up response) or `ses`.
+    # Verification codes by email: `log` (local, codes shown in the sign-up response), `smtp` or `ses`.
     mail_provider: str = "log"
     mail_from: str | None = None
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str | None = None  # defaults to MAIL_FROM
+    smtp_password: str | None = None
     aws_region: str = "us-east-2"
     # Level 1 needs a verified phone too. Off until an SMS route exists (ADR-006).
     level1_requires_phone: bool = False

@@ -12,6 +12,8 @@ class RegisterIn(BaseModel):
 
 class RegisterOut(BaseModel):
     user_id: str
+    # False when the mail provider refused the code (the member can ask for a new one).
+    email_sent: bool = False
     # Present only when DEV_EXPOSE_CODES is on. Never in a deployed environment.
     dev_codes: dict[str, str] | None = None
 

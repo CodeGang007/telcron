@@ -1,9 +1,12 @@
 """Sends verification codes by email. The ONLY code that talks to an email provider; replaced
 wholesale in tests. `log` (local) sends nothing: locally the codes come back in the sign-up response.
+`smtp` sends through an SMTP server (Gmail with an app password while Telcron has no mail domain).
 `ses` sends through Amazon SES with the host's IAM role (no keys)."""
 
 import asyncio
 import logging
+import smtplib
+from email.message import EmailMessage
 
 from app.core.config import get_settings
 
@@ -38,14 +41,29 @@ def _send_ses(to: str, code: str) -> None:
                             "Body": {"Text": {"Data": text}, "Html": {"Data": html}}}})
 
 
+def _send_smtp(to: str, code: str) -> None:
+    s = get_settings()
+    subject, text, html = _body(code, s.code_ttl_minutes)
+    msg = EmailMessage()
+    msg["Subject"], msg["From"], msg["To"] = subject, s.mail_from, to
+    msg.set_content(text)
+    msg.add_alternative(html, subtype="html")
+    with smtplib.SMTP(s.smtp_host, s.smtp_port, timeout=15) as smtp:
+        smtp.starttls()
+        smtp.login(s.smtp_user or s.mail_from or "", s.smtp_password or "")
+        smtp.send_message(msg)
+
+
 async def send_code(to: str, code: str) -> None:
     s = get_settings()
-    if s.mail_provider != "ses":
+    if s.mail_provider not in ("ses", "smtp"):
         log.info("mail provider %s: not sending the code to %s", s.mail_provider, to)
         return
     if not s.mail_from:
         raise SendFailed("MAIL_FROM is not set")
+    if s.mail_provider == "smtp" and not s.smtp_password:
+        raise SendFailed("SMTP_PASSWORD is not set")
     try:
-        await asyncio.to_thread(_send_ses, to, code)
+        await asyncio.to_thread(_send_smtp if s.mail_provider == "smtp" else _send_ses, to, code)
     except Exception as exc:  # the provider refused (sandbox recipient, quota): the caller records it
         raise SendFailed(f"{type(exc).__name__}: {exc}"[:300]) from exc

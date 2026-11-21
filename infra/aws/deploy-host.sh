@@ -10,7 +10,7 @@
 #   [AWS_REGION=us-east-2] [LOAD_SAMPLE=1] bash deploy-host.sh
 #
 # Without BACKEND_IMAGE the image is built on this host from the commit. With it, it is pulled.
-# The app secret must hold JWT_SECRET, APP_DB_PASSWORD and SEED_ADMIN_PASSWORD; LLM_API_KEY and MAIL_FROM are optional.
+# The app secret must hold JWT_SECRET, APP_DB_PASSWORD and SEED_ADMIN_PASSWORD; LLM_API_KEY, MAIL_FROM and SMTP_PASSWORD are optional.
 set -euo pipefail
 
 : "${GIT_REF:?}" "${API_HOST:?}" "${WEB_ORIGIN:?}" "${DB_HOST:?}" "${RDS_SECRET_ARN:?}"
@@ -59,6 +59,11 @@ SEED_ADMIN_PASSWORD=$(field SEED_ADMIN_PASSWORD <<<"$app_secret")
 LLM_API_KEY=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("LLM_API_KEY", ""))' <<<"$app_secret")
 # Optional: the From address for verification codes. Without it codes are not emailed (WO-013).
 MAIL_FROM=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("MAIL_FROM", ""))' <<<"$app_secret")
+# Optional: an SMTP app password for MAIL_FROM (Gmail). With it codes go by SMTP, else by SES.
+# Spaces are dropped: Google shows the app password in groups of four.
+SMTP_PASSWORD=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("SMTP_PASSWORD", "").replace(" ", ""))' <<<"$app_secret")
+MAIL_PROVIDER=log
+if [ -n "$MAIL_FROM" ]; then MAIL_PROVIDER=$([ -n "$SMTP_PASSWORD" ] && echo smtp || echo ses); fi
 master=$(aws secretsmanager get-secret-value --secret-id "$RDS_SECRET_ARN" --query SecretString --output text)
 MASTER_USER=$(field username <<<"$master")
 MASTER_PASSWORD=$(field password <<<"$master")
@@ -113,8 +118,9 @@ JWT_SECRET=$JWT_SECRET
 AI_PROVIDER=$([ -n "$LLM_API_KEY" ] && echo llm || echo stub)
 LLM_API_KEY=$LLM_API_KEY
 DEV_EXPOSE_CODES=false
-MAIL_PROVIDER=$([ -n "$MAIL_FROM" ] && echo ses || echo log)
+MAIL_PROVIDER=$MAIL_PROVIDER
 MAIL_FROM=$MAIL_FROM
+SMTP_PASSWORD=$SMTP_PASSWORD
 EOF
 
 say "start"

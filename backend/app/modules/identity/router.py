@@ -25,9 +25,10 @@ def _client(request: Request) -> tuple[str | None, str | None]:
 
 @router.post("/register", response_model=RegisterOut, status_code=status.HTTP_201_CREATED)
 async def register(data: RegisterIn, db: Db, request: Request) -> RegisterOut:
-    user, codes = await service.register(db, data, _client(request)[0])
-    # The email code is sent by mailer.py (SES when deployed). Locally it also comes back here.
-    return RegisterOut(user_id=str(user.id),
+    user, codes, sent = await service.register(db, data, _client(request)[0])
+    # The email code is sent by mailer.py. Locally it also comes back here. Saying whether the email
+    # went out reveals nothing: the caller has just created this account.
+    return RegisterOut(user_id=str(user.id), email_sent=sent,
                        dev_codes=codes if get_settings().dev_expose_codes else None)
 
 

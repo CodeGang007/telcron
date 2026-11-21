@@ -87,7 +87,7 @@ export function SignIn() {
   );
 }
 
-type Registered = { dev_codes: Record<string, string> | null };
+type Registered = { dev_codes: Record<string, string> | null; email_sent: boolean };
 
 export function SignUp() {
   const { signIn } = useAuth();
@@ -161,6 +161,9 @@ export function SignUp() {
       <form onSubmit={verify} className="space-y-5" aria-label="Confirm your email">
         {registered.dev_codes && (
           <Notice>Development build: your code is {registered.dev_codes.email}.</Notice>
+        )}
+        {!registered.email_sent && !registered.dev_codes && (
+          <Notice tone="error">We could not send the email just now. Wait a minute and use “Send a new code” below. If it still does not arrive, write to info@telcron.net.</Notice>
         )}
         <Field label="Code from the email" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" required value={code} onChange={(e) => setCode(e.target.value)} />
         {error && <Notice tone="error">{error}</Notice>}

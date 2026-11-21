@@ -41,7 +41,6 @@ async def _issue_code(db: AsyncSession, user: User, channel: str) -> str:
         target=user.email if channel == "email" else user.phone_e164,
         token_hash=security.code_hash(user.id, purpose, code),
         expires_at=_now() + timedelta(minutes=get_settings().code_ttl_minutes)))
-    db.add(AuthEvent(user_id=user.id, event_type="otp_sent", email_attempted=user.email))
     return code
 
 
@@ -52,11 +51,13 @@ async def _deliver(db: AsyncSession, user: User, code: str | None) -> bool:
         return False
     try:
         await mailer.send_code(user.email, code)
-        return True
     except mailer.SendFailed as exc:
         db.add(AuthEvent(user_id=user.id, event_type="otp_failed", email_attempted=user.email,
                          failure_reason=f"email_not_sent: {exc}"[:200]))
         return False
+    # Recorded only once the provider has taken the message (not before trying).
+    db.add(AuthEvent(user_id=user.id, event_type="otp_sent", email_attempted=user.email))
+    return True
 
 
 RESEND_GAP = timedelta(seconds=60)
@@ -78,7 +79,7 @@ async def resend(db: AsyncSession, email: str) -> dict[str, str] | None:
 
 
 async def register(db: AsyncSession, data: RegisterIn,
-                   ip: str | None) -> tuple[User, dict[str, str]]:
+                   ip: str | None) -> tuple[User, dict[str, str], bool]:
     if (await db.execute(select(User.id).where(User.email == data.email))).first():
         raise HTTPException(status.HTTP_409_CONFLICT, "email_taken")
     # A new account is `pending` (the database default) until its email is confirmed.
@@ -91,10 +92,10 @@ async def register(db: AsyncSession, data: RegisterIn,
     channels = ("email", "phone") if get_settings().level1_requires_phone and data.phone_e164 \
         else ("email",)
     codes = {ch: await _issue_code(db, user, ch) for ch in channels}
-    await _deliver(db, user, codes.get("email"))
+    sent = await _deliver(db, user, codes.get("email"))
     audit(db, action="user.registered", entity_type="user", entity_id=user.id,
           actor_user_id=user.id)
-    return user, codes
+    return user, codes, sent
 
 
 async def verify(db: AsyncSession, email: str, channel: str, code: str) -> User:

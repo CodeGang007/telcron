@@ -289,3 +289,61 @@ async def test_the_code_is_emailed_and_a_refused_send_does_not_break_sign_up(cli
     monkeypatch.setattr(mailer, "_send_ses", refuse)
     email, codes = await signup(client)  # still 201: the member can ask for a new code
     assert codes["email"]
+
+
+async def _events(db, email):
+    rows = await db.execute(text(
+        "select event_type from auth_events where email_attempted = :e order by created_at"), {"e": email})
+    return [r[0] for r in rows]
+
+
+async def test_a_refused_send_is_reported_and_not_logged_as_sent(client, db, monkeypatch):
+    from app.core.config import get_settings
+    from app.modules.identity import mailer
+    s = get_settings()
+    monkeypatch.setattr(s, "mail_provider", "ses")
+    monkeypatch.setattr(s, "mail_from", "codes@example.com")
+    monkeypatch.setattr(mailer, "_send_ses", lambda to, code: None)
+    email = f"{uuid.uuid4().hex[:10]}@example.com"
+    ok = await client.post(f"{API}/auth/register", json={
+        "email": email, "password": PASSWORD, "display_name": "Sent"})
+    assert ok.json()["email_sent"] is True
+    assert await _events(db, email) == ["otp_sent"]
+
+    def refuse(to, code):
+        raise RuntimeError("Email address is not verified")
+    monkeypatch.setattr(mailer, "_send_ses", refuse)
+    email = f"{uuid.uuid4().hex[:10]}@example.com"
+    refused = await client.post(f"{API}/auth/register", json={
+        "email": email, "password": PASSWORD, "display_name": "Refused"})
+    assert refused.status_code == 201 and refused.json()["email_sent"] is False
+    assert await _events(db, email) == ["otp_failed"]
+
+
+async def test_codes_can_be_sent_through_smtp(client, monkeypatch):
+    from app.core.config import get_settings
+    from app.modules.identity import mailer
+    s = get_settings()
+    monkeypatch.setattr(s, "mail_provider", "smtp")
+    monkeypatch.setattr(s, "mail_from", "codes@example.com")
+    monkeypatch.setattr(s, "smtp_password", "app-password")
+    seen = {}
+
+    class FakeSmtp:
+        def __init__(self, host, port, timeout):
+            seen["server"] = (host, port)
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def starttls(self):
+            seen["tls"] = True
+        def login(self, user, password):
+            seen["login"] = (user, password)
+        def send_message(self, msg):
+            seen["to"], seen["subject"] = msg["To"], msg["Subject"]
+    monkeypatch.setattr(mailer.smtplib, "SMTP", FakeSmtp)
+    email, codes = await signup(client)
+    assert seen == {"server": ("smtp.gmail.com", 587), "tls": True,
+                    "login": ("codes@example.com", "app-password"), "to": email,
+                    "subject": f"{codes['email']} is your Telcron code"}
