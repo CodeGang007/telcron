@@ -1,3 +1,5 @@
+import uuid
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
@@ -11,7 +13,7 @@ router = APIRouter(tags=["assistant"])
 
 class AskIn(BaseModel):
     message: str = Field(min_length=2, max_length=1000)
-    thread_id: str | None = None
+    thread_id: uuid.UUID | None = None  # malformed is a 422, like every other id (DEF-022)
 
 
 async def _product(db, id_or_slug: str):

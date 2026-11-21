@@ -132,6 +132,18 @@ async def test_the_assistant_answers_from_cited_evidence_and_remembers(client, d
                               json={"message": "hi there"})).status_code == 401
 
 
+async def test_a_malformed_thread_id_is_a_validation_error_not_a_crash(client, db, vectors,
+                                                                    monkeypatch):
+    """DEF-022: a thread id that is not a UUID is the API's 422, as for every other id."""
+    monkeypatch.setattr(get_settings(), "llm_api_key", "test")
+    _, _, member = await verified_user(client)
+    made = await _product(client, member, f"Velto Toaster T{uuid.uuid4().hex[:4]}", "Velto")
+    r = await client.post(f"{API}/products/{made['slug']}/assistant", headers=member,
+                          json={"message": "hello there", "thread_id": "not-a-uuid"})
+    assert r.status_code == 422
+    assert r.json()["detail"][0]["loc"] == ["body", "thread_id"]
+
+
 def test_grounding_is_checked_against_the_cited_text():
     source = ["UK OPSS: kettle recalled because the lid can open and scald users"]
     assert chat.grounded("The kettle was recalled: the lid can open and scald users.", source, "")

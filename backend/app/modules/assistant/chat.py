@@ -81,10 +81,10 @@ def grounded(answer: str, sources: list[str], facts: str, question: str = "") ->
 
 
 async def _thread(db: AsyncSession, user_id: uuid.UUID, product_id: uuid.UUID,
-                  thread_id: str | None) -> ChatThread:
+                  thread_id: uuid.UUID | None) -> ChatThread:
     if thread_id:
         thread = (await db.execute(select(ChatThread).where(
-            ChatThread.id == uuid.UUID(thread_id), ChatThread.user_id == user_id,
+            ChatThread.id == thread_id, ChatThread.user_id == user_id,
             ChatThread.product_id == product_id))).scalar_one_or_none()
         if thread is None:  # someone else's conversation is a 404
             raise HTTPException(status.HTTP_404_NOT_FOUND, "thread_not_found")
@@ -170,7 +170,7 @@ async def respond(facts: str, evidence: list[tuple[str, str]], history: list[tup
 
 
 async def ask(db: AsyncSession, user_id: uuid.UUID, product: Product, question: str,
-              thread_id: str | None) -> dict[str, Any]:
+              thread_id: uuid.UUID | None) -> dict[str, Any]:
     since = datetime.now(UTC) - timedelta(days=1)
     asked = await db.scalar(select(func.count()).select_from(ChatMessage).join(
         ChatThread, ChatThread.id == ChatMessage.thread_id).where(
