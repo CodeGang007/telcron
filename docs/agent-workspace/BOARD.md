@@ -30,7 +30,7 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | --- | --- | --- | --- | --- |
 | WO-017 | Verification sweep of WO-001…016, 018, 024 | qa-test-engineer, browser-qa-engineer, security-auditor | — | DISPATCHED (run 2, 2026-11-22; run 1 stopped 2026-11-21) |
 | WO-018 | Board and WO files repaired | tech-lead | — | DONE-PENDING-QA — this board; WO-012/016 written; WO-004/005/013 status lines corrected. WO-005/DEF-004 close on QA's word · **QA FAIL → DEF-021 (fixed, re-check)** |
-| WO-019 | Redemptions: phase-one items only, nothing left `processing` | database-engineer → community-rewards-engineer | WO-022, D13 | IN PROGRESS — schema `e49911f` DONE-PENDING-QA; service dispatched |
+| WO-019 | Redemptions: phase-one items only, nothing left `processing` | database-engineer → community-rewards-engineer | WO-022, D13 | DONE-PENDING-QA — schema `e49911f`, service `2f40ce3`; QA + security owed |
 | WO-020 | Dev hardening: DEF-006; dependency scan in the pipeline | infra-deploy-engineer | — | DONE-PENDING-QA (scan, `706b0f8` + this run); DEF-006 item 3 closed in repo; items 1, 2, 4 BLOCKED ON HUMAN |
 | WO-021 | M1 on dev: sign-up open, a new user verifies | platform-identity-engineer, infra-deploy-engineer | human yes | BLOCKED ON HUMAN |
 | WO-022 | Phases 2–3 as migrations | database-engineer | D11 | DONE-PENDING-QA — `41bdc29` (+ deploy-host lines, same push) |
