@@ -206,7 +206,7 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
     query = f"{label} recall safety warning hazard"
     await _progress(product.id, "Searching the web, regulators, owner reports and reviews", 25)
     try:
-        hits += await web.search(query)
+        hits += await web.search(label, category)
     except web.ResearchUnavailable as exc:
         stats["errors"].append(f"web: {exc}"[:200])
     official, failed = await registries.search(f"{brand or ''} {name}".strip()[:120], category)
@@ -232,6 +232,7 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
         stats["errors"].append(f"reader: {read_audit['failed_batches']} of "
                                f"{-(-len(hits) // web.BATCH)} reading calls failed")
     stats["unread"] = read_audit.get("failed_batches", 0) * web.BATCH
+    stats["reader"] = read_audit  # what was dropped and why, so an empty result can be explained
     stats["official_recalls"] = 0
     for finding in findings:
         stats["official_recalls"] += await _store(db, product, job, finding, query, brand)

@@ -135,6 +135,7 @@ export type ProductSummary = {
   trust_score: number | null;
   tier: number | null;
   image_url: string | null;
+  demo: boolean;
 };
 export type Finding = {
   kind: 'recall' | 'safety_warning' | 'complaint' | 'review' | 'certification' | 'no_issue_found' | 'general';

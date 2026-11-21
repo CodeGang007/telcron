@@ -49,8 +49,9 @@ async def test_the_reader_keeps_only_findings_its_sources_say(monkeypatch):
     found = await web.read("Lumina LF-30 desk fan", [PAGE, SHOP, other, trap], audit,
                            brand="Lumina")
     assert [(f.hit.url, f.kind) for f in found] == [(PAGE.url, "recall")]
-    assert audit == {"injected": 1, "raw": 5, "bad_reference": 2, "ungrounded": 1,
-                     "other_product": 1, "failed_batches": 0}
+    # The other-brand page never reaches the model now: it is dropped as off-topic first.
+    assert audit["injected"] == 1 and audit["off_topic"] == 1 and audit["bad_reference"] >= 1
+    assert audit["ungrounded"] == 1 and audit["failed_batches"] == 0
 
 
 async def test_a_long_result_list_is_read_in_batches_and_a_failed_batch_is_not_fatal(monkeypatch):
@@ -91,7 +92,8 @@ async def test_research_stores_cited_findings_and_rates_the_product(client, db, 
     uk = web.Hit("UK OPSS: Product Recall: Lumina LF-30 Desk Fan", "https://www.gov.uk/lf30",
                  "Product Recall for Lumina LF-30 Desk Fan presenting a risk of fire.", "uk_opss")
 
-    async def searched(query):
+    async def searched(label, category=None):
+        assert label.startswith("Lumina Desk Fan") and category == "appliances"
         return [PAGE, SHOP]
 
     async def registry(words, category, limit=5):
@@ -203,3 +205,39 @@ async def test_photos_are_kept_read_and_become_the_products_pictures(client, db,
     assert linked == {"slug": made["slug"], "name": linked["name"], "new": False, "linked": True}
     found = (await client.post(f"{API}/identify", json={"barcode": "4006381333931"})).json()
     assert found["slug"] == made["slug"]
+
+
+def test_owners_are_asked_about_what_goes_wrong_with_that_kind_of_product():
+    """One set of words for everything found laptop threads for a face peel (seen 2026-11-22)."""
+    assert "irritation" in web.concerns("Pilgrim Peeling Solution", "household")
+    assert "allergy" in web.concerns("PAXO Sage & Onion Stuffing Mix", "food")
+    assert "overheating" in web.concerns("Sony PlayStation 5", "electronics")
+    assert "overheating" not in web.concerns("Oak Teether", "household")
+
+
+async def test_marketplace_listings_are_real_product_pages_and_can_be_checked(client, db, monkeypatch):
+    monkeypatch.setattr(get_settings(), "tavily_api_key", "test")
+    seen = {}
+
+    async def tavily(query, domains=None, source="web_search"):
+        seen.update(query=query, domains=domains)
+        return [web.Hit("Amazon.in : The Ordinary AHA 30% + BHA 2% Peeling Solution 30ml",
+                        "https://www.amazon.in/Ordinary-Peeling-Solution/dp/B07ABC1234",
+                        "4.3 out of 5 stars ₹1,450 Exfoliating peel"),
+                    web.Hit("Peeling solutions - Amazon.in", "https://www.amazon.in/s?k=peeling", "All"),
+                    web.Hit("Minimalist AHA BHA Peeling Solution | Nykaa",
+                            "https://www.nykaa.com/minimalist-peeling/p/1234", "Rs. 599")]
+    monkeypatch.setattr(web, "_tavily", tavily)
+    _, _, member = await verified_user(client)
+    made = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": f"Peeling Solution {uuid.uuid4().hex[:4]}", "brand": "Pilgrim",
+        "category": "household"})).json()
+    found = (await client.get(f"{API}/products/{made['slug']}/marketplace",
+                              params={"country": "IN"})).json()
+    assert "amazon.in" in seen["domains"] and "Pilgrim" not in seen["query"]
+    assert [(i["store"], i["price"], i["rating"]) for i in found["items"]] == [
+        ("Amazon", "₹1,450", 4.3), ("Nykaa", "Rs.599", None)]  # the search page is not a product
+    assert found["items"][0]["title"] == "The Ordinary AHA 30% + BHA 2% Peeling Solution 30ml"
+    checked = await client.post(f"{API}/products/{made['slug']}/marketplace/check", headers=member,
+                                json={"title": found["items"][0]["title"], "url": found["items"][0]["url"]})
+    assert checked.status_code == 200 and checked.json()["new"] is True

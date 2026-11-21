@@ -171,9 +171,22 @@ official source says it has no recall or alert for this product; "general" for o
 safety-relevant facts (heat, materials, warnings on the pack); "review" for an expert or owner
 review's verdict on quality and reliability (common faults, durability, overall rating), worded as
 that reviewer's view.
-"about_this_product" is true only if the result names this product's brand AND is about this model
-(or names no model); a recall of another model or another brand is false.
-Skip shops and listings that say nothing about safety.
+"about_this_product" is true only if the result is about this product: it names its brand, its name or
+a common short form of it (such as "PS5"), and this model (or no model); another model or another
+brand is false.
+Keep owner and expert reviews (their verdict, recurring problems, side effects, durability) even when
+nothing is dangerous: what owners report matters. Skip results not about this product, and shop
+listings that say nothing about how it performs or whether it is safe.
+Examples (for a "Glow Peel" face serum by Lumi):
+- "Bought the Lumi Glow Peel, it burned my cheeks and left red patches for two days" ->
+  {"n": 1, "kind": "complaint", "finding": "An owner reports the Lumi Glow Peel burned their cheeks
+  and left red patches for two days.", "about_this_product": true}
+- "Lumi Glow Peel review: brighter skin after a week, slight tingling, not for sensitive skin" ->
+  {"n": 2, "kind": "review", "finding": "A reviewer found brighter skin after a week with slight
+  tingling, and says it is not for sensitive skin.", "about_this_product": true}
+- A restaurant page, a stock price, or a peel by another brand -> no finding.
+Report every result about this product that says how it performs, what owners experienced, or
+whether it is safe. Most results about the product deserve a finding.
 Answer with JSON only: {"findings": [{"n": <result number>, "kind": one of
 ["recall","safety_warning","complaint","review","certification","no_issue_found","general"],
 "finding": "<one factual sentence, in the source's own words where you can>",
@@ -244,24 +257,42 @@ async def _browse(query: str) -> list[Hit]:
     return hits[:MAX_RESULTS]
 
 
-async def search(query: str) -> list[Hit]:
-    """The open web; then (Tavily only) government regulators alone, so an official notice is not
-    crowded out by shops; then forums, social media and marketplace reviews, for what owners
-    report."""
+SKIN = re.compile(r"\b(serum|cream|lotion|peel|peeling|toner|cleanser|face ?wash|shampoo|"
+                  r"conditioner|sunscreen|moisturi[sz]er|lipstick|mascara|foundation|soap|"
+                  r"deodorant|perfume|cologne|hair|skin|nail|makeup|cosmetic)", re.I)
+HARDWARE = {"electronics", "smartphones", "power_adapters", "appliances", "blenders",
+            "mini_fridges", "window_ac"}
+
+
+def concerns(label: str, category: str | None) -> str:
+    """What owners of this kind of product complain about, in their words: one set of words for
+    every product searched for skincare finds laptop threads (seen 2026-11-22)."""
+    if SKIN.search(label):
+        return "side effects irritation burning allergic reaction"
+    if category == "food":
+        return "side effects allergy contamination stomach complaints"
+    if category in HARDWARE:
+        return "problems overheating defects stopped working"
+    return "problems defects complaints"
+
+
+async def search(label: str, category: str | None = None) -> list[Hit]:
+    """Four searches, each asked the way a person would ask (keyword piles return shop listings):
+    the open web and government regulators for recalls and warnings; forums, social media and
+    marketplace reviews for what owners report; and reviews of the product."""
     s = get_settings()
+    official = f"{label} recall safety warning"
     try:
         if s.tavily_api_key:
-            # Asked the way a person would: keyword piles return shop listings instead.
-            owners = re.sub(r" recall safety warning hazard$", "", query) + \
-                " problems owners report overheating breaking or injury"
-            talk = [h for h in await _tavily(owners, COMMUNITY, "community_web")
+            talk = [h for h in await _tavily(f"{label} {concerns(label, category)} experience",
+                                             COMMUNITY, "community_web")
                     if not LISTING.search(h.url)]
-            reviews = re.sub(r" recall safety warning hazard$", "", query) + \
-                " review reliability common problems verdict"
-            return (await _tavily(query) + await _tavily(query, REGULATORS, "regulator_web") + talk
-                    + await _tavily(reviews, None, "review_web"))
+            reviews = [h for h in await _tavily(f"{label} reviews", None, "review_web")
+                       if not LISTING.search(h.url)]
+            return (await _tavily(official) + await _tavily(official, REGULATORS, "regulator_web")
+                    + talk + reviews)
         if s.llm_api_key:
-            return await _browse(query)
+            return await _browse(f"{label} recall safety warning and owner reviews")
     except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
         raise ResearchUnavailable(f"{type(exc).__name__}: {exc}"[:300]) from exc
     raise ResearchUnavailable("no search provider configured")
@@ -272,14 +303,14 @@ SNIPPET = 450      # per-minute token limit and nothing was read at all (seen on
 PAUSE = 6
 
 
-async def _read_batch(product: str, batch: list[Hit]) -> list[dict[str, Any]]:
+async def _read_batch(product: str, batch: list[Hit], temperature: float = 0) -> list[dict[str, Any]]:
     s = get_settings()
     listing = "\n".join(f"{i}. {h.title} ({h.url})\n   {re.sub(r'\\s+', ' ', h.snippet)[:SNIPPET]}"
                         for i, h in enumerate(batch, 1))
     # Reasoning models think before answering: low effort and room to answer, or a batch comes back
     # with no JSON at all (a 400 from the provider; seen 2026-11-22).
-    answer = await _chat({"model": s.llm_model, "temperature": 0, "max_completion_tokens": 2500,
-                          "reasoning_effort": "low", "response_format": {"type": "json_object"},
+    answer = await _chat({"model": s.llm_model, "temperature": temperature, "max_completion_tokens": 3000,
+                          "reasoning_effort": "medium", "response_format": {"type": "json_object"},
                           "messages": [{"role": "system", "content": READ},
                                        {"role": "user", "content":
                                         f"Product: {product[:300]}\n\nResults:\n{listing}"}]})
@@ -299,8 +330,14 @@ async def read(product: str, hits: list[Hit], audit: dict[str, int] | None = Non
     brand, and say only what the page says. `audit` counts what was thrown away (for the evals)."""
     audit = audit if audit is not None else {}
     audit.update(injected=sum(injected(h) for h in hits), raw=0, bad_reference=0, ungrounded=0,
-                 other_product=0, failed_batches=0)
+                 other_product=0, failed_batches=0, off_topic=0)
     hits = [h for h in hits if not injected(h)]
+    # Pages that never mention the product (a restaurant, a share price) only drown the reader:
+    # they are dropped before it sees them, by the same test every finding must pass.
+    if brand or product:
+        about = [h for h in hits if names_product(h, brand, product, category)]
+        audit["off_topic"] = len(hits) - len(about)
+        hits = about
     if not hits:
         return []
     s = get_settings()
@@ -317,6 +354,11 @@ async def read(product: str, hits: list[Hit], audit: dict[str, int] | None = Non
         batch = hits[start:start + BATCH]
         try:
             rows = await _read_batch(product, batch)
+            if not rows and len(batch) >= 2:
+                # Pages that all name the product rarely say nothing; the smaller model sometimes
+                # answers [] anyway (seen 2026-11-22): one more try before believing it.
+                rows = await _read_batch(product, batch, temperature=0.4)
+                audit["second_tries"] = audit.get("second_tries", 0) + 1
         except (httpx.HTTPError, KeyError, IndexError, ResearchUnavailable) as exc:
             audit["failed_batches"] += 1
             last_error = f"{type(exc).__name__}: {exc}"[:300]

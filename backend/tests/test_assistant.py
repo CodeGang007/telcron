@@ -156,3 +156,25 @@ async def test_alternatives_are_verified_and_at_least_as_safe(client, db, vector
     await db.commit()
     by_meaning = (await client.get(f"{API}/products/{made['slug']}/alternatives")).json()
     assert all(i["status_badge"] == "verified" for i in by_meaning["items"])
+
+
+async def test_alternatives_are_the_same_kind_and_never_demo_products(client, db, vectors):
+    from sqlalchemy import text
+    _, _, member = await verified_user(client)
+    console = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": f"PlayBox Console P{uuid.uuid4().hex[:4]}", "brand": "PlayBox",
+        "category": "electronics"})).json()
+    found = (await client.get(f"{API}/products/{console['slug']}/alternatives")).json()
+    detail = (await client.get(f"{API}/products/{console['slug']}")).json()
+    assert all(i["category"] == detail["category"] for i in found["items"])
+    blender = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": f"Whirlo Blender W{uuid.uuid4().hex[:4]}", "brand": "Whirlo",
+        "category": "blenders"})).json()
+    await db.execute(text("""UPDATE products SET specifications = specifications || '{"demo": true}'
+                             WHERE public_slug = 'aquablend-900'"""))
+    await db.commit()
+    items = (await client.get(f"{API}/products/{blender['slug']}/alternatives")).json()["items"]
+    assert "aquablend-900" not in [i["slug"] for i in items] and not any(i["demo"] for i in items)
+    await db.execute(text("""UPDATE products SET specifications = specifications - 'demo'
+                             WHERE public_slug = 'aquablend-900'"""))
+    await db.commit()

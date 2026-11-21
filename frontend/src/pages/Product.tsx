@@ -236,10 +236,11 @@ export function Product() {
             <p className="eyebrow">{p.category}</p>
             <h1 className="mt-1 max-w-2xl font-display text-3xl font-extrabold tracking-tight sm:text-4xl">{p.name}</h1>
             <p className="mt-2 text-muted">{[p.brand, p.model_number].filter(Boolean).join(' · ')}</p>
-            <details className="group mt-3">
+            {p.demo && <p className="chip mt-3 bg-warn-tint text-warn">Demo product: fictional, for trying Telcron out</p>}
+            {!p.demo && <details className="group mt-3">
               <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted hover:text-ink">Where to buy<span className="transition group-open:rotate-180">▾</span></summary>
               <div className="mt-2"><StoreLinks product={p} /></div>
-            </details>
+            </details>}
           </div>
         </div>
         <div className="flex gap-2">
