@@ -69,7 +69,14 @@ if ! docker compose version >/dev/null 2>&1; then
   fetch_plugin "$base/docker-compose-linux-$compose_arch" "$base/checksums.txt" \
     "docker-compose-linux-$compose_arch" "$plugins/docker-compose"
 fi
-if ! docker buildx version >/dev/null 2>&1; then
+# Amazon Linux ships an old buildx (0.12) that compose build refuses (it needs 0.17 or later):
+# install the pinned one unless what is there is new enough. /usr/local/lib wins over /usr/libexec.
+buildx_ok() {
+  local v
+  v=$(docker buildx version 2>/dev/null | awk '{print $2}' | sed 's/^v//; s/-.*//')
+  [ -n "$v" ] && [ "$(printf '%s\n' 0.17.0 "$v" | sort -V | head -1)" = 0.17.0 ]
+}
+if ! buildx_ok; then
   base=https://github.com/docker/buildx/releases/download/$BUILDX_VERSION
   fetch_plugin "$base/buildx-$BUILDX_VERSION.linux-$buildx_arch" "$base/checksums.txt" \
     "buildx-$BUILDX_VERSION.linux-$buildx_arch" "$plugins/docker-buildx"
