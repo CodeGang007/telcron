@@ -1,7 +1,8 @@
-"""TelCoins. Every write goes through the database's `coin_*` functions (db/schema-next/
-phase3_rules.sql): they lock the user's balance row, apply the limits, the daily cap, the
-rapid-fire fraud hold and the level bonus, and keep `coin_balances` in step with the ledger.
-This module never inserts into or updates the ledger itself."""
+"""TelCoins. Every write goes through the database's `coin_*` functions
+(db/migrations/20261122130300_phase3_rules.sql; coin_refund_redemption in
+20261122140000_redemptions_phase_one.sql): they lock the user's balance row, apply the limits,
+the daily cap, the rapid-fire fraud hold and the level bonus, and keep `coin_balances` in step
+with the ledger. This module never inserts into or updates the ledger itself."""
 
 import uuid
 from datetime import UTC, datetime
@@ -99,16 +100,25 @@ async def award_level_badges(db: AsyncSession, user_id: uuid.UUID, level: int) -
                                   "on conflict do nothing"), {"u": user_id, "b": code})
 
 
+REFUND = text("select coin_refund_redemption(cast(:redemption as uuid), cast(:reason as text))")
+# Phase one fulfils two kinds, watchlist_slots and pdf_report (tech doc §2.2, §9.4, D13). The database
+# keeps every other item off sale; should one come back on sale before its fulfilment is built, it is
+# refunded, not left waiting.
+
+
 async def redeem(db: AsyncSession, user_id: uuid.UUID, item_code: str, key: str,
                  product_id: uuid.UUID | None) -> uuid.UUID:
-    """Spend confirmed coins on a catalogue item, then fulfil what can be fulfilled at once."""
+    """Spend confirmed coins on a catalogue item and fulfil it at once. An item this service cannot
+    fulfil is refunded in the same transaction and comes back `refunded`: no redemption is ever left
+    `processing`. The caller must let that transaction commit (do not raise), or the refund is lost
+    along with the spend."""
     from fastapi import HTTPException
     from fastapi import status as http
     from sqlalchemy.exc import DBAPIError
 
     from app.models import Redemption, RedemptionItem, UserEntitlement
     item = await db.get(RedemptionItem, item_code)
-    if item is None or not item.is_active:
+    if item is None:
         raise HTTPException(http.HTTP_404_NOT_FOUND, "item_not_found")
     if item.fulfilment_type == "pdf_report" and product_id is None:
         raise HTTPException(http.HTTP_422_UNPROCESSABLE_ENTITY, "product_required")
@@ -117,13 +127,17 @@ async def redeem(db: AsyncSession, user_id: uuid.UUID, item_code: str, key: str,
             redemption_id = await db.scalar(REDEEM, {"user": user_id, "item": item_code,
                                                      "key": key, "product": product_id})
     except DBAPIError as exc:
+        # TC011 is both coin_spend's "insufficient" and coin_redeem's "unknown or inactive item":
+        # the database decides what is on sale, so anything else under TC011 is off sale.
         if "insufficient confirmed TelCoins" in str(exc):
             raise HTTPException(http.HTTP_409_CONFLICT, "not_enough_coins") from exc
+        if getattr(exc.orig, "sqlstate", None) == "TC011":
+            raise HTTPException(http.HTTP_404_NOT_FOUND, "item_not_found") from exc
         raise
     redemption = await db.get(Redemption, redemption_id)
     if redemption.status == "processing":
         now = datetime.now(UTC)
-        if item.fulfilment_type in ("watchlist_slots", "feature_access", "rate_limit_boost"):
+        if item.fulfilment_type == "watchlist_slots":
             db.add(UserEntitlement(user_id=user_id, source="redemption", redemption_id=redemption.id,
                                    entitlement=item.fulfilment_type, quantity=item.quantity,
                                    ends_at=now + item.duration if item.duration else None))
@@ -131,4 +145,9 @@ async def redeem(db: AsyncSession, user_id: uuid.UUID, item_code: str, key: str,
         elif item.fulfilment_type == "pdf_report":
             redemption.fulfilment = {"report": f"/products/{product_id}/report"}
             redemption.status, redemption.fulfilled_at = "fulfilled", now
+        else:
+            await db.flush()
+            await db.scalar(REFUND, {"redemption": redemption.id,
+                                     "reason": f"{item.fulfilment_type} is not fulfilled yet"})
+            await db.refresh(redemption)  # the function set `refunded` behind the session
     return redemption.id

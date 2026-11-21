@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Query, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
@@ -149,8 +150,8 @@ class RedeemIn(BaseModel):
     request_id: str  # one per click: a retried request spends once
 
 
-@router.post("/redemptions", status_code=201)
-async def redeem(data: RedeemIn, db: Db, user: Level1User) -> dict:
+@router.post("/redemptions", status_code=201, response_model=None)
+async def redeem(data: RedeemIn, db: Db, user: Level1User) -> dict | JSONResponse:
     from app.modules.catalogue.service import find_product
     product = await find_product(db, data.product) if data.product else None
     if data.product and product is None:
@@ -161,5 +162,8 @@ async def redeem(data: RedeemIn, db: Db, user: Level1User) -> dict:
                                          product.id if product else None)
     from app.models import Redemption
     r = await db.get(Redemption, redemption_id)
+    if r.status == "refunded":
+        # Returned, not raised: raising would roll back the refund together with the spend.
+        return JSONResponse({"detail": "item_not_available", "id": str(r.id)}, status_code=409)
     return {"id": str(r.id), "status": r.status, "item": r.item_code,
             "report": f"/products/{product.public_slug}/report" if product else None}
