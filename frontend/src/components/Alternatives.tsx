@@ -71,11 +71,14 @@ function Marketplace({ slug }: { slug: string }) {
   const { me } = useAuth();
   const navigate = useNavigate();
   const [items, setItems] = useState<Listing[] | null>(null);
+  // Why no new search ran (DEF-042): anonymous callers see only what is already cached.
+  const [reason, setReason] = useState<string | null>(null);
   const [checking, setChecking] = useState<string | null>(null);
   useEffect(() => {
-    api<{ available: boolean; items: Listing[] }>(`/products/${slug}/marketplace?country=${region()}`)
-      .then((r) => setItems(r.items)).catch(() => setItems([]));
-  }, [slug]);
+    api<{ available: boolean; items: Listing[]; reason?: string }>(`/products/${slug}/marketplace?country=${region()}`)
+      .then((r) => { setItems(r.items); setReason(r.reason ?? null); })
+      .catch(() => setItems([]));
+  }, [slug, me?.id]);
   const check = async (l: Listing) => {
     setChecking(l.url);
     try {
@@ -89,7 +92,12 @@ function Marketplace({ slug }: { slug: string }) {
     }
   };
   if (items === null) return <div className="mt-6 grid gap-3 sm:grid-cols-2">{[0, 1].map((i) => <Skeleton key={i} className="h-24 rounded-2xl" />)}</div>;
-  if (items.length === 0) return null;
+  const signInHint = reason === 'not_authenticated' && (
+    <p className="mt-3 rounded-2xl bg-panel px-4 py-3 text-sm text-muted">
+      <Link to="/sign-in" className="font-semibold text-action">Sign in</Link> to see listings of similar products on marketplaces in your country.
+    </p>
+  );
+  if (items.length === 0) return signInHint ? <div className="mt-6">{signInHint}</div> : null;
   return (
     <div className="mt-8">
       <h3 className="flex items-center gap-2 font-display text-lg font-bold"><ShoppingBag className="size-5 text-action" />Popular on marketplaces</h3>
@@ -116,6 +124,7 @@ function Marketplace({ slug }: { slug: string }) {
           </motion.li>
         ))}
       </ul>
+      {signInHint}
     </div>
   );
 }
