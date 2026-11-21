@@ -7,10 +7,9 @@ variables (`DEV_WEB_URL`, `DEV_API_URL`) and in `docs/runbooks/aws-dev.local.md`
 The dev site has been live since 2026-11-16. Nobody holds AWS access keys: people use the console or
 `aws login`; the EC2 host uses its instance role; GitHub holds no AWS credentials at all.
 
-**Moving to one host (ADR-007, approved 2026-11-21).** RDS and the `t3.micro` are being replaced by one
-`t4g.small` that also runs PostgreSQL and the embedder. Until the cutover below is done, the old pair
-still serves the site; after it, both are deleted. The release scripts on `main` already target the
-new layout and refuse to deploy on the old host.
+**One host since 2026-11-21 (ADR-007).** RDS and the `t3.micro` were replaced by one
+`t4g.small` that also runs PostgreSQL and the embedder. The cutover below was done on 2026-11-21: data
+identical (111 tables, 1,214 rows), about three minutes of downtime; the old pair was then deleted.
 
 ## What runs where
 
@@ -18,7 +17,7 @@ new layout and refuse to deploy on the old host.
 | --- | --- |
 | EC2 `telcron-dev-host` (`t4g.small`, arm64, 2 GB, Amazon Linux 2023) | Docker Compose: Caddy (HTTPS), API, Worker, Redis, PostgreSQL 18 (postgis, vector, citext, pg_trgm, btree_gist), embedder. `infra/aws/compose.yml` |
 | Lightsail `telcron-dev-web` (Debian 12, smallest bundle) | Caddy serving the built web app from `/var/www/telcron` |
-| *To be deleted after cutover:* EC2 `telcron-dev-backend` (`t3.micro`) and RDS `telcron-dev` | The old API host and the old database |
+| *Deleted 2026-11-21 after the cutover:* EC2 `telcron-dev-backend` (`t3.micro`) and RDS `telcron-dev` | Final RDS dump kept in the raw bucket under `backups/rds-final/` |
 
 Both public hosts have a fixed address and a hostname that encodes it (a wildcard-DNS service), with
 Let's Encrypt certificates that Caddy obtains and renews. A real domain would replace both. The API's
@@ -141,15 +140,15 @@ shown on a deployed build. One admin exists, `admin@telcron.example.com`; its pa
 | --- | --- | --- |
 | EC2 instance | `telcron-dev-host` | `t4g.small` arm64, Amazon Linux 2023, 20 GB gp3 encrypted, IMDSv2 only (hop limit 2), no key pair, 2 GB swap. Id `<instance id>` in `aws-dev.local.md`. Created at the cutover |
 | Elastic IP | `telcron-dev-backend` | Attached to `telcron-dev-host` after the cutover (until then, to the old instance) |
-| EC2 instance | `telcron-dev-backend` | `t3.micro`, Ubuntu 24.04. **To be deleted after cutover** |
+| EC2 instance (old) | `telcron-dev-backend` | `t3.micro`. **Terminated 2026-11-21** after the cutover |
 | Lightsail instance, static IP | `telcron-dev-web`, `telcron-dev-web-ip` | The blueprint's own stack (nginx, MariaDB, PHP, phpMyAdmin, Varnish) is stopped and disabled |
-| RDS PostgreSQL | `telcron-dev` | 20 GB gp3 encrypted, single zone, not publicly reachable, deletion protection, 1-day backups. **To be deleted after cutover** |
-| Security groups | `telcron-dev-backend`, `telcron-dev-db` | 80 and 443 in; 5432 from the backend group only. `telcron-dev-db` **goes with RDS** |
-| IAM role and instance profile | `telcron-dev-backend` | Session Manager, ECR read, the two buckets, `telcron/dev/*` secrets, the RDS master secret (drop after cutover), Bedrock invoke, SES send (`telcron-dev-ses-send`), Rekognition DetectText/DetectLabels (`telcron-dev-rekognition`, about $0.001 per call each, WO-014). Used by the new host too |
+| RDS PostgreSQL (old) | `telcron-dev` | **Deleted 2026-11-21** (no final snapshot; the final dump is in the raw bucket under `backups/rds-final/`) |
+| Security group | `telcron-dev-backend` | 80 and 443 in. (`telcron-dev-db` deleted with RDS) |
+| IAM role and instance profile | `telcron-dev-backend` | Session Manager, ECR read, the two buckets, `telcron/dev/*` secrets, Bedrock invoke, SES send (`telcron-dev-ses-send`), Rekognition DetectText/DetectLabels (`telcron-dev-rekognition`, about $0.001 per call each, WO-014). Used by the new host too |
 | S3 buckets | `telcron-dev-media-<account-id>`, `telcron-dev-raw-<account-id>` | Public access blocked. Media holds members' product photos (`photos/`), served through short-lived links (WO-014); raw holds the database backups (`backups/postgres/`, 14 days; `backups/rds-final/`) |
 | ECR repository | `telcron/backend` | Holds the image of the first, manual deploy. The pipeline does not use it |
 | Secret | `telcron/dev/app` | `JWT_SECRET`, `APP_DB_PASSWORD`, `SEED_ADMIN_PASSWORD`, `PG_SUPERUSER_PASSWORD` (the host's PostgreSQL superuser); optional `LLM_API_KEY`, `MAIL_FROM`, `SMTP_PASSWORD`, `TAVILY_API_KEY`; never displayed |
-| Secret | RDS-managed master password | Rotated by RDS. **Goes with RDS** |
+| Secret (old) | RDS-managed master password | Deleted with RDS |
 | Budget | `telcron-monthly` | USD 22 a month, cost budget |
 
 Resources carry the tags `project=telcron`, `env=dev` where the service supports them.
