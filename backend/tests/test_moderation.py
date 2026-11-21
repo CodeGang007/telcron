@@ -1,9 +1,11 @@
 """The safety team's queue: a decision there pays coins, moves trust, alerts and re-screens."""
 
+import uuid
+
 from helpers import API, me, product_id, staff_user, verified_user
 from sqlalchemy import select, text
 
-from app.models import FraudHold, OutboxEvent
+from app.models import FraudHold, OutboxEvent, ReviewTask, User
 from app.modules.rewards.service import _queue_hold_review
 from app.workers.handlers import alerts, screening
 
@@ -258,3 +260,26 @@ async def test_dismissing_a_correction_closes_it_without_a_penalty(client, db):
     assert (await me(client, member))["trust_score"] == 10.0
     product = (await client.get(f"{API}/products/{SLUG}")).json()
     assert product["specifications"].get("cable_length") != fix["proposed_value"]
+
+
+async def test_staff_cannot_decide_a_task_they_submitted_of_an_unlisted_type(client, db):
+    """S-20: a task type with no known subject owner falls back to whoever submitted the task."""
+    email, own = await staff_user(client, db, name="Content Reporter")
+    _, colleague = await staff_user(client, db, name="Colleague Two")
+    submitter = (await db.execute(select(User.id).where(User.email == email))).scalar_one()
+    # No route opens a `content_report` task yet, so the row is inserted as one would be.
+    task = ReviewTask(task_type="content_report", subject_type="review",
+                      subject_id=uuid.uuid4(), submitted_by_user_id=submitter)
+    db.add(task)
+    await db.commit()
+
+    claim = await client.post(f"{API}/review-tasks/{task.id}/claim", headers=own)
+    assert claim.status_code == 403 and claim.json()["detail"] == "own_item"
+    for decision in ("reject", "confirm", "dismiss"):
+        r = await client.post(f"{API}/review-tasks/{task.id}/resolve", headers=own,
+                              json={"decision": decision})
+        assert r.status_code == 403 and r.json()["detail"] == "own_item", decision
+
+    r = await client.post(f"{API}/review-tasks/{task.id}/resolve", headers=colleague,
+                          json={"decision": "dismiss"})
+    assert r.status_code == 200 and r.json()["status"] == "dismissed"

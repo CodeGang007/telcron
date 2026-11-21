@@ -91,7 +91,8 @@ async def list_tasks(db: AsyncSession, limit: int) -> list[dict[str, Any]]:
 
 
 # The member a task's subject belongs to: the reporter of a flag or correction, the holder of a
-# frozen balance. Task types whose subject is a product or an assessment belong to nobody.
+# frozen balance. Any other task type falls back to whoever submitted the task (S-20), so a type
+# added later is covered without anyone remembering to list it here.
 SUBJECT_OWNER = {
     "hazard_flag": (HazardFlag, HazardFlag.reporter_user_id),
     "fact_report": (ProductFactReport, ProductFactReport.reporter_user_id),
@@ -101,7 +102,7 @@ SUBJECT_OWNER = {
 
 async def _subject_owner(db: AsyncSession, task: ReviewTask) -> uuid.UUID | None:
     if task.task_type not in SUBJECT_OWNER:
-        return None
+        return task.submitted_by_user_id
     model, owner = SUBJECT_OWNER[task.task_type]
     return await db.scalar(select(owner).where(model.id == task.subject_id))
 

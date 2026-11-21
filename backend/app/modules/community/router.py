@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 
-from app.core.deps import Db, Level1User
+from app.core.deps import Db, Level1User, OptionalUser
 from app.core.events import audit, emit
 from app.core.paging import Offset, page
 from app.models import (
@@ -43,6 +43,8 @@ class ReviewOut(BaseModel):
     origin: str
     helpful_count: int
     created_at: datetime
+    mine: bool = False  # the caller wrote it; always false for a visitor
+    voted: bool = False  # the caller has voted it helpful; always false for a visitor
 
 
 class FlagIn(BaseModel):
@@ -63,8 +65,8 @@ async def _product(db: Db, id_or_slug: str):
 
 
 @router.get("/products/{id_or_slug}/reviews", response_model=list[ReviewOut])
-async def list_reviews(id_or_slug: str, db: Db, response: Response, offset: Offset = 0,
-                       limit: int = Query(20, ge=1, le=50)) -> list[ReviewOut]:
+async def list_reviews(id_or_slug: str, db: Db, response: Response, user: OptionalUser,
+                       offset: Offset = 0, limit: int = Query(20, ge=1, le=50)) -> list[ReviewOut]:
     product = await _product(db, id_or_slug)
     rows = (await db.execute(
         select(Review, User.display_name).outerjoin(User, User.id == Review.author_user_id)
@@ -73,8 +75,15 @@ async def list_reviews(id_or_slug: str, db: Db, response: Response, offset: Offs
         .order_by(Review.helpful_count.desc(), Review.created_at.desc())
         .offset(offset).limit(limit + 1))).all()
     rows = page(list(rows), limit, response)
+    voted: set[uuid.UUID] = set()
+    if user is not None and rows:
+        # One query for the caller's votes on this page, not one per review.
+        voted = set((await db.execute(select(ReviewVote.review_id).where(
+            ReviewVote.user_id == user.id,
+            ReviewVote.review_id.in_([r.id for r, _ in rows])))).scalars())
     return [ReviewOut(id=str(r.id), rating=r.rating, title=r.title, body=r.body, author=name,
-                      origin=r.origin, helpful_count=r.helpful_count, created_at=r.created_at)
+                      origin=r.origin, helpful_count=r.helpful_count, created_at=r.created_at,
+                      mine=user is not None and r.author_user_id == user.id, voted=r.id in voted)
             for r, name in rows]
 
 
