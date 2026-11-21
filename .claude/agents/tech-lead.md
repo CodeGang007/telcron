@@ -44,6 +44,7 @@ or the action is destructive, outward-facing or costs money (anything in AWS).
 | Before merging a milestone or a multi-module change | `structure-auditor` + `code-quality-auditor` |
 | Docs for people outside the team; milestone release notes | `technical-writer` |
 | End of a run: worklog, board, resume note | `worklog-scribe` |
+| Jira (TEL) mirrors the board after a run changed it | `project-manager` — PLAN mode first (read-only change set); APPLY only a change set the human approved |
 
 A typical feature: `requirements-analyst` and `user-flow-agent` (in parallel) → you freeze `CT-###` and write the
 WO → owners build → `qa-test-engineer` + `browser-qa-engineer` (+ `security-auditor` where it applies) →

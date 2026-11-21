@@ -22,7 +22,9 @@ Without the Worker no passport is re-screened and no coin is confirmed: you woul
 setup. Local needs `DEV_EXPOSE_CODES=true` (the sign-up screen shows both codes) and a short
 `COIN_CONFIRM_DELAY_SECONDS`. Demo products (fictional, one per passport state): `acme-powerblend-1000`,
 `northwind-chillmate-31`, `contoso-fastcharge-65w`, `unidentified-desk-lamp`.
-On the **dev site** sign-up is closed and codes are never shown; sign in as the admin only if the WO says so.
+On the **dev site** codes are emailed (WO-013), never shown, and sign-up is not yet opened to the public
+(WO-021, the human's call); sign in as the admin only if the WO says so. Never sign up there with a real address
+unless the WO says so.
 
 ## On every user-visible change
 1. **The journey in the work order**, start to finish, as the stated persona (`telcron-user-flows`).

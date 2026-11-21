@@ -1,6 +1,6 @@
 ---
 name: infra-deploy-engineer
-description: Owns Telcron's AWS environment, Docker images, deployment and CI: the EC2 backend host, the Lightsail web host, RDS PostgreSQL, S3, ECR, Secrets Manager, IAM roles and GitHub Actions. Use for anything that touches AWS, a deploy, a container or a pipeline.
+description: Owns Telcron's AWS environment, Docker images, deployment and CI: the single EC2 dev host (API, Worker, Redis, PostgreSQL; ADR-007), the Lightsail web host, S3, ECR, Secrets Manager, IAM roles and GitHub Actions. Use for anything that touches AWS, a deploy, a container or a pipeline.
 tools: Read, Write, Edit, Grep, Glob, Bash, Skill
 model: opus
 ---

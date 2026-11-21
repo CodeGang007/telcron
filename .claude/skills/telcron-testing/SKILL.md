@@ -15,7 +15,7 @@ breaks. Tech doc §14 is the plan; this is how it maps onto the repository.
 | Integration / journey | `backend/tests/test_journey.py` | the real API (httpx ASGI) on **real PostgreSQL and Redis**: `telcron_api_test` built from `db/`, Redis db 1 | every push (`make api-test`) |
 | Schema | `db/tests/` | the database's own rules: CHECKs, triggers, `coin_*`, append-only, composite keys; plus `test_performance.py` at volume | every push (`make db-test`), perf on demand (`make db-test-perf`) |
 | Drift | `backend/tests/test_schema_drift.py` | models vs. the migrated database: tables, columns, types, nullability, defaults, enum values | every push |
-| Contract | `backend/tests/fixtures/<provider>/` (to create) | each provider client against **recorded** responses (SerpApi, ScraperAPI, registries, Bedrock, Rekognition, Textract) | every push, once a client exists |
+| Contract | `backend/tests/fixtures/<provider>/` (to create) | each provider client against **recorded** responses (CPSC exists; to add: UPCitemdb, Groq, Tavily, openFDA/OPSS, Rekognition, eBay/Best Buy when built) | every push, once a client exists |
 | AI evaluation | the fixed product set with known recalls and expected labels (WO-004) | the real scorer, on demand | every prompt or model change; a drop in agreement blocks the release |
 | Browser | `e2e/` (Playwright): `journey` (local stack), `smoke` (read-only, deployed), `hosted` (live member flow) | `make dev` + demo data, or the dev site | every push (journey in CI; smoke after release) |
 | Load | passport reads, live screening, an ingestion run | QA environment | before go-live (tech doc week 9) |
@@ -41,7 +41,8 @@ way proves nothing; QA will do the same.
 - Arrange through the API or the service, as a user would, not by inserting rows that a real flow could never
   produce. Inserting is fine for reference data and for states the API cannot reach yet (say so in a comment).
 - One behaviour per test, named as the behaviour: `test_second_review_of_a_product_is_refused`.
-- Every test user gets its own email and phone (a verified phone is unique) — use the helpers in the test files.
+- Every test user gets its own email (and phone, if the test sets one: a verified phone is unique) — use the
+  helpers in the test files. Level 1 needs the email code only (ADR-006).
 - Time: never `sleep` to wait for a confirmation. Call what the handler calls (`await rewards.confirm_due(db)`
   in `test_journey.py`), or in a schema test move `confirmable_at`. The browser journey uses a short
   `COIN_CONFIRM_DELAY_SECONDS` instead.

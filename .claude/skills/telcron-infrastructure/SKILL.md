@@ -17,15 +17,15 @@ React build served separately. Nothing else runs.
 ## Environments
 | | Local | CI (`.github/workflows/pipeline.yml`) | AWS dev (live since 2026-11-16) | Target (tech doc §4) |
 |---|---|---|---|---|
-| API + Worker | `make dev` | full stack for the browser journey | EC2 `t3.micro`, Docker Compose with Caddy (`infra/aws/compose.yml`) | ECS on Fargate, two services |
+| API + Worker | `make dev` | full stack for the browser journey | one EC2 `t4g.small` (ADR-007), Docker Compose with Caddy (`infra/aws/compose.yml`) | ECS on Fargate, two services |
 | Redis | Compose, :6381 | Compose | container on the EC2 host | ElastiCache, multi-AZ |
-| PostgreSQL 18 | Compose (`db/Dockerfile`: + PostGIS + pgvector), :5433 | Compose | RDS `db.t4g.micro`, single zone | Aurora PostgreSQL (or RDS if 18 is unavailable — risk 7) |
+| PostgreSQL 18 | Compose (`db/Dockerfile`: + PostGIS + pgvector), :5433 | Compose | container on the same host (`infra/aws/postgres/Dockerfile`), nightly `pg_dump` to S3 kept 14 days; RDS deleted 2026-11-21 | Aurora PostgreSQL (or RDS if 18 is unavailable — risk 7) |
 | Web | Vite :3200 | build only | Lightsail + Caddy | S3 behind CloudFront + WAF |
 | Accounts | — | — | one account, `us-east-2` | dev, QA, prod accounts from one Terraform |
-| AI | `StubScorer` | stub | Bedrock invoke allowed, quota zero | Nova Pro (dev/QA), Nova Premier locked (prod) |
+| AI | `StubScorer` | stub | Groq free plan (OpenAI-compatible) with stub fallback; own embedder on the host; Bedrock not used (Free plan, D3 open) | Nova Pro (dev/QA), Nova Premier locked (prod) |
 
-**The gap is deliberate and unfinished.** Dev runs the cheap shape (about USD 33/month, accepted by the human
-on 2026-11-15). QA, production, Terraform, Fargate, Aurora, ElastiCache, CloudFront and WAF are the plan, not the
+**The gap is deliberate and unfinished.** Dev runs the cheap shape (one host, about USD 23/month, ADR-007,
+2026-11-21). QA and production are decision D2 (PLAN §3). QA, production, Terraform, Fargate, Aurora, ElastiCache, CloudFront and WAF are the plan, not the
 present. Do not describe them as existing; do not build them without a work order and the human's yes.
 
 ## Releases
@@ -47,7 +47,7 @@ access keys are wanted. Never push to `release/dev` by hand. Roll back by revert
 
 ## Images
 - `backend/Dockerfile` builds the one image both services run (different commands). CI builds it on every push.
-- `db/Dockerfile` is PostgreSQL 18 + PostGIS + pgvector for local and CI. RDS provides its own extensions.
+- `db/Dockerfile` is PostgreSQL 18 + PostGIS + pgvector for local and CI. The dev host builds its own (`infra/aws/postgres/Dockerfile`, arm64).
 - Pin base images to a major version; rebuild, do not patch running containers.
 
 ## Cost and change rules
@@ -59,6 +59,6 @@ access keys are wanted. Never push to `release/dev` by hand. Roll back by revert
 ## Never
 - Open 5432 to the internet, or 22 on the EC2 host (Session Manager only).
 - Create access keys, or an identity provider for GitHub.
-- Run a migration against the RDS database by hand without the human's yes — the release does it.
+- Run a migration against the dev database by hand without the human's yes — the release does it.
 - Put a hostname, IP, account id or resource id in a tracked file. The repository is public.
 - Kill local servers by name: other projects run on the same machines. Use `make dev-stop`.

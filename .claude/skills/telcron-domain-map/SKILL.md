@@ -25,6 +25,7 @@ frozen contract, not one agent reaching across.
 | `technical-writer` | `docs/guides/**` | — |
 | `structure-auditor`, `code-quality-auditor` | read-only; reports into the WO log | — |
 | `worklog-scribe` | `docs/agent-workspace/WORKLOG.md` | — |
+| `project-manager` | Jira project TEL (mirror of the board); `docs/agent-workspace/jira-map.md` | — |
 
 Tests live in `backend/tests/` and are written by the owner of the code they test; browser tests in `e2e/` are
 `browser-qa-engineer`'s. Commerce Feed & Personalisation is phase two and has no owner yet; its tables exist and

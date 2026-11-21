@@ -22,14 +22,15 @@ Code reads them; code never hard-codes them.
 | Level | Name | Requires | Unlocks | Coins |
 |---|---|---|---|---|
 | 0 | Anonymous / pending | nothing | search, scan, read passports | 0 |
-| 1 | Basic verified | email code **and** phone code (CHECK on `users`) | reviews, photos, flags, wallet, coins | 100 (`level1_verified`, once) |
+| 1 | Basic verified | email code (CHECK `users_chk3`: Level ≥ 1 ⇒ verified email; ADR-006, D4). Phone codes are phase two (`LEVEL1_REQUIRES_PHONE`, off) | reviews, photos, flags, wallet, coins | 100 (`level1_verified`, once) |
 | 2 | Fully verified | Level 1 + ID document + selfie match | higher trust score, business API key | 500 (`level2_verified`, once) |
 | 3 | Business verified | Level 2 + company documents + domain email | **phase two** | — |
 
 - A verified phone belongs to exactly one account (partial UNIQUE). Signing up with someone else's verified
   number ends in `409 phone_in_use`, never a 500.
-- Google sign-in (decided, **not built yet**) gives a verified email but no phone: the user still verifies a
-  phone to reach Level 1.
+- Google sign-in (decided, **not built yet**, W3 WO-025) gives a verified email, which is Level 1 (ADR-006).
+- Without phone verification one person can hold several Level 1 accounts; fraud holds and the daily cap
+  still apply (ADR-006 risk).
 - Link an OAuth identity to an existing account only when the provider says the email is verified.
 - Level 2: ID images go to a private S3 prefix, are read (Textract) and matched (Rekognition), then
   **deleted**; only the outcome is kept in `identity_verifications`. No external government database check.
@@ -68,7 +69,8 @@ Earn rules (`coin_earn_rules`, reference data):
 - Reward level is derived from **lifetime earned** and never drops when coins are spent: Novice 0, Inspector
   200, Analyst 1 000, Expert 5 000, Master 20 000; earn bonus 0 / 5 / 10 / 15 / 25 %.
 - Redemption items exist for six things (reference data); **phase one** offers two: the full hazard report
-  PDF and extra watches (tech doc §9.4). TelCoins can never be bought or exchanged for money.
+  (a printable page) and extra watches (tech doc §9.4, D13). The other four are inactive; a redemption is
+  never left `processing` — one that cannot be fulfilled is refunded through a `coin_*` function (WO-019). TelCoins can never be bought or exchanged for money.
 - **Open:** reviews per product. The schema allows several and pays for five; tech doc §9.1 says one per product
   per user (the API currently refuses a second review with `409 already_reviewed`).
 

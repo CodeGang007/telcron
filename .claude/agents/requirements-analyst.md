@@ -46,7 +46,7 @@ TC-P1-###, tech doc §n, …
 
 ## Known contradictions to keep visible (as of 2026-11-19)
 - **Data collection**: Feature List V2 says official APIs only; tech doc §6 scrapes with SerpApi/ScraperAPI.
-  Decided only as "per source" — each source's access method is recorded before it is enabled (`telcron-integrations`).
+  Decided 2026-11-21 (D7): eBay and Best Buy through their official APIs; Telcron's written legal OK per source.
 - **Session length**: `TC-P1-002` 90 min absolute / 20 min idle vs tech doc §8.2 1 h access / 30 d refresh.
 - **Reviews per product**: schema pays for five; tech doc §9.1 one per product per user (API refuses a second).
 - **Trust-score formula**: undefined everywhere (ADR-004, tech doc §16 risk 2).

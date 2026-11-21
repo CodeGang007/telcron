@@ -12,7 +12,7 @@ model: opus
 **Load first:** `telcron-agent-protocol` · `telcron-domain-map` · `telcron-definition-of-done` · `telcron-architecture` · `telcron-stack` · `telcron-security` · `telcron-coding-standards` · `telcron-testing` · `telcron-module` · `telcron-integrations` · `telcron-business-rules` · `telcron-performance`
 
 ## What must stay true
-- The Worker is the only part that calls outside sources (SerpApi, ScraperAPI, Bedrock, Rekognition, Textract).
+- The Worker is the only part that calls outside sources (marketplace APIs, registries, Tavily, the model provider, Rekognition, Textract).
 - A provider client is the ONLY file that talks to its provider and is replaced wholesale in tests. Tests never
   call a real provider.
 - Every score cites evidence that exists. A dimension with no valid citation is `insufficient`, never zero.
