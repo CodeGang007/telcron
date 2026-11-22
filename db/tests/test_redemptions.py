@@ -34,6 +34,27 @@ def test_only_the_hazard_report_and_extra_watches_are_on_sale(db):
     assert one(db, "SELECT count(*) FROM redemption_items WHERE NOT is_active") == 4
 
 
+LABEL_MIGRATION = ROOT / "db" / "migrations" / "20261122160000_hazard_report_printable_label.sql"
+
+
+def test_the_hazard_report_is_labelled_printable_and_keeps_its_code_and_terms(db):
+    """DEF-035: the report is a printable page, so the store label promises no PDF; only the label changed."""
+    row = db.execute("SELECT code, name, cost_coins, fulfilment_type, duration, quantity, is_active "
+                     "FROM redemption_items WHERE code = 'hazard_report_pdf'").fetchone()
+    assert row == ("hazard_report_pdf", "Full hazard report (printable)", 50, "pdf_report", None, 1, True)
+    assert one(db, "SELECT count(*) FROM redemption_items WHERE name ILIKE '%%PDF%%'") == 0
+
+
+def test_the_label_migration_rolls_back_and_reapplies_cleanly(db):
+    sql = LABEL_MIGRATION.read_text()
+    label = "SELECT name FROM redemption_items WHERE code = 'hazard_report_pdf'"
+    db.execute(sql.split("-- migrate:down", 1)[1])
+    assert one(db, label) == "Full hazard report (PDF)"
+    db.execute(up_part(sql))
+    db.execute(up_part(sql))                                   # a second run changes nothing
+    assert one(db, label) == "Full hazard report (printable)"
+
+
 @pytest.mark.parametrize("item", ["api_boost_month", "early_access", "hazard_export_100", "subscription_10pct"])
 def test_an_item_off_sale_cannot_be_redeemed(db, item):
     u = funded_user(db)
