@@ -19,7 +19,7 @@ React build served separately. Nothing else runs.
 |---|---|---|---|---|
 | API + Worker | `make dev` | full stack for the browser journey | one EC2 `t4g.small` (ADR-007), Docker Compose with Caddy (`infra/aws/compose.yml`) | ECS on Fargate, two services |
 | Redis | Compose, :6381 | Compose | container on the EC2 host | ElastiCache, multi-AZ |
-| PostgreSQL 18 | Compose (`db/Dockerfile`: + PostGIS + pgvector), :5433 | Compose | container on the same host (`infra/aws/postgres/Dockerfile`), nightly `pg_dump` to S3 kept 14 days; RDS deleted 2026-11-21 | Aurora PostgreSQL (or RDS if 18 is unavailable — risk 7) |
+| PostgreSQL 18 | Compose (`db/Dockerfile`: + PostGIS + pgvector), :5440 | Compose | container on the same host (`infra/aws/postgres/Dockerfile`), nightly `pg_dump` to S3 kept 14 days; RDS deleted 2026-11-21 | Aurora PostgreSQL (or RDS if 18 is unavailable — risk 7) |
 | Web | Vite :3200 | build only | Lightsail + Caddy | S3 behind CloudFront + WAF |
 | Accounts | — | — | one account, `us-east-2` | dev, QA, prod accounts from one Terraform |
 | AI | `StubScorer` | stub | Groq free plan (OpenAI-compatible) with stub fallback; own embedder on the host; Bedrock not used (Free plan, D3 open) | Nova Pro (dev/QA), Nova Premier locked (prod) |

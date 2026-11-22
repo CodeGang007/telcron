@@ -21,7 +21,7 @@ make dev-stop
 Worker → new passport. Without the Worker nothing is re-screened and no coin is ever confirmed.
 
 - One settings file, `.env`, serves Docker Compose, `make` and the application. `.env.local` may override it.
-- Ports: Postgres :5433 by default (`DB_PORT`), Redis :6381, API :4310, web :3200. If 5433 is taken on your
+- Ports: Postgres :5440 by default (`DB_PORT`), Redis :6381, API :4310, web :3200. If 5440 is taken on your
   machine, set `DB_PORT` and `DATABASE_URL` in `.env`.
 - API docs: http://localhost:4310/docs · health: http://localhost:4310/health
 - Demo data is the database's (`make db-sample`): four FICTIONAL products, one per passport state:

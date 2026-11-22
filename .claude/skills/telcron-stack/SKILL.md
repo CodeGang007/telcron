@@ -16,7 +16,7 @@ a second ORM.
 | Auth | PyJWT (HS256 access tokens), argon2-cffi for passwords |
 | Tests, lint | pytest + pytest-asyncio + httpx against real Postgres and Redis. ruff |
 | Frontend | React 19, Vite, TypeScript (strict), react-router, Tailwind v4 |
-| Local | Docker Compose through `make`: Postgres on :5433 (`DB_PORT`), Redis on :6381. API :4310, web :3200 |
+| Local | Docker Compose through `make`: Postgres on :5440 (`DB_PORT`), Redis on :6381. API :4310, web :3200 |
 | AWS (dev) | one EC2 t4g.small (Caddy, API, Worker, Redis, PostgreSQL 18, embedder in Docker; ADR-007), Lightsail (Caddy serving the web build), Secrets Manager, S3 |
 | CI/CD | GitHub Actions, `.github/workflows/pipeline.yml`. Pull-based release through the `release/dev` branch; no cloud credentials in GitHub. Playwright for the browser tests (`e2e/`) |
 

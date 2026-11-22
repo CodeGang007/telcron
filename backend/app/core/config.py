@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=(ROOT / ".env", ROOT / ".env.local"), extra="ignore")
 
     env: str = "local"
-    database_url: str = "postgresql://telcron:telcron_dev@127.0.0.1:5433/telcron"
+    database_url: str = "postgresql://telcron:telcron_dev@127.0.0.1:5440/telcron"
     redis_url: str = "redis://127.0.0.1:6381"
     web_origin: str = "http://localhost:3200"
     jwt_secret: str = DEFAULT_JWT_SECRET

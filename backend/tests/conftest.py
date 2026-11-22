@@ -26,7 +26,7 @@ def _setting(name: str) -> str | None:
 
 
 ADMIN_DSN = (os.environ.get("TELCRON_TEST_ADMIN_DSN") or _setting("DATABASE_URL")
-             or "postgresql://telcron:telcron_dev@127.0.0.1:5433/telcron"
+             or "postgresql://telcron:telcron_dev@127.0.0.1:5440/telcron"
              ).replace("postgresql+asyncpg://", "postgresql://")
 TEST_DSN = ADMIN_DSN.rsplit("/", 1)[0] + "/" + TEST_DB
 REDIS = "/".join((_setting("REDIS_URL") or "redis://127.0.0.1:6381").split("/")[:3])

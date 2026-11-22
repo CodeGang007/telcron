@@ -14,7 +14,7 @@ import psycopg
 import pytest
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-ADMIN_DSN = os.environ.get("TELCRON_TEST_ADMIN_DSN", "postgresql://postgres:test@127.0.0.1:55433/postgres")
+ADMIN_DSN = os.environ.get("TELCRON_TEST_ADMIN_DSN", "postgresql://postgres:test@127.0.0.1:55440/postgres")
 TEST_DB = "telcron_test"
 
 FILES = (sorted((ROOT / "db" / "migrations").glob("*.sql"))

@@ -20,8 +20,8 @@ your task needs. If a session died mid-work, start from `docs/agent-workspace/RE
 - Auth: **built in-house** — email + password and Google OAuth (not Cognito). Level 1 needs a verified email (ADR-006; phone code is phase two, D4).
 - Application: **React frontend, FastAPI backend** (decided 2026-11-15). One Python codebase runs as two
   services, the API and a Worker, joined by Redis queues and a transactional outbox. See "Application".
-- Local dev: Docker Compose (`make up`), Postgres on **localhost:5433** (5432 is the system Postgres; set
-  `DB_PORT` in `.env` if 5433 is taken too), Redis on 6381.
+- Local dev: Docker Compose (`make up`), Postgres on **localhost:5440** (5432 is the system Postgres and 5433+ belong to other local projects; set
+  `DB_PORT` in `.env` if 5440 is taken too), Redis on 6381.
 
 ## Database
 - Design doc: `docs/database/schema-design.md` · ERD: `docs/database/telcron-erd.drawio`.

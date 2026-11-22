@@ -2249,7 +2249,7 @@ Feature flags / early-access gates.
 ## 13. Working with the schema
 
 ```bash
-make db-up            # start Postgres 18 (localhost:5433, data in volume telcron_pgdata)
+make db-up            # start Postgres 18 (localhost:5440, data in volume telcron_pgdata)
 make db-migrate       # apply migrations (dbmate in a container)
 make db-seed          # reference data          make db-sample   # fictional demo data
 make db-reset         # wipe + migrate + seed + demo

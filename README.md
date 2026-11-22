@@ -31,8 +31,8 @@ make dev                 # API :4310, Worker, web :3200   ·   make dev-stop
 Open http://localhost:3200. API documentation is at http://localhost:4310/docs.
 
 Database only: `make db-up db-migrate db-seed db-sample`, then `make db-psql`.
-Connection string: `postgresql://telcron:telcron_dev@127.0.0.1:5433/telcron`.
-Adminer UI (optional): `docker compose --profile tools up -d adminer` → http://localhost:8080.
+Connection string: `postgresql://telcron:telcron_dev@127.0.0.1:5440/telcron`.
+Adminer UI (optional): `docker compose --profile tools up -d adminer` → http://localhost:8094.
 
 ## What works today
 
