@@ -145,3 +145,54 @@ AWS was changed or checked live. `docs/database/db_erds.zip` is untracked and un
 
 **Clean-up.** Every `tc-lane*` container and every QA/work worktree removed; `wip/wo-020-dependency-scan` is
 merged and left in place.
+
+## 2026-11-22 — DEF-035 fixed locally: the hazard report is gated (CT-002)
+
+**Decided by the human.** Reading (a) of D13: gate the printable hazard report behind a fulfilled redemption.
+The human accepted the residual risk below.
+
+**Decided by tech-lead.** CT-002 frozen: `GET /api/v1/products/{id_or_slug}/report`. 401 for a visitor (checked
+first), 404 `product_not_found` for an unknown product, 403 `report_not_redeemed` when the caller holds no
+fulfilled `pdf_report` redemption for that product, 200 `{product, passport, redemption}` with
+`Cache-Control: private, no-store`. Why 403 and not 404: the 404-for-another-user's-row rule exists so a response
+never reveals another user's row. Here the URL names a public product, and the answer is identical whether nobody
+or another member bought the report, so nothing about any other user leaks. The distinct code lets the web app say
+"Redeem for 50 TelCoins to unlock" instead of "not found". The store item keeps its code `hazard_report_pdf` and
+fulfilment type `pdf_report`; only its label changed.
+
+**Commits (all on `week-02`, none pushed).** `37ac599` CT-002 and owners' reports in WO-019; `39c66ed` web
+(Report.tsx reads only the gated endpoint; unlock card); `5bef64e` API (route and entitlement query);
+`e6c75cc` migration relabelling the item "Full hazard report (printable)"; `76f2418` QA tests; `9c2357d` e2e
+(flag evidence read from the free passport; new redeem-then-open journey); `e9143a8` DEF-112 filed; `5464976`
+verdicts and board.
+
+**Verdicts.**
+- QA PASS (approve with nits): `make api-test` 160 passed, `make db-test` 103 passed, tsc 0, build ok. Revert
+  proofs: router 403 removed, 6 failed; `user_id` filter removed, 5 failed; `status = 'fulfilled'` filter removed,
+  2 failed; `fulfilment_type` filter removed, owner suite stayed green (gap), 1 failed with the QA watchlist test;
+  label migration emptied, 2 failed.
+- Browser PASS at 390 and 1280 px: visitor and non-redeemer see the unlock card, buyer sees the report and it
+  survives reload, unknown product is not found for a member. `npm run journey` cannot launch a browser here; with
+  a temporary `channel: 'chromium'` config (deleted) it gave 7 passed, 2 skipped.
+- Security PASS-WITH-FINDINGS: no S1-S3. Static review only; no tests run by the auditor.
+
+**Residual risk accepted by the human.** The 200 body equals the public product and passport reads, so the 50
+coins buy a gated print layout of public data, not access to data. Store copy and support answers must not claim
+otherwise.
+
+**Open.**
+- DEF-112 (S4): a visitor on an unknown product's report gets the unlock card (401 precedes the lookup).
+- Security S4: `Report.tsx` does not `encodeURIComponent` the slug (pre-existing pattern); after sign-out the
+  rendered report stays until navigation (data is public).
+- `REPORT_COST = 50` is hard-coded in `Report.tsx` and duplicates the seed.
+- Sign-in has no return path, so "Sign in" from the unlock card does not come back to the report.
+- No test for `passport: null`.
+- Rewards store card shows "Save a product..." copy while the wallet is loading.
+- Playwright headless shell is not installed locally; installing it needs the human's OK.
+- Parallel `make api-test` runs share `telcron_api_test` and collide (seen several times this run); needs a per-run
+  database name (tech-lead/qa).
+- `SEED_ADMIN_PASSWORD` unset locally, so journeys 6 and 7 skip.
+
+**State.** DEF-035 is FIXED-PENDING-QA on the board, as is. Nothing pushed; Jira not touched. E2E members and two
+redemptions remain in the local dev database (append-only ledger, by design). `docs/database/db_erds.zip` is
+still untracked and untouched.

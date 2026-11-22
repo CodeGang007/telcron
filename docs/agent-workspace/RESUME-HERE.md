@@ -1,6 +1,6 @@
 # Resume here
 
-State at the end of the run of 2026-11-22 (branch `week-02`, HEAD `7e1efd5`). Detail: `BOARD.md`, `WORKLOG.md`.
+State at the end of the run of 2026-11-22 (branch `week-02`, HEAD `5464976` plus the scribe commit). Detail: `BOARD.md`, `WORKLOG.md`.
 
 ## Next step: the human's decisions and the push (not more building)
 W1-W2 is built and verified by second agents (nothing is DONE; rows are DONE-PENDING-QA or lower). What is left
@@ -15,15 +15,20 @@ d. **DEF-006 items 1, 2, 4**: `## Blocked on human` in `work-orders/WO-020.md`. 
 e. **DEF-045**: DB owner role. $0; needs database-engineer review.
 f. **DEF-047**: backups versioning and lifecycle. About $0.00-0.05 per month.
 g. **WO-054**: enable raw copies on dev. Under $0.05 per month.
-h. **DEF-035**: choose reading (a) or (b) of D13 for the paid hazard report.
-i. **DEF-046 / S-7r**: ADR on region and secret names in scripts and config.
+h. **DEF-046 / S-7r**: ADR on region and secret names in scripts and config.
 
 Jira has not been updated (project-manager was not dispatched).
+
+## DEF-035 (done locally, nothing pushed)
+The human chose (a): the printable hazard report is gated (CT-002). Fixed locally, QA, browser and security
+verdicts in `work-orders/WO-019.md`; it goes out with the push in (a). Open from it: DEF-112, two security S4s,
+`REPORT_COST = 50` hard-coded, no sign-in return path, no `passport: null` test, Rewards loading-state copy,
+parallel `api-test` runs sharing one test database, `SEED_ADMIN_PASSWORD` unset (journeys 6 and 7 skip).
 
 ## Still open (not for the human alone)
 DEF-110, DEF-111 (W3), DEF-007, DEF-002, DEF-024 (W4), D14 review by the schema's author, Gemini data-sharing
 ADR, a partial unique index for DEF-032, `tools/dev-all.sh --no-proxy-headers`, Playwright headless browser not
-installed locally, `.env.local` points the database at 5436.
+installed locally (installing needs the human's OK), `.env.local` points the database at 5436.
 
 ## Where things stand
 - `main` holds the teammate's work; `week-02` holds this run. Branch `release/dev` is written by the pipeline
