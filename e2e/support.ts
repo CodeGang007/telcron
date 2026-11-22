@@ -61,8 +61,12 @@ export async function signOut(page: Page): Promise<void> {
   await expect(page.locator('header').getByRole('link', { name: 'Sign in' })).toBeVisible();
 }
 
-/** The text of the full hazard report, which lists every score's evidence. */
-export async function reportText(page: Page, slug: string): Promise<string> {
-  await page.goto(`/products/${slug}/report`);
-  return (await page.locator('article').textContent()) ?? '';
+/** The public passport page's hazard evidence: every score is opened and its citations read. The full
+    hazard report is a paid, gated page (DEF-035, CT-002), so evidence checks read the free passport. */
+export async function passportEvidence(page: Page, slug: string): Promise<string> {
+  await page.goto(`/products/${slug}`);
+  await expect(passport(page)).toContainText(/Version \d+/);
+  const closed = page.locator('li > button[aria-expanded=false]:not([disabled])');
+  for (let n = await closed.count(); n > 0; n = await closed.count()) await closed.first().click();
+  return (await page.locator('main').textContent()) ?? '';
 }

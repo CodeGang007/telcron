@@ -2,7 +2,7 @@
 // Needs a local stack with the demo data (`make app-db`, `make dev`), DEV_EXPOSE_CODES=true, a short
 // COIN_CONFIRM_DELAY_SECONDS and SEED_ADMIN_PASSWORD. It creates new members on every run.
 import { expect, test } from '@playwright/test';
-import { ADMIN_EMAIL, newMember, passport, passportVersion, reportText, setting, signIn, signOut } from './support';
+import { ADMIN_EMAIL, newMember, passport, passportEvidence, passportVersion, setting, signIn, signOut } from './support';
 
 const FRIDGE = '/products/northwind-chillmate-31';
 const CHARGER = '/products/contoso-fastcharge-65w';
@@ -87,6 +87,68 @@ test('a member signs up, saves a product, reviews it and is paid', async ({ page
   await expect(page.getByText('Sign in to continue')).toBeVisible();
 });
 
+test('a member redeems the printable hazard report, and only they can open it', async ({ browser, baseURL, page }) => {
+  const slug = 'contoso-fastcharge-65w';
+  const report = `/products/${slug}/report`;
+  await newMember(page, 'Report Buyer');
+  await page.goto(CHARGER);
+  await page.getByRole('button', { name: 'Save to wallet' }).click();
+  await expect(page.getByText('Saved to your Digital Wallet')).toBeVisible();
+
+  // Before redeeming, the member meets the unlock card that points at the coin store (CT-002: 403).
+  await page.goto(report);
+  await expect(page.getByRole('heading', { name: 'Redeem for 50 TelCoins to unlock' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Open the coin store' })).toHaveAttribute('href', '/rewards');
+  await expect(page.getByRole('link', { name: 'See the free passport' })).toHaveAttribute('href', CHARGER);
+  await expect(page.locator('article')).toHaveCount(0);
+
+  // The store sells it under an honest name, and it unlocks once the sign-up coins are confirmed.
+  const item = page.locator('li.card').filter({ hasText: 'Full hazard report' });
+  await expect
+    .poll(async () => { await page.goto('/rewards'); await item.waitFor(); return item.getByRole('button', { name: 'Redeem', exact: true }).count(); },
+      { timeout: 90_000, intervals: [3_000] })
+    .toBe(1);
+  await expect(item).toContainText('Full hazard report (printable)');
+  await expect(item).not.toContainText('PDF');
+  await item.getByLabel('For').selectOption(slug);
+  await item.getByRole('button', { name: 'Redeem', exact: true }).click();
+  await expect(page.getByText('Full hazard report (printable) is yours')).toBeVisible();
+
+  // Opened from the toast, the report reads only the gated endpoint: no public product or passport read.
+  const productReads: string[] = [];
+  page.on('request', (r) => { if (/\/api\/v1\/products\//.test(r.url())) productReads.push(new URL(r.url()).pathname); });
+  await page.getByRole('button', { name: 'Open', exact: true }).click();
+  await page.waitForURL(`**${report}`);
+  const article = page.locator('article');
+  await expect(article.getByText('Telcron hazard report')).toBeVisible();
+  await expect(article.getByRole('heading', { level: 1 })).toContainText('Contoso FastCharge');
+  await expect(article).toContainText(/Version \d+/);
+  await expect(page.getByRole('button', { name: 'Print or save as PDF' })).toBeVisible();
+  await page.reload();
+  await expect(article.getByRole('heading', { level: 1 })).toContainText('Contoso FastCharge');
+  expect([...new Set(productReads)]).toEqual([`/api/v1${report}`]);
+
+  // Signed out, the same address is locked and offers sign-in and the free passport.
+  await signOut(page);
+  await page.goto(report);
+  await expect(page.getByRole('heading', { name: 'Redeem for 50 TelCoins to unlock' })).toBeVisible();
+  await expect(page.getByRole('main').getByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/sign-in');
+  await expect(page.getByRole('link', { name: 'See the free passport' })).toHaveAttribute('href', CHARGER);
+  await expect(page.locator('article')).toHaveCount(0);
+  // The free passport is unchanged and needs no account.
+  await page.getByRole('link', { name: 'See the free passport' }).click();
+  await expect(passport(page)).toContainText(/Version \d+/);
+
+  // Another member gets nothing from the buyer's redemption.
+  const other = await (await browser.newContext({ baseURL })).newPage();
+  await newMember(other, 'Not A Buyer');
+  await other.goto(report);
+  await expect(other.getByRole('heading', { name: 'Redeem for 50 TelCoins to unlock' })).toBeVisible();
+  await expect(other.getByRole('link', { name: 'Open the coin store' })).toHaveAttribute('href', '/rewards');
+  await expect(other.locator('article')).toHaveCount(0);
+  await other.context().close();
+});
+
 test('a hazard report is confirmed by the safety team, pays the reporter and becomes evidence', async ({ browser, baseURL }) => {
   const adminPassword = setting('SEED_ADMIN_PASSWORD');
   test.skip(!adminPassword, 'SEED_ADMIN_PASSWORD is not set: no admin to act as the safety team');
@@ -120,9 +182,10 @@ test('a hazard report is confirmed by the safety team, pays the reporter and bec
   await expect(mine).toContainText('Consistent with the photos.');
   await expect(member.getByText('Hazard flag confirmed')).toBeVisible();
 
-  // The Worker re-screens the product, and the confirmed report is now cited as evidence.
+  // The Worker re-screens the product, and the confirmed report is now cited as evidence on the free
+  // passport (the printable report is a paid page: DEF-035).
   await expect
-    .poll(async () => reportText(member, 'contoso-fastcharge-65w'), { timeout: 45_000 })
+    .poll(async () => passportEvidence(member, 'contoso-fastcharge-65w'), { timeout: 45_000 })
     .toContain(marker);
 
   // A member who is not on the safety team has no queue: the admin area is not revealed (WO-055).
