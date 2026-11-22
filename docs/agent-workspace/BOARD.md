@@ -30,7 +30,7 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | --- | --- | --- | --- | --- |
 | WO-017 | Verification sweep of WO-001…016, 018, 024 | qa-test-engineer, browser-qa-engineer, security-auditor | — | DONE-PENDING-QA — sweep complete (run 2, 2026-11-22); verdicts in `verdicts/WO-017-*.md`; last re-check APPROVE WITH NITS (DEF-110, DEF-111 open) |
 | WO-018 | Board and WO files repaired | tech-lead | — | DONE-PENDING-QA — this board; WO-012/016 written; WO-004/005/013 status lines corrected. WO-005/DEF-004 close on QA's word · **QA FAIL → DEF-021 (fixed); re-check PASS 2026-11-22; DEF-090 (board agreement) fixed pending QA** |
-| WO-019 | Redemptions: phase-one items only, nothing left `processing` | database-engineer → community-rewards-engineer | WO-022, D13 | DONE-PENDING-QA — QA PASS, security PASS (2026-11-22); schema `e49911f`, service `2f40ce3`; DEF-035 (report access) waits on the human |
+| WO-019 | Redemptions: phase-one items only, nothing left `processing` | database-engineer → community-rewards-engineer | WO-022, D13 | DONE-PENDING-QA — QA PASS, security PASS (2026-11-22); schema `e49911f`, service `2f40ce3`; DEF-035 fixed (gated report, CT-002) · QA PASS |
 | WO-020 | Dev hardening: DEF-006; dependency scan in the pipeline | infra-deploy-engineer | — | DONE-PENDING-QA — QA PASS (scan); DEF-006 item 3 closed in repo; items 1, 2, 4 BLOCKED ON HUMAN |
 | WO-021 | M1 on dev: sign-up open, a new user verifies | platform-identity-engineer, infra-deploy-engineer | human yes | BLOCKED ON HUMAN |
 | WO-022 | Phases 2–3 as migrations | database-engineer | D11 | DONE-PENDING-QA — QA PASS, security PASS (S-18 fixed); `41bdc29` (+ deploy-host lines, same push) |
@@ -68,7 +68,7 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | DEF-032 | Each re-screen opens a duplicate evidence task | data-ai-engineer | S3 | FIXED-PENDING-QA — QA PASS 2026-11-22; partial unique index proposed (database-engineer, later) |
 | DEF-033 | Data sources page mislabels research runs | frontend-engineer | S4 | FIXED-PENDING-QA — QA PASS 2026-11-22 |
 | DEF-034 | Header coin balance stale after spending | frontend-engineer | S4 | FIXED-PENDING-QA — QA PASS 2026-11-22 |
-| DEF-035 | Paid hazard report is free at the same URL | tech-lead → community-rewards + frontend | S3 | BLOCKED ON HUMAN (product decision: reading (a)/(b), D13) |
+| DEF-035 | Paid hazard report is free at the same URL | tech-lead → community-rewards + frontend + database | S3 | FIXED-PENDING-QA — human chose (a); CT-002; `39c66ed` `5bef64e` `e6c75cc` `9c2357d` · **QA PASS, browser PASS, security PASS-WITH-FINDINGS (S4s)** |
 | DEF-036 | Unreachable API shown as 'not found' | frontend-engineer | S3 | FIXED-PENDING-QA — QA PASS 2026-11-22 |
 | DEF-037 | Home page shows an invented passport | frontend-engineer | S4 | FIXED-PENDING-QA — QA PASS 2026-11-22 |
 | DEF-038 | Wallet Remove invisible on phones | frontend-engineer | S3 | FIXED-PENDING-QA — QA PASS 2026-11-22 |
@@ -90,6 +90,7 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | DEF-101 | Review queue offers own items' decisions; 38 px buttons on phones | frontend-engineer | S4 | FIXED-PENDING-QA — QA PASS 2026-11-22 |
 | DEF-110 | Search's brand list still reads every product when a brand matches; no plan test | catalogue-engineer | S3 | OPEN — routed for W3 (LATERAL query) |
 | DEF-111 | Staff with an unreachable API are told to sign in on the admin area | frontend-engineer | S4 | OPEN — routed for W3 |
+| DEF-112 | A visitor on an unknown product's report is offered to buy it | tech-lead (CT-002) | S4 | OPEN |
 
 ## Decisions
 D1, D4, D7, D8, D11, D13, D16 decided 2026-11-21 (`docs/plan/PLAN.md` §3). Open: D2, D3, D5, D6, D9, D10, D12,
