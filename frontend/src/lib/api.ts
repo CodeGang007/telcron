@@ -131,6 +131,7 @@ export const MESSAGES: Record<string, string> = {
   not_authenticated: 'Sign in to continue.',
   own_review: 'You cannot vote on your own review.',
   review_not_found: 'That review is no longer published. Reload the page to see the current reviews.',
+  report_not_redeemed: 'The full report for this product is not unlocked on your account. Redeem it with TelCoins in the rewards store.',
 };
 const UNREACHABLE = 'Could not reach Telcron. Check your connection and try again.';
 /** "in 3 minutes" for a Retry-After in seconds, rounded up; "in a moment" under a minute. */
@@ -218,6 +219,13 @@ export type Passport = {
 export type ProductDetail = ProductSummary & {
   description: string | null;
   certifications: { scheme: string; identifier: string; status: string; valid_until: string | null }[];
+};
+/** GET /products/{id_or_slug}/report (CT-002): the paid full report, for the member who redeemed it. */
+export type ProductReport = {
+  product: ProductDetail;
+  /** Null when no passport is issued yet; the member still owns the report. */
+  passport: Passport | null;
+  redemption: { id: string; fulfilled_at: string };
 };
 export type Review = {
   id: string;

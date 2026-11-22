@@ -1,38 +1,84 @@
-import { Printer } from 'lucide-react';
-import { useParams } from 'react-router-dom';
+import { AlertOctagon, LockKeyhole, Printer } from 'lucide-react';
+import { Link, useParams } from 'react-router-dom';
 import { LogoMark } from '../components/Logo';
-import { Notice, Skeleton } from '../components/ui';
-import { api, type Passport, type ProductDetail } from '../lib/api';
+import { EmptyState, Notice, Skeleton } from '../components/ui';
+import { ApiError, api, type ProductReport } from '../lib/api';
 import { useLoad } from '../lib/useLoad';
 
+/** The store's price for the report (seeded `hazard_report_pdf`). The store itself shows the live price;
+    this is only the unlock copy for someone who has not opened the store yet. */
+const REPORT_COST = 50;
+
+/** Who is asking, when the report is not theirs to read (CT-002): a visitor (401) or a member who has
+    not redeemed it for this product (403 `report_not_redeemed`). */
+type Locked = { locked: 'visitor' | 'member' };
+
+async function loadReport(slug: string): Promise<ProductReport | Locked> {
+  try {
+    return await api<ProductReport>(`/products/${slug}/report`);
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 401) return { locked: 'visitor' };
+    if (e instanceof ApiError && e.status === 403 && e.code === 'report_not_redeemed') return { locked: 'member' };
+    throw e;
+  }
+}
+
+function Unlock({ slug, who }: { slug: string; who: Locked['locked'] }) {
+  return (
+    <div className="container-page py-16">
+      <EmptyState
+        icon={LockKeyhole}
+        title={`Redeem for ${REPORT_COST} TelCoins to unlock`}
+        action={
+          <div className="flex flex-wrap justify-center gap-3">
+            {who === 'visitor'
+              ? <Link to="/sign-in" className="btn min-h-11">Sign in</Link>
+              : <Link to="/rewards" className="btn min-h-11">Open the coin store</Link>}
+            <Link to={`/products/${slug}`} className="btn-ghost min-h-11">See the free passport</Link>
+          </div>
+        }
+      >
+        {who === 'visitor'
+          ? 'The full hazard report, with every score and every piece of evidence, is for members who redeem it. Sign in, then redeem it in the coin store. The passport stays free for everyone.'
+          : 'You have not unlocked the full report for this product yet. Redeem it in the coin store with your confirmed TelCoins. The passport stays free for everyone.'}
+      </EmptyState>
+    </div>
+  );
+}
+
 /** The full hazard report: the passport with every score and every piece of evidence, ready to print
-    or save as PDF from the browser. */
+    or save as PDF from the browser. Only for the member who redeemed it for this product (DEF-035, CT-002);
+    it never renders from the public reads. */
 export function Report() {
   const { slug = '' } = useParams();
-  const product = useLoad(() => api<ProductDetail>(`/products/${slug}`), [slug]);
-  const passport = useLoad(() => api<Passport>(`/products/${slug}/passport`), [slug]);
-  if (product.loading || passport.loading) return <div className="container-page py-12"><Skeleton className="h-96 w-full" /></div>;
-  const p = product.data;
-  const pass = passport.data;
-  const failed = [product, passport].find((r) => r.error && !r.notFound);
-  if (failed)
+  const report = useLoad(() => loadReport(slug), [slug]);
+  if (report.loading) return <div className="container-page py-12"><Skeleton className="h-96 w-full" /></div>;
+  if (report.notFound)
     return (
-      <div className="container-page py-12">
-        <Notice tone="error">{failed.error} <button className="font-semibold underline" onClick={() => { void product.reload(); void passport.reload(); }}>Try again</button></Notice>
+      <div className="container-page py-16">
+        <EmptyState icon={AlertOctagon} title="We could not find that product" action={<Link className="btn" to="/search">Search again</Link>} />
       </div>
     );
-  if (!p || !pass) return <div className="container-page py-12 text-muted">This product has no passport yet.</div>;
+  if (report.error || !report.data)
+    return (
+      <div className="container-page py-12">
+        <Notice tone="error">{report.error ?? 'Something went wrong. Try again.'} <button className="font-semibold underline" onClick={() => void report.reload()}>Try again</button></Notice>
+      </div>
+    );
+  if ('locked' in report.data) return <Unlock slug={slug} who={report.data.locked} />;
+  const { product: p, passport: pass } = report.data;
+  if (!pass) return <div className="container-page py-12 text-muted">This product has no passport yet.</div>;
   return (
     <div className="container-page max-w-3xl py-12 print:max-w-none print:py-0">
-      <div className="mb-8 flex items-center justify-between print:hidden">
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-3 print:hidden">
         <p className="text-sm text-muted">Use your browser&apos;s print dialog to save this as a PDF.</p>
         <button className="btn" onClick={() => window.print()}><Printer className="size-4" />Print or save as PDF</button>
       </div>
-      <article className="rounded-3xl border border-line bg-white p-10 print:border-0 print:p-0">
-        <header className="flex items-start justify-between border-b border-line pb-6">
-          <div>
+      <article className="rounded-3xl border border-line bg-white p-5 sm:p-10 print:border-0 print:p-0">
+        <header className="flex items-start justify-between gap-4 border-b border-line pb-6">
+          <div className="min-w-0">
             <p className="eyebrow">Telcron hazard report</p>
-            <h1 className="mt-2 font-display text-3xl font-extrabold">{p.name}</h1>
+            <h1 className="mt-2 break-words font-display text-2xl font-extrabold sm:text-3xl">{p.name}</h1>
             <p className="mt-1 text-muted">{[p.brand, p.model_number, p.category].filter(Boolean).join(' · ')}</p>
           </div>
           <LogoMark size={44} />
@@ -51,7 +97,7 @@ export function Report() {
                 <p className="font-semibold">{r.title}</p>
                 {r.hazard && <p className="mt-1">{r.hazard}</p>}
                 {r.remedy && <p className="mt-1 text-muted">What to do: {r.remedy}</p>}
-                {r.url && <p className="mt-1 text-xs text-muted">{r.url}</p>}
+                {r.url && <p className="mt-1 break-all text-xs text-muted">{r.url}</p>}
               </div>
             ))}
           </section>
@@ -60,7 +106,8 @@ export function Report() {
           <section className="mt-8">
             <h2 className="font-display text-lg font-bold">Hazard assessment · {pass.hazard.label ?? 'not enough evidence'}</h2>
             <p className="text-xs text-muted">Scored by {pass.hazard.model_code}. Higher means more hazardous.</p>
-            <table className="mt-3 w-full text-left text-sm">
+            <div className="mt-3 overflow-x-auto">
+            <table className="w-full min-w-[32rem] text-left text-sm print:min-w-0">
               <thead className="border-b border-line text-xs uppercase text-muted"><tr><th className="py-2">Dimension</th><th>Weight</th><th>Score</th><th>Evidence</th></tr></thead>
               <tbody className="divide-y divide-line align-top">
                 {pass.hazard.dimensions.map((d) => (
@@ -73,6 +120,7 @@ export function Report() {
                 ))}
               </tbody>
             </table>
+            </div>
           </section>
         )}
         {p.certifications.length > 0 && (
