@@ -151,3 +151,17 @@ async def redeem(db: AsyncSession, user_id: uuid.UUID, item_code: str, key: str,
                                      "reason": f"{item.fulfilment_type} is not fulfilled yet"})
             await db.refresh(redemption)  # the function set `refunded` behind the session
     return redemption.id
+
+
+async def report_entitlement(db: AsyncSession, user_id: uuid.UUID, product_id: uuid.UUID):
+    """The caller's most recent fulfilled hazard-report redemption for this product, or None
+    (CT-002). Only the caller's own rows are read; a refunded, failed or processing one does not count.
+    Matching is on the item's fulfilment type, not its code."""
+    from app.models import Redemption, RedemptionItem
+    return (await db.execute(
+        select(Redemption.id, Redemption.fulfilled_at)
+        .join(RedemptionItem, RedemptionItem.code == Redemption.item_code)
+        .where(Redemption.user_id == user_id, Redemption.product_id == product_id,
+               Redemption.status == "fulfilled", RedemptionItem.fulfilment_type == "pdf_report")
+        .order_by(Redemption.fulfilled_at.desc().nulls_last(), Redemption.created_at.desc())
+        .limit(1))).first()

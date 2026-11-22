@@ -264,6 +264,9 @@ async def test_rewards_overview_and_the_store(client, db):
     r = await client.post(f"{API}/redemptions", headers=member, json={
         "item_code": "hazard_report_pdf", "product": "aquablend-900", "request_id": "b"})
     assert r.status_code == 201 and r.json()["status"] == "fulfilled"
+    # What was bought opens (CT-002): the report link from the 201 answer.
+    opened = await client.get(f"{API}{r.json()['report']}", headers=member)
+    assert opened.status_code == 200 and opened.json()["redemption"]["id"] == r.json()["id"]
     again = await client.post(f"{API}/redemptions", headers=member, json={
         "item_code": "hazard_report_pdf", "product": "aquablend-900", "request_id": "b"})
     assert again.json()["id"] == r.json()["id"]  # a retried click spends once

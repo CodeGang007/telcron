@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
-from app.core.deps import Db, Level1User
+from app.core.deps import CurrentUser, Db, Level1User
 from app.core.paging import Offset, page
 from app.models import CoinBalance, CoinLedgerEntry, RewardLevel, User
 
@@ -167,3 +167,26 @@ async def redeem(data: RedeemIn, db: Db, user: Level1User) -> dict | JSONRespons
         return JSONResponse({"detail": "item_not_available", "id": str(r.id)}, status_code=409)
     return {"id": str(r.id), "status": r.status, "item": r.item_code,
             "report": f"/products/{product.public_slug}/report" if product else None}
+
+
+@router.get("/products/{id_or_slug}/report")
+async def get_report(id_or_slug: str, db: Db, user: CurrentUser, response: Response) -> dict:
+    """The full hazard report: a paid entitlement (CT-002, DEF-035). Open only to a member holding a
+    fulfilled hazard-report redemption of this product. The answer is the same whether nobody or
+    another member bought it, so nothing about anyone else's redemption is revealed."""
+    from fastapi import HTTPException
+    from fastapi import status as http
+
+    from app.modules.catalogue.service import find_product, passport_view, product_detail
+    product = await find_product(db, id_or_slug)
+    if product is None:
+        raise HTTPException(http.HTTP_404_NOT_FOUND, "product_not_found")
+    entitlement = await service.report_entitlement(db, user.id, product.id)
+    if entitlement is None:
+        raise HTTPException(http.HTTP_403_FORBIDDEN, "report_not_redeemed")
+    response.headers["Cache-Control"] = "private, no-store"
+    redemption_id, fulfilled_at = entitlement
+    return {"product": await product_detail(db, product),
+            "passport": await passport_view(db, product),
+            "redemption": {"id": str(redemption_id),
+                           "fulfilled_at": fulfilled_at.isoformat() if fulfilled_at else None}}
