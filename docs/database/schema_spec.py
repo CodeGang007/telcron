@@ -1051,6 +1051,8 @@ TABLES = [
             C("is_active", "boolean", nn=True, default="true")],
       checks=["cost_coins > 0", "quantity IS NULL OR quantity > 0"],
       rules=["Phase one sells only pdf_report and watchlist_slots items; the rest are is_active = false (D13, WO-019).",
+             "watchlist_3 is off sale until watches exist (DEF-117, WO-059; WO-033 puts it back on sale), so the "
+             "store sells only hazard_report_pdf.",
              "coin_redeem() refuses an inactive item."]),
 
     T("redemptions", "rewards", phase=3, features="TC-P1-017",
@@ -1064,11 +1066,19 @@ TABLES = [
             C("fulfilment", "jsonb"),
             C("fulfilled_at", "timestamptz"),
             CREATED()],
-      checks=["(status = 'fulfilled') = (fulfilled_at IS NOT NULL)"],
+      # A refunded redemption keeps fulfilled_at when it had been delivered (DEF-117, WO-059).
+      checks=[Revised("(status = 'fulfilled' AND fulfilled_at IS NOT NULL) OR "
+                      "(status IN ('processing', 'failed') AND fulfilled_at IS NULL) OR status = 'refunded'",
+                      applied="(status = 'fulfilled') = (fulfilled_at IS NOT NULL)",
+                      by="20261123130000_watchlist_off_sale_refund.sql")],
       indexes=[I("user_id, created_at DESC")],
       rules=["coin_redeem(): spend + redemption in one transaction, idempotent on its key.",
              "coin_refund_redemption(): a processing or failed redemption with nothing delivered gets one confirmed "
              "refund entry reversing its spend and becomes refunded; a repeat returns the same entry and pays nothing.",
+             "coin_refund_withdrawn_redemption(): a fulfilled redemption of an item now off sale whose fulfilment "
+             "is watchlist_slots, with no watch using its entitlement, gets one confirmed refund entry reversing "
+             "its spend, its entitlement deleted (recorded in fulfilment.refund) and becomes refunded, all in one "
+             "call; a repeat returns the same entry and pays nothing (DEF-117, WO-059). Anything else is refused.",
              "No redemption is left processing (WO-019): one that cannot be fulfilled is refunded."]),
 
     T("user_entitlements", "rewards", phase=3, features="TC-P1-017/018",
@@ -1082,7 +1092,9 @@ TABLES = [
             C("starts_at", "timestamptz", nn=True, default="now()"),
             C("ends_at", "timestamptz")],
       checks=["(source = 'redemption') = (redemption_id IS NOT NULL)", "ends_at IS NULL OR ends_at > starts_at"],
-      indexes=[I("user_id, entitlement, ends_at")]),
+      indexes=[I("user_id, entitlement, ends_at")],
+      rules=["A row is a right the member holds. Refunding the redemption that granted it deletes it "
+             "(coin_refund_withdrawn_redemption(), WO-059); a watch still using it refuses the refund."]),
 
     T("fraud_holds", "rewards", phase=3, features="TC-P1-016",
       purpose="Automatic or manual freeze of a user's earning pending review.",

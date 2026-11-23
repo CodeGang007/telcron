@@ -1,4 +1,5 @@
-"""Redemptions (TC-P1-017, WO-019, D13): two items on sale in phase one; nothing is left `processing`."""
+"""Redemptions (TC-P1-017, WO-019, D13): nothing is left `processing`. Since WO-059 (DEF-117) only the
+hazard report is on sale; the withdrawn watchlist item's refund is tested in test_withdrawn_redemption_refund.py."""
 import psycopg
 import pytest
 
@@ -28,10 +29,11 @@ def stuck_redemption(db, u, item="hazard_export_100"):
     return rid
 
 
-def test_only_the_hazard_report_and_extra_watches_are_on_sale(db):
+def test_only_the_hazard_report_is_on_sale(db):
+    """D13 put two items on sale; WO-059 (DEF-117) took watchlist_3 off until watches exist (WO-033)."""
     active = db.execute("SELECT code, fulfilment_type FROM redemption_items WHERE is_active ORDER BY code").fetchall()
-    assert active == [("hazard_report_pdf", "pdf_report"), ("watchlist_3", "watchlist_slots")]
-    assert one(db, "SELECT count(*) FROM redemption_items WHERE NOT is_active") == 4
+    assert active == [("hazard_report_pdf", "pdf_report")]
+    assert one(db, "SELECT count(*) FROM redemption_items WHERE NOT is_active") == 5
 
 
 LABEL_MIGRATION = ROOT / "db" / "migrations" / "20261122160000_hazard_report_printable_label.sql"
@@ -55,7 +57,8 @@ def test_the_label_migration_rolls_back_and_reapplies_cleanly(db):
     assert one(db, label) == "Full hazard report (printable)"
 
 
-@pytest.mark.parametrize("item", ["api_boost_month", "early_access", "hazard_export_100", "subscription_10pct"])
+@pytest.mark.parametrize("item", ["api_boost_month", "early_access", "hazard_export_100", "subscription_10pct",
+                                  "watchlist_3"])
 def test_an_item_off_sale_cannot_be_redeemed(db, item):
     u = funded_user(db)
     savepoint_raises(db, "SELECT coin_redeem(%s, %s, 'k')", (u, item), match="inactive")
@@ -98,6 +101,7 @@ def test_a_fulfilled_redemption_is_not_refunded(db):
 
 def test_a_redemption_that_granted_an_entitlement_is_not_refunded(db):
     u = funded_user(db)
+    db.execute("UPDATE redemption_items SET is_active = true WHERE code = 'watchlist_3'")   # this transaction only
     rid = one(db, "SELECT coin_redeem(%s, 'watchlist_3', 'w1')", (u,))
     db.execute("""INSERT INTO user_entitlements (user_id, source, redemption_id, entitlement, quantity)
                   VALUES (%s, 'redemption', %s, 'watchlist_slots', 3)""", (u, rid))
@@ -115,14 +119,14 @@ def test_an_unknown_redemption_is_refused(db):
 def test_the_migration_refunds_every_stuck_redemption_once(db):
     u, other = funded_user(db), funded_user(db)
     stuck = [stuck_redemption(db, u, "hazard_export_100"), stuck_redemption(db, other, "early_access")]
-    kept = one(db, "SELECT coin_redeem(%s, 'watchlist_3', 'kept')", (u,))      # active item: not touched
-    assert balance(db, u) == (100, 500) and balance(db, other) == (0, 500)
+    kept = one(db, "SELECT coin_redeem(%s, 'hazard_report_pdf', 'kept', %s)", (u, make_product(db)))  # on sale
+    assert balance(db, u) == (150, 500) and balance(db, other) == (0, 500)
 
     db.execute(up_part(MIGRATION.read_text()))
     assert [one(db, "SELECT status FROM redemptions WHERE id = %s", (r,)) for r in stuck] == ["refunded", "refunded"]
     assert one(db, "SELECT status FROM redemptions WHERE id = %s", (kept,)) == "processing"
-    assert balance(db, u) == (400, 500) and balance(db, other) == (500, 500)
-    assert one(db, "SELECT count(*) FROM redemption_items WHERE is_active") == 2
+    assert balance(db, u) == (450, 500) and balance(db, other) == (500, 500)
+    assert one(db, "SELECT count(*) FROM redemption_items WHERE is_active") == 1    # it never re-lists watchlist_3
 
     db.execute(up_part(MIGRATION.read_text()))                                 # running it again pays nothing
-    assert balance(db, u) == (400, 500) and balance(db, other) == (500, 500)
+    assert balance(db, u) == (450, 500) and balance(db, other) == (500, 500)

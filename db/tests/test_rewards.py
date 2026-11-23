@@ -81,6 +81,7 @@ def test_spend_and_redeem(db):
     assert one(db, "SELECT coin_redeem(%s, 'hazard_report_pdf', 'req-1', %s)", (u, p)) == rid   # idempotent
     assert bal(db, u)[0] == 50
     assert one(db, "SELECT amount FROM coin_ledger_entries l JOIN redemptions r ON r.ledger_entry_id = l.id WHERE r.id = %s", (rid,)) == -50
+    db.execute("UPDATE redemption_items SET is_active = true WHERE code = 'watchlist_3'")   # off sale (WO-059); this test only
     savepoint_raises(db, "SELECT coin_redeem(%s, 'watchlist_3', 'req-2')", (u,), match="insufficient")   # costs 100
 
 
