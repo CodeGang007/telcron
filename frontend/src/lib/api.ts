@@ -198,6 +198,9 @@ export type Passport = {
   hazard_component: number | null;
   formula_version: string;
   verified_at: string;
+  /** When the recall data behind "no recall found" was last refreshed (CT-003 §A). Absent on a
+      cached passport, null when it has no screening: say "as of the last check". */
+  recall_checked_as_of?: string | null;
   hazard: {
     total_score: number | null;
     label: string | null;

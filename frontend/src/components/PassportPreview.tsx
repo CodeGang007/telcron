@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { api, type Passport, type ProductSummary } from '../lib/api';
 import { useLoad } from '../lib/useLoad';
 import { StatusBadge, TrustRing } from './ui';
+import { recallAsOf } from './Verdict';
 
 const tone = (score: number) => (score >= 60 ? 'bg-danger' : score >= 30 ? 'bg-gold' : 'bg-ok');
 
@@ -37,7 +38,7 @@ export function PassportPreview({ products }: { products: ProductSummary[] | nul
             <ul className="space-y-2 text-sm">
               <li className="flex items-center gap-2">
                 {recalls ? <AlertOctagon className="size-4 text-danger" /> : <BadgeCheck className="size-4 text-ok" />}
-                {recalls ? `${recalls} recall notice${recalls === 1 ? '' : 's'}` : 'No recall notice names it'}
+                {recalls ? `${recalls} recall notice${recalls === 1 ? '' : 's'}` : `No recall notice ${recallAsOf(pass)}`}
               </li>
               {pass.hazard?.label && <li className="flex items-center gap-2"><Sparkles className="size-4 text-gold" />{pass.hazard.label} hazard</li>}
             </ul>

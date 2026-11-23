@@ -7,6 +7,7 @@ import { Alternatives, StoreLinks } from '../components/Alternatives';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Assistant } from '../components/Assistant';
 import { Research } from '../components/Research';
+import { Verdict, recallAsOf } from '../components/Verdict';
 import { ContributeTabs, ReviewList } from '../components/Reviews';
 import { CategoryTile, EmptyState, Skeleton, StatusBadge, TrustRing, scoreTone } from '../components/ui';
 import { ApiError, api, apiUrl, explain, post, type Dimension, type Passport, type ProductDetail, type Review } from '../lib/api';
@@ -19,34 +20,6 @@ const CERT: Record<string, string> = { valid: 'bg-ok-tint text-ok', expired: 'bg
 
 /** "Samsung Recalls X | CPSC.gov" -> "Samsung Recalls X": the site name is shown with the link. */
 export const cleanTitle = (t: string) => t.replace(/\s+[|–-]\s+[^|–-]{2,40}$/, '').trim();
-
-/** One sentence on what the passport means for someone holding this product. */
-function Verdict({ pass, recalls }: { pass: Passport; recalls: Passport['recall_matches'] }) {
-  const high = (pass.hazard?.total_score ?? 0) >= 60;
-  const sentence = (t: string | null | undefined, fallback: string) => (t ? (/[.!?]$/.test(t.trim()) ? t.trim() : `${t.trim()}.`) : fallback);
-  const match = recalls.find((r) => r.verdict === 'match');
-  const near = recalls.find((r) => r.verdict === 'near_match');
-  const [tone, title, text] = match
-    ? ['danger', 'This product is recalled', `${sentence(match.hazard, 'An official recall notice names this product.')} Stop using it and follow the notice's remedy.`]
-    : near
-      ? ['danger', 'Official recall notices may cover this product', `${sentence(near.hazard, 'A recall names this brand and a product like it.')} Check the notices below against your model and serial number.`]
-      : pass.status_badge === 'certification_issue'
-        ? ['warn', 'A certificate problem was found', 'One of its certificates has expired or been revoked. See the details below.']
-        : high
-          ? ['warn', 'Serious hazards are reported', 'Sources describe a high hazard on at least one dimension. Open the hazard scores to see the evidence.']
-          : pass.status_badge === 'verified'
-            ? ['ok', 'No recall found, checks passed', 'No recall notice matches it, and nothing we found shows a serious hazard. We keep checking.']
-            : ['neutral', 'Not enough is known yet', 'We have not found enough evidence to rate it. Research runs when a product is added; reviews and reports help too.'];
-  const style = { danger: 'border-danger/30 bg-danger-tint text-danger', warn: 'border-warn/30 bg-warn-tint text-warn', ok: 'border-ok/30 bg-ok-tint text-ok', neutral: 'border-line bg-panel text-muted' }[tone as 'danger'];
-  const Icon = tone === 'ok' ? BadgeCheck : AlertOctagon;
-  return (
-    <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} role={tone === 'danger' ? 'alert' : undefined}
-      className={`flex items-start gap-3 border-b px-6 py-4 sm:px-8 ${style}`}>
-      <Icon className="mt-0.5 size-5 shrink-0" />
-      <div><p className="font-semibold">{title}</p><p className="mt-0.5 text-sm text-ink/80">{text}</p></div>
-    </motion.div>
-  );
-}
 
 function hazardTone(score: number) {
   return score >= 60 ? 'var(--color-danger)' : score >= 30 ? 'var(--color-gold)' : 'var(--color-ok)';
@@ -211,7 +184,7 @@ export function Product() {
             <div className="space-y-6">
               <dl className="grid gap-3 sm:grid-cols-3">
                 {[
-                  ['Recalls', pass.recall_component, recalls.length ? `${recalls.length} found` : 'No notice names it'],
+                  ['Recalls', pass.recall_component, recalls.length ? `${recalls.length} found` : `No notice names it ${recallAsOf(pass)}`],
                   ['Certificates', pass.certification_component, p.certifications.length ? `${p.certifications.length} on record` : 'None on record'],
                   ['Hazard', pass.hazard_component, pass.hazard?.label ? `${pass.hazard.label} hazard` : 'Not yet scored'],
                 ].map(([k, v, text]) => (
@@ -231,7 +204,7 @@ export function Product() {
                 <div className="rounded-2xl border border-gold/40 bg-gold-tint/60 p-5">
                   <p className="font-semibold">Identified, but not checked yet</p>
                   <p className="mt-1 text-sm text-muted">
-                    No recall notice names this product, but no certificate, report or review has been checked either, so it has no trust score yet.
+                    No recall notice names this product {recallAsOf(pass)}, but no certificate, report or review has been checked either, so it has no trust score yet.
                     It is re-screened automatically as evidence arrives{canContribute ? ': a review from you would be the first.' : '.'}
                   </p>
                 </div>
