@@ -196,3 +196,42 @@ otherwise.
 **State.** DEF-035 is FIXED-PENDING-QA on the board, as is. Nothing pushed; Jira not touched. E2E members and two
 redemptions remain in the local dev database (append-only ledger, by design). `docs/database/db_erds.zip` is
 still untracked and untouched.
+
+## 2026-11-23 — WO-058: W2 closed locally, sweep defects DEF-113…124 (branch `week-02`, `72ea004`..`5d3e5fb`, not pushed)
+
+**Scope.** Fix the defects from the W1–W2 browser sweep under contract CT-003 (frozen in `80f18b2`). Lanes: data-ai,
+catalogue, community-rewards, database, frontend, browser-qa. Sources: `work-orders/WO-058.md`, `contracts/CT-003.md`,
+`verdicts/WO-058-qa.md`, `verdicts/WO-058-browser.md`.
+
+**Fixed (commits).**
+- DEF-113 passport verdict and recall as-of date: `d4b31d7`, `a644648`, `7e52e78`, `2e2f6b4`. Screening records the recall
+  corpus date, not its own clock; the verdict warns on a Medium total or any dimension >= 60.
+- DEF-114 no "Where to buy" on a recall match: `1421f52`.
+- DEF-115 research card says which sources actually answered; web search named as not available: `492385c`, `c85d649`, `e3eb3e8`.
+- DEF-116 review rating starts empty and is required, radiogroup with 44 px radios: `df964c1`.
+- DEF-118 rewards copy agrees with the rules, Level 1 gate asks for the email code only (D4): `f45ed09`, `da2e670`, `4a0c01d`.
+- DEF-119 report gate and passport link open `/rewards?product=<slug>`; store moved to `components/CoinStore.tsx`: `755d5b2`.
+- DEF-120 missing-evidence tasks name dimensions and passport; duplicates dismissed: `72ea004`, `cbec421`, `4a8cc34`.
+- DEF-121 e2e journey runs on a disposable database; product list can be limited to screened products: `4f66e92`, `2cfd68e`, `4c4020b`.
+- Found during browser QA and fixed: DEF-123 certificate and recall verdicts still say when hazards are reported (`045a149`);
+  DEF-124 home hero fits 390 px (`4f16d8a`). Closing commit `5d3e5fb`.
+
+**Verdicts.** QA (qa-test-engineer) APPROVE WITH NITS: `make api-test` 175 passed, `make db-test` 106 passed, tsc and build ok,
+e2e journey 9 passed, 9 revert proofs. Browser QA PASS for all fixes including DEF-123/124 (DEF-120 verified at API/DB level).
+Final journey on `4f16d8a`: 9 passed. Nobody marked their own work; WO-058 is DONE on the board per tech-lead.
+
+**Decided / blocked.**
+- DEF-117 ("Watchlist alerts for 3 products" sells for 100 coins, nothing uses it) is BLOCKED ON HUMAN. Options are in the
+  defect file. Recommendation, not a decision: take `watchlist_3` off sale and refund the buyers until WO-033 (W5).
+- DEF-122 OPEN (data-ai-engineer): two backend tests fail in a non-default order (stale passport cache; rescreen count). They
+  pre-date WO-058.
+
+**Open for the human.**
+1. DEF-117 decision.
+2. Whether to reset the shared local database: it still holds old e2e rows (9 Lumina products, Northwind reviews).
+3. `npx playwright install chromium` locally, or keep `PW_CHANNEL=chromium`.
+4. Nothing from WO-058 is pushed. The human approves any push (a push to `main` is a release to dev).
+
+**Worth knowing.** Existing passports show their screening time as the recall as-of date until they are re-screened. No
+throwaway containers, databases or worktrees remain. `docs/database/db_erds.zip` is still untracked and untouched. Jira not
+touched.

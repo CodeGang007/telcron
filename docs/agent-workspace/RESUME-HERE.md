@@ -2,6 +2,15 @@
 
 State on 2026-11-23: `week-02` released to dev (pushed to `main` at `ba5e2cf`; pipeline green, both hosts deployed, live check passed). Detail: `BOARD.md`, `WORKLOG.md`.
 
+## WO-058 (2026-11-23, local on `week-02`, not pushed; head `5d3e5fb`)
+Sweep defects DEF-113..116 and 118..121 are fixed and verified (QA: api-test 175, db-test 106, journey 9 passed; browser
+PASS); DEF-123/124 found and fixed. Needs the human:
+- **DEF-117**: decide. Recommendation: take `watchlist_3` off sale and refund the buyers until WO-033 (W5).
+- Reset the shared local database? It holds old e2e rows (9 Lumina products, Northwind reviews).
+- `npx playwright install chromium`, or keep `PW_CHANNEL=chromium`.
+- Approve or refuse a push (push to `main` is a release). Open agent item: DEF-122 (test-order flakes, data-ai).
+- Existing passports show the screening time as the recall as-of date until re-screened.
+
 ## Next step: the human's actions to close W2 (not more building)
 W1-W2 is built and verified by second agents (nothing is DONE; rows are DONE-PENDING-QA or lower). What is left
 needs the human. A push to `main` is a release to AWS dev.
