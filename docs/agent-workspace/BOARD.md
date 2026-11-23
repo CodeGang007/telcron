@@ -91,6 +91,15 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | DEF-110 | Search's brand list still reads every product when a brand matches; no plan test | catalogue-engineer | S3 | OPEN — routed for W3 (LATERAL query) |
 | DEF-111 | Staff with an unreachable API are told to sign in on the admin area | frontend-engineer | S4 | OPEN — routed for W3 |
 | DEF-112 | A visitor on an unknown product's report is offered to buy it | tech-lead (CT-002) | S4 | OPEN |
+| DEF-113 | Medium-hazard passport with Health & Safety 100 says "checks passed, nothing shows a serious hazard"; no as-of date | frontend-engineer + data-ai-engineer | S2 | OPEN |
+| DEF-114 | Recalled product's passport offers "Where to buy" shop links | frontend-engineer | S3 | OPEN |
+| DEF-115 | Passport says Reddit/X/YouTube/web were searched when no web search provider is configured | data-ai-engineer + frontend-engineer | S3 | OPEN |
+| DEF-116 | Review form pre-selects 5 stars; rating has no selected state for screen readers; 28 px stars | frontend-engineer | S3 | OPEN |
+| DEF-117 | "Watchlist alerts for 3 products" takes 100 coins and nothing uses it | tech-lead → community-rewards + frontend | S3 | OPEN |
+| DEF-118 | Rewards copy: "email and phone" (D4), level thresholds read as totals, streak texts disagree, "Level 1" twice, unavailable earns | frontend-engineer | S4 | OPEN |
+| DEF-119 | Report gate sends a member to a store that only sells reports for wallet products | frontend-engineer | S4 | OPEN |
+| DEF-120 | Review queue flooded with detail-less "Score missing evidence" tasks, one per re-screen; admin run text run-ons | data-ai-engineer + frontend-engineer | S4 | OPEN |
+| DEF-121 | e2e journey leaves products and hazard reviews in the shared DB, skewing demo passports and the home page | browser-qa-engineer | S4 | OPEN |
 
 ## Decisions
 D1, D4, D7, D8, D11, D13, D16 decided 2026-11-21 (`docs/plan/PLAN.md` §3). Open: D2, D3, D5, D6, D9, D10, D12,
