@@ -24,6 +24,7 @@ from app.models import (
     ProductCertification,
     Recall,
     Review,
+    Screening,
     ScreeningMatch,
     SearchQuery,
 )
@@ -227,7 +228,11 @@ async def passport_view(db: AsyncSession, product: Product) -> dict[str, Any] | 
              "citations": by_dim.get(d.code, [])}
             for s, d in rows]
     matches = []
+    # "No match found" is true as of the recall corpus the screening read (business rule §4).
+    checked_as_of = None
     if passport.screening_id:
+        screening = await db.get(Screening, passport.screening_id)
+        checked_as_of = screening.corpus_synced_at.isoformat()
         rows = (await db.execute(
             select(ScreeningMatch, Recall).join(Recall, Recall.id == ScreeningMatch.recall_id)
             .where(ScreeningMatch.screening_id == passport.screening_id)
@@ -253,6 +258,7 @@ async def passport_view(db: AsyncSession, product: Product) -> dict[str, Any] | 
             "has_insufficient_data": assessment.has_insufficient_data,
             "model_code": assessment.model_code, "dimensions": dimensions},
         "recall_matches": matches,
+        "recall_checked_as_of": checked_as_of,
         "history": [{"version": p.version, "status_badge": p.status_badge,
                      "trust_score": _f(p.trust_score), "verified_at": p.verified_at.isoformat()}
                     for p in history],
