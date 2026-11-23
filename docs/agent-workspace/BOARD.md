@@ -40,6 +40,7 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | WO-055 | Admin shell | frontend-engineer → tech-lead | — | DONE-PENDING-QA — QA PASS, browser PASS |
 | WO-056 | Feature flags (CT-001) | platform-identity-engineer, frontend-engineer | — | DONE-PENDING-QA — QA PASS (CT-001 exact), browser PASS |
 | WO-057 | AI test set at 20 products (regression baseline) | data-ai-engineer | — | DONE-PENDING-QA — QA PASS (offline harness; no live-model run) |
+| WO-058 | Close W2: fix sweep defects DEF-113…121 (CT-003) | data-ai, catalogue, community-rewards, database, frontend, browser-qa | — | IN PROGRESS — six lanes dispatched 2026-11-23; DEF-117 blocked on human |
 
 ## Defects
 
@@ -95,7 +96,7 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | DEF-114 | Recalled product's passport offers "Where to buy" shop links | frontend-engineer | S3 | OPEN |
 | DEF-115 | Passport says Reddit/X/YouTube/web were searched when no web search provider is configured | data-ai-engineer + frontend-engineer | S3 | OPEN |
 | DEF-116 | Review form pre-selects 5 stars; rating has no selected state for screen readers; 28 px stars | frontend-engineer | S3 | OPEN |
-| DEF-117 | "Watchlist alerts for 3 products" takes 100 coins and nothing uses it | tech-lead → community-rewards + frontend | S3 | OPEN |
+| DEF-117 | "Watchlist alerts for 3 products" takes 100 coins and nothing uses it | tech-lead → community-rewards + frontend | S3 | BLOCKED ON HUMAN — options in the defect file; recommend off sale + refund until WO-033 |
 | DEF-118 | Rewards copy: "email and phone" (D4), level thresholds read as totals, streak texts disagree, "Level 1" twice, unavailable earns | frontend-engineer | S4 | OPEN |
 | DEF-119 | Report gate sends a member to a store that only sells reports for wallet products | frontend-engineer | S4 | OPEN |
 | DEF-120 | Review queue flooded with detail-less "Score missing evidence" tasks, one per re-screen; admin run text run-ons | data-ai-engineer + frontend-engineer | S4 | OPEN |

@@ -40,10 +40,12 @@ Worker → new passport. Without the Worker nothing is re-screened and no coin i
 make api-test     # ruff + pytest; the tests build their own database from db/
 make db-test      # the schema's own suite, on a throwaway Postgres
 cd frontend && npx tsc --noEmit && npm run build
-cd e2e && npm run journey     # the member's journey in a browser; needs `make dev` and the demo data
+cd e2e && npm run journey     # the member's journey on a disposable DB + API :4311 / web :3201, removed after (DEF-121)
 ```
 
-The journey creates a new member on every run. It needs `DEV_EXPOSE_CODES=true` and a short
+Locally `npm run journey` needs only Postgres and Redis up (`make up`; `make app-db` once) and ports 4311/3201 free; it
+never writes to the shared database. `npm run journey:here` (or `CI`/`BASE_URL` set) runs against an existing stack and
+writes to its database. If headless shell is missing locally, `PW_CHANNEL=chromium`. The journey creates a new member on every run. It needs `DEV_EXPOSE_CODES=true` and a short
 `COIN_CONFIRM_DELAY_SECONDS`. `npm run smoke` is the read-only set for a deployed site
 (`BASE_URL`, `API_URL`, optional `EXPECT_VERSION`).
 

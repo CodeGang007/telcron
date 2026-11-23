@@ -60,8 +60,10 @@ Always run the Worker for real testing: a review is HTTP → outbox → publishe
 Worker → new passport. Without it nothing is re-screened and no coin is ever confirmed.
 
 Gates: `make api-test` (backend lint and tests), `make db-test` (schema tests),
-`cd frontend && npx tsc --noEmit && npm run build`, and with the stack running
-`cd e2e && npm run journey` (the member's journey in a browser).
+`cd frontend && npx tsc --noEmit && npm run build`, and
+`cd e2e && npm run journey` (the member's journey in a browser; locally it builds a disposable database and its own
+API/Worker/web on :4311/:3201 and removes them, so it needs Postgres and Redis up but not `make dev`;
+`npm run journey:here` runs against `BASE_URL`, as CI does).
 
 **A push to `main` is a release.** `.github/workflows/pipeline.yml` runs all of those gates and, when they
 pass, publishes the build to the `release/dev` branch; the two AWS hosts poll that branch and deploy
