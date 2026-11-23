@@ -33,14 +33,14 @@ function Unlock({ slug, who }: { slug: string; who: Locked['locked'] }) {
           <div className="flex flex-wrap justify-center gap-3">
             {who === 'visitor'
               ? <Link to="/sign-in" className="btn min-h-11">Sign in</Link>
-              : <Link to="/rewards" className="btn min-h-11">Open the coin store</Link>}
+              : <Link to={`/rewards?product=${encodeURIComponent(slug)}`} className="btn min-h-11">Open the coin store</Link>}
             <Link to={`/products/${slug}`} className="btn-ghost min-h-11">See the free passport</Link>
           </div>
         }
       >
         {who === 'visitor'
           ? 'The full hazard report, with every score and every piece of evidence, is for members who redeem it. Sign in, then redeem it in the coin store. The passport stays free for everyone.'
-          : 'You have not unlocked the full report for this product yet. Redeem it in the coin store with your confirmed TelCoins. The passport stays free for everyone.'}
+          : 'You have not unlocked the full report for this product yet. “Open the coin store” takes you to the store with this product already chosen: redeem it there with your confirmed TelCoins, then open the report from there or come back to this page. It does not need to be in your wallet. The passport stays free for everyone.'}
       </EmptyState>
     </div>
   );

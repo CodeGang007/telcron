@@ -276,7 +276,7 @@ export function Product() {
               ))}
             </ol>
             {canContribute && (
-              <Link to="/rewards" className="mt-6 flex items-center gap-2 text-sm font-semibold text-action"><FileText className="size-4" />Get the full report with TelCoins</Link>
+              <Link to={`/rewards?product=${encodeURIComponent(p.slug)}`} className="mt-6 flex items-center gap-2 text-sm font-semibold text-action"><FileText className="size-4" />Get the full report with TelCoins</Link>
             )}
           </div>
         </section>

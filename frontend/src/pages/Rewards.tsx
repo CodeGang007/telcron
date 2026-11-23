@@ -1,4 +1,3 @@
-import confetti from 'canvas-confetti';
 import {
   Award,
   BadgeCheck,
@@ -6,7 +5,6 @@ import {
   Check,
   Coins,
   Crown,
-  FileText,
   Flame,
   Gem,
   IdCard,
@@ -23,13 +21,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { toast } from 'sonner';
+import { useEffect } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { CoinStore, type StoreItem } from '../components/CoinStore';
 import { Gate } from '../components/Gate';
 import { AnimatedNumber, Notice, PageTitle, Pager, Skeleton, stagger } from '../components/ui';
-import { api, explain, post } from '../lib/api';
-import { tokenHex } from '../lib/tokens';
+import { api } from '../lib/api';
 import { coinsChanged } from '../lib/coins';
 import { useLoad } from '../lib/useLoad';
 import { usePaged } from '../lib/usePaged';
@@ -44,7 +41,7 @@ type Overview = {
   // `available` (CT-003 §D): false for an earn nobody can perform yet; absent on an older API.
   ways_to_earn: { code: string; amount: number; icon: string; label: string; capped: boolean; available?: boolean }[];
   badges: { code: string; name: string; earned_at: string | null }[];
-  store: { code: string; name: string; cost: number; kind: string; needs_product: boolean }[];
+  store: StoreItem[];
 };
 type Entry = { id: string; entry_type: string; amount: number; status: string; rule_code: string | null; created_at: string };
 type Contributions = {
@@ -66,7 +63,6 @@ const RULES: Record<string, string> = {
 const ENTRY: Record<string, string> = { level_bonus: 'Level bonus', spend: 'Spent in the store', clawback: 'Taken back', adjustment: 'Adjustment', refund: 'Refund' };
 const STATUS: Record<string, string> = { pending: 'Pending check', confirmed: 'Confirmed', frozen: 'On hold', reversed: 'Reversed' };
 const DECISION: Record<string, string> = { pending: 'Waiting for review', confirmed: 'Confirmed', accepted: 'Accepted', rejected: 'Not accepted' };
-const STORE_ICON: Record<string, LucideIcon> = { pdf_report: FileText, watchlist_slots: ShieldAlert, feature_access: Sparkles, rate_limit_boost: Flame, data_export: FileText, invoice_discount: Coins };
 
 function LevelRing({ pct, children }: { pct: number; children: React.ReactNode }) {
   const size = 132, stroke = 10, r = (size - stroke) / 2, c = 2 * Math.PI * r;
@@ -147,60 +143,6 @@ function Hero({ o }: { o: Overview }) {
   );
 }
 
-function Store({ o, onBought }: { o: Overview; onBought: () => void }) {
-  const [busy, setBusy] = useState<string | null>(null);
-  const owned = useLoad(() => api<{ slug: string; name: string }[]>('/wallet/items'), []);
-  const [chosen, setChosen] = useState<string>('');
-  const buy = async (item: Overview['store'][number]) => {
-    const product = item.needs_product ? chosen || owned.data?.[0]?.slug : undefined;
-    if (item.needs_product && !product) return;
-    setBusy(item.code);
-    try {
-      const r = await post<{ report: string | null }>('/redemptions', { item_code: item.code, product: product ?? null, request_id: crypto.randomUUID() });
-      const colors = tokenHex('gold', 'brand-bright', 'action', 'ok');
-      void confetti({ particleCount: 140, spread: 80, origin: { y: 0.7 }, ...(colors.length ? { colors } : {}) });
-      toast.success(`${item.name} is yours`, { description: r.report ? 'Your report is ready.' : 'It is active on your account now.', action: r.report ? { label: 'Open', onClick: () => { window.location.href = r.report!; } } : undefined });
-      onBought();
-    } catch (e) {
-      toast.error(explain(e));
-    } finally {
-      setBusy(null);
-    }
-  };
-  return (
-    <motion.ul variants={stagger.container} initial="hidden" whileInView="show" viewport={{ once: true }} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {o.store.map((item) => {
-        const Icon = STORE_ICON[item.kind] ?? ShoppingBag;
-        const affordable = o.balance.confirmed >= item.cost;
-        return (
-          <motion.li key={item.code} variants={stagger.item} className="card card-hover flex flex-col">
-            <span className="grid size-12 place-items-center rounded-2xl bg-gradient-to-br from-violet to-action text-white shadow-lg"><Icon className="size-6" /></span>
-            <p className="mt-4 font-semibold">{item.name}</p>
-            {item.needs_product && (
-              owned.data && owned.data.length > 0 ? (
-                <label className="mt-3 block text-xs text-muted">
-                  For
-                  <select className="field mt-1 !py-2 text-sm" value={chosen || owned.data[0]?.slug} onChange={(e) => setChosen(e.target.value)}>
-                    {owned.data.map((w) => <option key={w.slug} value={w.slug}>{w.name}</option>)}
-                  </select>
-                </label>
-              ) : (
-                <p className="mt-3 text-xs text-muted">Save a product to your wallet to get its report.</p>
-              )
-            )}
-            <div className="mt-auto flex items-center justify-between pt-5">
-              <span className="chip bg-gold-tint text-gold-ink"><Coins className="size-3.5" />{item.cost.toLocaleString()}</span>
-              <button className="btn btn-sm" disabled={!affordable || busy === item.code || (item.needs_product && !owned.data?.length)} onClick={() => buy(item)}>
-                {busy === item.code ? 'Redeeming…' : affordable ? 'Redeem' : <><Lock className="size-3.5" />{(item.cost - o.balance.confirmed).toLocaleString()} more</>}
-              </button>
-            </div>
-          </motion.li>
-        );
-      })}
-    </motion.ul>
-  );
-}
-
 function Contributions() {
   const c = useLoad(() => api<Contributions>('/contributions'), []);
   const rows = [
@@ -231,6 +173,12 @@ function RewardsBody() {
   const overview = useLoad(() => api<Overview>('/rewards'), []);
   const history = usePaged<Entry>('/coins/history', 8);
   const o = overview.data;
+  // Sent here for one product's report (DEF-119): the store pre-selects it; take the member to it.
+  const product = useSearchParams()[0].get('product');
+  const ready = !!o;
+  useEffect(() => {
+    if (product && ready) document.getElementById('store')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [product, ready]);
   if (overview.error && !o)
     return <Notice tone="error">{overview.error} <button className="font-semibold underline" onClick={() => void overview.reload()}>Try again</button></Notice>;
   if (overview.loading || !o) return <div className="space-y-6"><Skeleton className="h-80 w-full rounded-[2rem]" /><Skeleton className="h-40 w-full rounded-3xl" /></div>;
@@ -304,9 +252,9 @@ function RewardsBody() {
       </section>
 
       <section className="mt-14">
-        <h2 className="flex items-center gap-2 font-display text-2xl font-bold"><ShoppingBag className="size-6 text-action" />Spend your TelCoins</h2>
+        <h2 id="store" className="flex scroll-mt-24 items-center gap-2 font-display text-2xl font-bold"><ShoppingBag className="size-6 text-action" />Spend your TelCoins</h2>
         <p className="mt-1 text-sm text-muted">Only confirmed coins can be spent.</p>
-        <div className="mt-5"><Store o={o} onBought={() => { void overview.reload(); void history.reload(); coinsChanged(); }} /></div>
+        <div className="mt-5"><CoinStore items={o.store} confirmed={o.balance.confirmed} product={product} onBought={() => { void overview.reload(); void history.reload(); coinsChanged(); }} /></div>
       </section>
 
       <Contributions />
