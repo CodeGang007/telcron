@@ -58,17 +58,29 @@ def _summary_query():
             .where(Product.status == "active"))
 
 
-async def search(db: AsyncSession, q: str, limit: int, user_id: uuid.UUID | None, offset: int = 0
-                 ) -> list[dict[str, Any]]:
+def _screened(only: bool) -> list:
+    """With `only`, the products whose current passport is tier 2 (a completed screening, CT-003 §E).
+    Applied inside every list before it is cut, so a page is as full as without it."""
+    if not only:
+        return []
+    return [Product.current_passport_id.in_(select(Passport.id).where(Passport.tier == 2))]
+
+
+async def search(db: AsyncSession, q: str, limit: int, user_id: uuid.UUID | None, offset: int = 0,
+                 screened: bool = False) -> list[dict[str, Any]]:
     q = q.strip()
     if user_id is not None:  # the schema logs searches per member; a visitor leaves no row
         db.add(SearchQuery(user_id=user_id, query_text=q[:200]))
+    only = _screened(screened)
     if not q:
-        rows = (await db.execute(_summary_query().order_by(Product.created_at.desc())
+        # Newest first; the id breaks ties (rows made in one transaction share created_at), so
+        # page n+1 continues page n.
+        rows = (await db.execute(_summary_query().where(*only)
+                                 .order_by(Product.created_at.desc(), Product.id.desc())
                                  .offset(offset).limit(limit))).all()
         return [_summary(r) for r in rows]
     # An exact identifier (barcode, model number) wins outright.
-    exact = (await db.execute(_summary_query().where(or_(
+    exact = (await db.execute(_summary_query().where(*only).where(or_(
         Product.id.in_(select(ProductAlias.product_id).where(ProductAlias.alias_value.in_(
             {q, q.zfill(14)} if q.isdigit() and len(q) <= 14 else {q}))),
         Product.model_number_normalized == "".join(c for c in q.upper() if c.isalnum()),
@@ -77,15 +89,19 @@ async def search(db: AsyncSession, q: str, limit: int, user_id: uuid.UUID | None
         return [_summary(r) for r in exact]
     meaning = await _by_meaning(db, q)
     if not meaning:  # no embedder, or it is down: words alone
-        return [_summary(r) for r in await _by_words(db, q, offset, limit)]
+        return [_summary(r) for r in await _by_words(db, q, offset, limit, screened)]
     # Both lists, fused by reciprocal rank: a product found by its name and by its meaning ranks
     # first; one found only by meaning ("phone that caught fire") still appears.
-    by_words = await _by_words(db, q, 0, CANDIDATES)
+    by_words = await _by_words(db, q, 0, CANDIDATES, screened)
     score: dict[uuid.UUID, float] = {}
     for i, row in enumerate(by_words):
         score[row.id] = score.get(row.id, 0) + 1 / (RRF_K + i)
     for i, product_id in enumerate(meaning):
         score[product_id] = score.get(product_id, 0) + 1 / (RRF_K + i)
+    if screened:  # meaning's candidates are not filtered: drop the unscreened before the cut
+        kept = set((await db.execute(
+            select(Product.id).where(Product.id.in_(score), *only))).scalars())
+        score = {i: v for i, v in score.items() if i in kept}
     order = sorted(score, key=lambda k: -score[k])[offset:offset + limit]
     if not order:
         return []
@@ -93,7 +109,8 @@ async def search(db: AsyncSession, q: str, limit: int, user_id: uuid.UUID | None
     return [_summary(rows[i]) for i in order if i in rows]
 
 
-async def _by_words(db: AsyncSession, q: str, offset: int, limit: int) -> list[Any]:
+async def _by_words(db: AsyncSession, q: str, offset: int, limit: int, screened: bool = False
+                    ) -> list[Any]:
     """Products whose name or brand is like the words, best first, read through the trigram index.
 
     Three short lists, each cut at offset + limit rows, are merged; nothing reads the whole table.
@@ -104,24 +121,25 @@ async def _by_words(db: AsyncSession, q: str, offset: int, limit: int) -> list[A
       fragments like "len" in "Blender" whose similarity is low.
     """
     window = offset + limit
+    only = _screened(screened)
     none = cast(null(), BigInteger)
     distance = Product.canonical_name.op("<->>", return_type=Float)(q)
     contains = f"%{q}%"
     near = (select(Product.id, func.row_number().over(order_by=distance).label("by_name"),
                    none.label("by_brand"), none.label("by_part"))
-            .where(Product.status == "active").order_by(distance).limit(window))
+            .where(Product.status == "active", *only).order_by(distance).limit(window))
     liked = (select(Brand.id, func.word_similarity(q, Brand.name).label("rank"))
              .where(or_(Brand.name.ilike(contains), func.word_similarity(q, Brand.name) > MATCH))
              .subquery("liked"))
     # Numbered after the cut, so PostgreSQL keeps only the top rows instead of sorting them all.
     top = (select(Product.id, liked.c.rank, Product.canonical_name)
-           .join(liked, liked.c.id == Product.brand_id).where(Product.status == "active")
+           .join(liked, liked.c.id == Product.brand_id).where(Product.status == "active", *only)
            .order_by(liked.c.rank.desc(), Product.canonical_name, Product.id).limit(window)
            .subquery("top"))
     of_brand = select(top.c.id, none, func.row_number().over(
         order_by=(top.c.rank.desc(), top.c.canonical_name, top.c.id)), none)
     part = (select(Product.id, none, none, func.row_number().over(order_by=distance))
-            .where(Product.status == "active", Product.canonical_name.ilike(contains))
+            .where(Product.status == "active", Product.canonical_name.ilike(contains), *only)
             .order_by(distance).limit(window))
     both = union_all(*(s.subquery().select() for s in (near, of_brand, part))).subquery()
     found = (select(both.c.id, func.min(both.c.by_name).label("by_name"),

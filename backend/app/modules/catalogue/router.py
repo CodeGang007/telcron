@@ -24,8 +24,10 @@ class IdentifyIn(BaseModel):
 @router.get("/products")
 async def search_products(db: Db, user: OptionalUser, response: Response, offset: Offset = 0,
                           q: str = Query("", max_length=200),
-                          limit: int = Query(20, ge=1, le=50)) -> list[dict[str, Any]]:
-    rows = await service.search(db, q, limit + 1, user.id if user else None, offset)
+                          limit: int = Query(20, ge=1, le=50),
+                          screened: bool = False) -> list[dict[str, Any]]:
+    """Public. With `screened=true`, only products whose current passport has a completed screening."""
+    rows = await service.search(db, q, limit + 1, user.id if user else None, offset, screened)
     return page(rows, limit, response)
 
 
