@@ -40,7 +40,7 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | WO-055 | Admin shell | frontend-engineer → tech-lead | — | DONE-PENDING-QA — QA PASS, browser PASS |
 | WO-056 | Feature flags (CT-001) | platform-identity-engineer, frontend-engineer | — | DONE-PENDING-QA — QA PASS (CT-001 exact), browser PASS |
 | WO-057 | AI test set at 20 products (regression baseline) | data-ai-engineer | — | DONE-PENDING-QA — QA PASS (offline harness; no live-model run) |
-| WO-058 | Close W2: fix sweep defects DEF-113…121 (CT-003) | data-ai, catalogue, community-rewards, database, frontend, browser-qa | — | IN PROGRESS — six lanes dispatched 2026-11-23; DEF-117 blocked on human |
+| WO-058 | Close W2: fix sweep defects DEF-113…121 (CT-003) | data-ai, catalogue, community-rewards, database, frontend, browser-qa | — | DONE — QA APPROVE WITH NITS (`verdicts/WO-058-qa.md`), browser PASS (`verdicts/WO-058-browser.md`); DEF-117 blocked on human |
 
 ## Defects
 
@@ -92,15 +92,18 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | DEF-110 | Search's brand list still reads every product when a brand matches; no plan test | catalogue-engineer | S3 | OPEN — routed for W3 (LATERAL query) |
 | DEF-111 | Staff with an unreachable API are told to sign in on the admin area | frontend-engineer | S4 | OPEN — routed for W3 |
 | DEF-112 | A visitor on an unknown product's report is offered to buy it | tech-lead (CT-002) | S4 | OPEN |
-| DEF-113 | Medium-hazard passport with Health & Safety 100 says "checks passed, nothing shows a serious hazard"; no as-of date | frontend-engineer + data-ai-engineer | S2 | OPEN |
-| DEF-114 | Recalled product's passport offers "Where to buy" shop links | frontend-engineer | S3 | OPEN |
-| DEF-115 | Passport says Reddit/X/YouTube/web were searched when no web search provider is configured | data-ai-engineer + frontend-engineer | S3 | OPEN |
-| DEF-116 | Review form pre-selects 5 stars; rating has no selected state for screen readers; 28 px stars | frontend-engineer | S3 | OPEN |
+| DEF-113 | Medium-hazard passport with Health & Safety 100 says "checks passed, nothing shows a serious hazard"; no as-of date | frontend-engineer + data-ai-engineer | S2 | FIXED — QA PASS + browser PASS 2026-11-23 (d4b31d7, a644648, 7e52e78, 2e2f6b4; gap DEF-123 045a149) |
+| DEF-114 | Recalled product's passport offers "Where to buy" shop links | frontend-engineer | S3 | FIXED — QA PASS + browser PASS 2026-11-23 (1421f52) |
+| DEF-115 | Passport says Reddit/X/YouTube/web were searched when no web search provider is configured | data-ai-engineer + frontend-engineer | S3 | FIXED — QA PASS + browser PASS 2026-11-23 (c85d649, 492385c, e3eb3e8) |
+| DEF-116 | Review form pre-selects 5 stars; rating has no selected state for screen readers; 28 px stars | frontend-engineer | S3 | FIXED — QA PASS + browser PASS 2026-11-23 (df964c1) |
 | DEF-117 | "Watchlist alerts for 3 products" takes 100 coins and nothing uses it | tech-lead → community-rewards + frontend | S3 | BLOCKED ON HUMAN — options in the defect file; recommend off sale + refund until WO-033 |
-| DEF-118 | Rewards copy: "email and phone" (D4), level thresholds read as totals, streak texts disagree, "Level 1" twice, unavailable earns | frontend-engineer | S4 | OPEN |
-| DEF-119 | Report gate sends a member to a store that only sells reports for wallet products | frontend-engineer | S4 | OPEN |
-| DEF-120 | Review queue flooded with detail-less "Score missing evidence" tasks, one per re-screen; admin run text run-ons | data-ai-engineer + frontend-engineer | S4 | OPEN |
-| DEF-121 | e2e journey leaves products and hazard reviews in the shared DB, skewing demo passports and the home page | browser-qa-engineer | S4 | OPEN |
+| DEF-118 | Rewards copy: "email and phone" (D4), level thresholds read as totals, streak texts disagree, "Level 1" twice, unavailable earns | frontend-engineer | S4 | FIXED — QA PASS + browser PASS 2026-11-23 (f45ed09, da2e670, 4a0c01d) |
+| DEF-119 | Report gate sends a member to a store that only sells reports for wallet products | frontend-engineer | S4 | FIXED — QA PASS + browser PASS 2026-11-23 (755d5b2) |
+| DEF-120 | Review queue flooded with detail-less "Score missing evidence" tasks, one per re-screen; admin run text run-ons | data-ai-engineer + frontend-engineer | S4 | FIXED — QA PASS + browser PASS (API/DB) 2026-11-23 (72ea004, cbec421, 4a8cc34) |
+| DEF-121 | e2e journey leaves products and hazard reviews in the shared DB, skewing demo passports and the home page | browser-qa-engineer | S4 | FIXED — QA PASS 2026-11-23 (4f66e92, 2cfd68e, 4c4020b); shared DB still holds old e2e rows (reset is the human's call) |
+| DEF-122 | Two backend tests fail in a non-default order (stale passport cache; rescreen count) — pre-date WO-058 | data-ai-engineer | S3 | OPEN |
+| DEF-123 | Certificate-issue / near_match verdict hid the hazard warning | frontend-engineer | S4 | FIXED — browser QA PASS 2026-11-23 (045a149) |
+| DEF-124 | Home hero clipped at 390 px | frontend-engineer | S3 | FIXED — browser QA PASS 2026-11-23 (4f16d8a) |
 
 ## Decisions
 D1, D4, D7, D8, D11, D13, D16 decided 2026-11-21 (`docs/plan/PLAN.md` §3). Open: D2, D3, D5, D6, D9, D10, D12,
