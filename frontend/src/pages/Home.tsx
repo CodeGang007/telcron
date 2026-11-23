@@ -50,7 +50,7 @@ export function Home() {
           transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut' }}
         />
         <div className="container-page relative grid items-center gap-16 pb-28 pt-36 lg:grid-cols-[1.15fr_1fr] lg:pt-40">
-          <motion.div variants={stagger.container} initial="hidden" animate="show">
+          <motion.div variants={stagger.container} initial="hidden" animate="show" className="min-w-0">
             <motion.p variants={stagger.item} className="glass inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium text-white/80">
               <span className="size-1.5 rounded-full bg-ok-glow shadow-[0_0_10px] shadow-ok-glow" />
               Live recall data from the US Consumer Product Safety Commission
@@ -69,7 +69,7 @@ export function Home() {
               <Link to="/recalls" className="inline-flex items-center gap-1.5 text-sm font-medium text-white/70 hover:text-white">Latest recalls <ArrowRight className="size-4" /></Link>
             </motion.div>
           </motion.div>
-          <div className="flex justify-center"><PassportPreview products={recent.loading ? null : (recent.data ?? [])} /></div>
+          <div className="flex min-w-0 justify-center"><PassportPreview products={recent.loading ? null : (recent.data ?? [])} /></div>
         </div>
       </section>
 

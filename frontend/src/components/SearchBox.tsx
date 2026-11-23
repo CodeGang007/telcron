@@ -21,7 +21,7 @@ export function SearchBox({ initial = '', autoFocus = false, dark = false }: { i
       <label className="sr-only" htmlFor="product-search">Search by product name, brand or barcode</label>
       <input
         id="product-search"
-        className="min-w-0 flex-1 bg-transparent px-1 py-2.5 text-sm text-ink outline-none placeholder:text-muted/70"
+        className="w-0 min-w-0 flex-1 bg-transparent px-1 py-2.5 text-sm text-ink outline-none placeholder:text-muted/70"
         placeholder="Search by product name, brand or barcode"
         value={q}
         autoFocus={autoFocus}
