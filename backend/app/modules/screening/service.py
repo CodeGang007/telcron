@@ -69,6 +69,16 @@ MEANING = text("""
     GROUP BY re.recall_id, re.embedding, pe.embedding
     ORDER BY 2 LIMIT 10""")
 ALERT_THRESHOLD = text("select alert_threshold from scoring_contexts where code = :context")
+# The recall corpus date (CT-003 §A, DEF-113): when Telcron's CPSC recalls were last refreshed from
+# CPSC at or before this screening. A CPSC import (nightly or by hand) that did not fail, or a
+# product research run whose stats say CPSC answered its brand search. "No match found" is true as
+# of this date, not as of the screening's own clock.
+CORPUS_DATE = text("""
+    SELECT max(finished_at) FROM ingestion_jobs
+    WHERE finished_at <= :now AND status IN ('succeeded', 'partial')
+      AND (data_source_code = 'cpsc'
+           OR (data_source_code = 'web_search'
+               AND stats #>> '{sources,cpsc}' = 'answered'))""")
 
 
 def _norm(value: str) -> str:
@@ -204,7 +214,9 @@ async def screen_product(db: AsyncSession, product_id: uuid.UUID, run_type: str,
             HazardAssessment.id == previous.hazard_assessment_id))
 
     now = datetime.now(UTC)
-    screening = Screening(product_id=product.id, run_type=run_type, corpus_synced_at=now,
+    # NOT NULL: with no recall import ever recorded, the screening's own time is all there is.
+    corpus = await db.scalar(CORPUS_DATE, {"now": now}) or now
+    screening = Screening(product_id=product.id, run_type=run_type, corpus_synced_at=corpus,
                           model_code=scorer.model_code, prompt_version=scorer.prompt_version)
     db.add(screening)
     await db.flush()
