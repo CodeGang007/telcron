@@ -168,12 +168,14 @@ export type Finding = {
   kind: 'recall' | 'safety_warning' | 'complaint' | 'review' | 'certification' | 'no_issue_found' | 'general';
   title: string; source: string; about_this_product: boolean; url: string; finding: string; found_at: string;
 };
+export type SourceState = 'answered' | 'failed' | 'not_configured';
 export type Research = {
   enabled: boolean; status: string | null; searched_at: string | null; can_request: boolean;
   // Why a search cannot start now (an error code from MESSAGES), or null.
   blocked: string | null;
   // A queued or running search has empty stats: every field may be missing.
-  stats: Partial<{ cpsc_notices: number; cpsc_new: number; pages: number; findings: number; errors: string[] }> | null;
+  // `sources` (CT-003 §B) says what actually ran; absent on runs recorded before it.
+  stats: Partial<{ cpsc_notices: number; cpsc_new: number; pages: number; findings: number; errors: string[]; sources: Record<string, SourceState> }> | null;
   findings: Finding[];
   progress: { stage: string; percent: number } | null;
   unread: number;

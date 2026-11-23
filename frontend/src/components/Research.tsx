@@ -34,6 +34,22 @@ function sourceLabel(f: Finding) {
 }
 const ORDER: Finding['kind'][] = ['recall', 'safety_warning', 'complaint', 'review', 'general', 'certification', 'no_issue_found'];
 
+/** Plain names for the sources a run calls (CT-003 §B). openFDA comes per kind: one "US FDA" is enough. */
+function sourceName(code: string) {
+  if (code.startsWith('openfda')) return 'US FDA';
+  return ({ cpsc: 'US CPSC', uk_opss: 'UK Product Safety (OPSS)', web: 'the open web', reader: 'the page reader' } as Record<string, string>)[code] ?? code;
+}
+const names = (codes: string[]) => [...new Set(codes.map(sourceName))];
+const list = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+
+/** What the last run actually asked, from `stats.sources`; null for runs recorded before it existed. */
+function ranSources(data: ResearchT) {
+  const sources = data.stats?.sources;
+  if (!sources) return null;
+  const by = (state: string) => Object.keys(sources).filter((c) => c !== 'reader' && sources[c] === state);
+  return { answered: names(by('answered')), failed: names(by('failed')), webMissing: sources.web === 'not_configured', webAnswered: sources.web === 'answered' };
+}
+
 function host(url: string) {
   try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return url; }
 }
@@ -71,7 +87,7 @@ export function Research({ slug, name, onRated }: { slug: string; name: string; 
     try {
       await post(`/products/${slug}/research`);
       track(slug, name);
-      toast.success('Searching recall registries and the web', { description: 'This takes about a minute.' });
+      toast.success('Searching the official sources', { description: 'This takes about a minute.' });
     } catch (e) {
       toast.error(explain(e));
     } finally {
@@ -85,15 +101,21 @@ export function Research({ slug, name, onRated }: { slug: string; name: string; 
     .filter((f, i, all) => all.findIndex((o) => page(o.url) === page(f.url) || o.finding === f.finding) === i)
     .sort((a, b) => ORDER.indexOf(a.kind) - ORDER.indexOf(b.kind));
   const member = !!me && me.verification_level >= 1;
+  const ran = ranSources(data);
+  const when = data.searched_at ? ` ${new Date(data.searched_at).toLocaleDateString()}` : '';
+  // Only the sources that answered read anything; old runs do not say which did.
+  const from = ran ? (ran.answered.length ? ` from ${list(ran.answered)}` : '') : '';
 
   return (
     <section aria-labelledby="research" className="card">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 id="research" className="flex items-center gap-2 font-display text-xl font-bold"><Landmark className="size-5 text-brand-ink" />What official sources and the web say</h2>
+          <h2 id="research" className="flex items-center gap-2 font-display text-xl font-bold"><Landmark className="size-5 text-brand-ink" />{ran?.webAnswered ? 'What official sources and the web say' : 'What official sources say'}</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
-            US CPSC and FDA, UK Product Safety, government safety regulators (EU, Canada, Australia and others), the open web,
-            and what owners report on Reddit, X, YouTube and marketplace reviews.
+            {ran && ran.answered.length > 0
+              ? `Last search asked ${list(ran.answered)}. `
+              : !ran && 'Telcron asks official recall registries such as US CPSC, US FDA and UK Product Safety, and reads public pages about the product. '}
+            {ran?.webMissing && 'Web and owner-forum search (Reddit, X, YouTube, reviews) is not available yet, so none of those were searched. '}
             Every line links to the page it comes from; a claim the page does not make is thrown away.
           </p>
         </div>
@@ -161,11 +183,16 @@ export function Research({ slug, name, onRated }: { slug: string; name: string; 
           {!data.status
             ? 'Not searched yet.'
  : data.unread > 0
-              ? `Searched ${data.searched_at ? new Date(data.searched_at).toLocaleDateString() : ''}: ${data.stats?.pages ?? 0} pages found; nothing kept yet from the pages read so far.`
-              : `Searched ${data.searched_at ? new Date(data.searched_at).toLocaleDateString() : ''}: ${data.stats?.pages ?? 0} pages read, none said anything about this product's safety or reliability.`}
+              ? `Searched${when}: ${data.stats?.pages ?? 0} pages found; nothing kept yet from the pages read so far.`
+              : ran && !ran.answered.length
+                ? `Searched${when}: no source answered, so nothing could be checked.`
+                : `Searched${when}: ${data.stats?.pages ?? 0} pages${from} read, none said anything about this product's safety or reliability.`}
         </p>
       )}
-      {!busy && !data.unread && (data.stats?.errors?.filter((e) => !e.startsWith('reader')).length ?? 0) > 0 && (
+      {!busy && !data.unread && ran && ran.failed.length > 0 && (
+        <p className="mt-3 text-xs text-muted">Failed last time: {list(ran.failed)}. They are asked again on the next search.</p>
+      )}
+      {!busy && !data.unread && !ran && (data.stats?.errors?.filter((e) => !e.startsWith('reader')).length ?? 0) > 0 && (
         <p className="mt-3 text-xs text-muted">Some sources did not answer last time: {(data.stats?.errors ?? []).filter((e) => !e.startsWith('reader')).map((e) => e.split(':')[0]).join(', ')}.</p>
       )}
     </section>
