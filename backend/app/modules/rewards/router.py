@@ -95,8 +95,12 @@ ICON = {"review": "message-square", "first_reviewer": "sparkles", "photo": "came
 WHAT = {"review": "Review a product you own", "first_reviewer": "Be the first to review a product",
         "photo": "Add a photo to a review", "hazard_flag_confirmed": "Report a hazard that is confirmed",
         "fact_verification": "Correct a product fact", "login_streak": "Sign in each day",
-        "login_streak_7plus": "Sign in 7 days in a row", "referral": "Invite a friend who verifies",
-        "level1_verified": "Verify your email and phone", "level2_verified": "Verify your identity"}
+        "login_streak_7plus": "Sign in each day from day 7 of a streak",
+        "referral": "Invite a friend who verifies",
+        "level1_verified": "Verify your email", "level2_verified": "Verify your identity"}
+# Earns no member can perform today (CT-003 D): no photo field on a review yet (WO-007), no
+# identity check (WO-010), no referrals (phase two). Listed, but marked, so the page can say so.
+UNAVAILABLE = frozenset({"photo", "level2_verified", "referral"})
 
 
 @router.get("/rewards")
@@ -135,7 +139,8 @@ async def rewards_overview(db: Db, user: Level1User) -> dict:
         "rank": rank, "ranked": len(board),
         "ways_to_earn": [{"code": r.code, "amount": int(r.amount), "icon": ICON.get(r.code, "coins"),
                           "label": WHAT.get(r.code, r.code.replace("_", " ")),
-                          "capped": r.counts_toward_daily_cap} for r in rules],
+                          "capped": r.counts_toward_daily_cap,
+                          "available": r.code not in UNAVAILABLE} for r in rules],
         "badges": [{"code": b.code, "name": b.name, "earned_at": earned[b.code].isoformat()
                     if b.code in earned else None} for b in badges],
         "store": [{"code": i.code, "name": i.name, "cost": int(i.cost_coins),
