@@ -17,6 +17,9 @@ type Subject = {
   reason?: string;
   member?: string;
   product?: { slug: string; name: string };
+  /** hazard_insufficient_data only (CT-003 §C); [] for a task from before DEF-032, absent on an older API. */
+  missing_dimensions?: { code: string; name: string }[];
+  passport_version?: number | null;
 };
 type Task = {
   id: string; task_type: string; status: string; priority: number; created_at: string; subject: Subject;
@@ -77,6 +80,13 @@ function TaskCard({ task, onDone }: { task: Task; onDone: () => void }) {
           <div><dt className="inline text-muted">Proposed: </dt><dd className="inline font-medium">{s.is_confirmation ? 'confirms the current value' : s.proposed_value}</dd></div>
           <div className="text-xs text-muted">From {s.reporter}</div>
         </dl>
+      )}
+      {task.task_type === 'hazard_insufficient_data' && (
+        <p className="mt-2 text-sm">
+          <span className="text-muted">No evidence for: </span>
+          {s.missing_dimensions?.length ? s.missing_dimensions.map((d) => d.name).join(', ') : 'dimensions not recorded'}
+          {typeof s.passport_version === 'number' && <span className="text-muted"> · passport v{s.passport_version}</span>}
+        </p>
       )}
       {task.task_type === 'fraud_hold' && (
         <p className="mt-2 text-sm">{s.member}: {s.reason}</p>

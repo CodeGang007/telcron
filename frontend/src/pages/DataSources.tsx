@@ -80,7 +80,8 @@ function JobRow({ j }: { j: Job }) {
           ) : (
             <>{j.source.toUpperCase()} recall import · {j.params.date_start ?? 'last 30 days'}{j.params.date_end ? ` to ${j.params.date_end}` : ''}</>
           )}
-          <span className="ml-2 text-xs font-normal text-muted">{startedBy(j)} · {new Date(j.created_at).toLocaleString()}</span>
+          {/* The separator is text, not margin, so the line reads "last 30 days · by hand" (DEF-120). */}
+          <span className="text-xs font-normal text-muted">{' · '}{startedBy(j)} · {new Date(j.created_at).toLocaleString()}</span>
         </p>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${TONE[j.status] ?? TONE.queued}`}>{j.status}</span>
       </div>
