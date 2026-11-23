@@ -41,7 +41,7 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | WO-056 | Feature flags (CT-001) | platform-identity-engineer, frontend-engineer | — | DONE-PENDING-QA — QA PASS (CT-001 exact), browser PASS |
 | WO-057 | AI test set at 20 products (regression baseline) | data-ai-engineer | — | DONE-PENDING-QA — QA PASS (offline harness; no live-model run) |
 | WO-058 | Close W2: fix sweep defects DEF-113…121 (CT-003) | data-ai, catalogue, community-rewards, database, frontend, browser-qa | — | DONE — QA APPROVE WITH NITS (`verdicts/WO-058-qa.md`), browser PASS (`verdicts/WO-058-browser.md`); DEF-117 blocked on human |
-| WO-059 | DEF-117: watchlist item off sale, buyers refunded (CT-004, D13 amendment) | database, community-rewards, frontend → security, qa, browser-qa | human yes (a) 2026-11-23 | OPEN |
+| WO-059 | DEF-117: watchlist item off sale, buyers refunded (CT-004, D13 amendment) | database, community-rewards, frontend → security, qa, browser-qa | human yes (a) 2026-11-23 | DONE — security PASS-WITH-FINDINGS, QA APPROVE WITH NITS (`verdicts/WO-059-qa.md`), browser PASS (`verdicts/WO-059-browser.md`); AWS dev not migrated until the next release |
 
 ## Defects
 
@@ -97,7 +97,7 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | DEF-114 | Recalled product's passport offers "Where to buy" shop links | frontend-engineer | S3 | FIXED — QA PASS + browser PASS 2026-11-23 (1421f52) |
 | DEF-115 | Passport says Reddit/X/YouTube/web were searched when no web search provider is configured | data-ai-engineer + frontend-engineer | S3 | FIXED — QA PASS + browser PASS 2026-11-23 (c85d649, 492385c, e3eb3e8) |
 | DEF-116 | Review form pre-selects 5 stars; rating has no selected state for screen readers; 28 px stars | frontend-engineer | S3 | FIXED — QA PASS + browser PASS 2026-11-23 (df964c1) |
-| DEF-117 | "Watchlist alerts for 3 products" takes 100 coins and nothing uses it | database + community-rewards + frontend (WO-059) | S3 | IN PROGRESS — human chose (a) 2026-11-23; WO-059, CT-004 |
+| DEF-117 | "Watchlist alerts for 3 products" takes 100 coins and nothing uses it | database + community-rewards + frontend (WO-059) | S3 | CLOSED — WO-059 DONE 2026-11-23 (off sale, 2 local buyers refunded, 409 `item_not_on_sale`) |
 | DEF-118 | Rewards copy: "email and phone" (D4), level thresholds read as totals, streak texts disagree, "Level 1" twice, unavailable earns | frontend-engineer | S4 | FIXED — QA PASS + browser PASS 2026-11-23 (f45ed09, da2e670, 4a0c01d) |
 | DEF-119 | Report gate sends a member to a store that only sells reports for wallet products | frontend-engineer | S4 | FIXED — QA PASS + browser PASS 2026-11-23 (755d5b2) |
 | DEF-120 | Review queue flooded with detail-less "Score missing evidence" tasks, one per re-screen; admin run text run-ons | data-ai-engineer + frontend-engineer | S4 | FIXED — QA PASS + browser PASS (API/DB) 2026-11-23 (72ea004, cbec421, 4a8cc34) |
