@@ -101,7 +101,7 @@ code and `git log`. Week plan: `docs/plan/week-02.md`. Nothing here is `DONE` un
 | DEF-119 | Report gate sends a member to a store that only sells reports for wallet products | frontend-engineer | S4 | FIXED — QA PASS + browser PASS 2026-11-23 (755d5b2) |
 | DEF-120 | Review queue flooded with detail-less "Score missing evidence" tasks, one per re-screen; admin run text run-ons | data-ai-engineer + frontend-engineer | S4 | FIXED — QA PASS + browser PASS (API/DB) 2026-11-23 (72ea004, cbec421, 4a8cc34) |
 | DEF-121 | e2e journey leaves products and hazard reviews in the shared DB, skewing demo passports and the home page | browser-qa-engineer | S4 | FIXED — QA PASS 2026-11-23 (4f66e92, 2cfd68e, 4c4020b); shared DB still holds old e2e rows (reset is the human's call) |
-| DEF-122 | Two backend tests fail in a non-default order (stale passport cache; rescreen count) — pre-date WO-058 | data-ai-engineer | S3 | OPEN |
+| DEF-122 | Two backend tests fail in a non-default order (stale passport cache; rescreen count) — pre-date WO-058 | data-ai-engineer | S3 | FIXED-PENDING-QA |
 | DEF-123 | Certificate-issue / near_match verdict hid the hazard warning | frontend-engineer | S4 | FIXED — browser QA PASS 2026-11-23 (045a149) |
 | DEF-124 | Home hero clipped at 390 px | frontend-engineer | S3 | FIXED — browser QA PASS 2026-11-23 (4f16d8a) |
 

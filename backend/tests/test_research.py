@@ -347,21 +347,31 @@ async def test_research_keeps_the_raw_copy_of_each_new_cpsc_notice(client, db, m
     """WO-054: a notice research imports from CPSC is kept in the raw store like the nightly's."""
     feed = json.loads((pathlib.Path(__file__).parent / "fixtures" / "cpsc_recalls.json")
                       .read_text())
-    notice = copy.deepcopy(feed[2])  # Kettleworks
+    # DEF-122: a notice of this test's own. What it imports and the product it confirms stay in the
+    # shared database; as the fixture's Kettleworks KW-12 kettle notice they were a second match for
+    # test_ingestion.py's recall job and its "kettle shock" search.
+    brand, model = f"Toastwave{uuid.uuid4().hex[:4]}", f"TW-{uuid.uuid4().int % 10**6:06d}"
+    notice = copy.deepcopy(feed[2])
     notice["RecallID"], notice["RecallNumber"] = 990400, "27-RAW-990400"
+    notice["Title"] = f"{brand} Recalls Toasters Due to Fire Hazard"
+    notice["Description"] = f"This recall involves {brand} two-slice toasters, model {model}."
+    notice["Products"][0].update(Name=f"{brand} toasters", Type="Toasters")
+    notice["Hazards"] = [{"Name": "The toaster can fail to switch off, posing a fire hazard."}]
+    notice["Remedies"] = [{"Name": f"Stop using the toaster and contact {brand} for a refund."}]
+    notice["Manufacturers"] = [{"Name": f"{brand} Ltd., of Leeds, England"}]
     stored: dict[str, bytes] = {}
 
     async def put(key: str, body: bytes) -> None:
         stored[key] = body
 
     async def search(title_words: str, limit: int = 20) -> list[dict]:
-        return [copy.deepcopy(notice)] if title_words == "Kettleworks" else []
+        return [copy.deepcopy(notice)] if title_words == brand else []
     monkeypatch.setattr(get_settings(), "raw_store", "s3")
     monkeypatch.setattr(raw_store, "put", put)
     monkeypatch.setattr(cpsc, "search", search)
     _, _, member = await verified_user(client)
     product = (await client.post(f"{API}/identify/confirm", headers=member, json={
-        "name": "Electric Kettle KW-12", "brand": "Kettleworks", "model": "KW-12",
+        "name": f"Two-Slice Toaster {model}", "brand": brand, "model": model,
         "category": "appliances"})).json()
     passport = (await client.get(f"{API}/products/{product['slug']}/passport")).json()
     job = (await db.execute(select(IngestionJob).where(

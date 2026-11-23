@@ -146,3 +146,16 @@ async def fresh_rate_limits():
     keys = [key async for key in redis.scan_iter(match=PREFIX + "*")]
     if keys:
         await redis.delete(*keys)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def no_cached_passports():
+    """DEF-122: every test starts with no cached passport view. The API and the
+    Worker drop a product's key after they re-screen it; a test that calls screen_product directly
+    does not, and the next test to read that product got the view cached before the re-screen."""
+    from app.core.redis import get_redis
+
+    redis = await get_redis()
+    keys = [key async for key in redis.scan_iter(match="telcron:passport:*")]
+    if keys:
+        await redis.delete(*keys)

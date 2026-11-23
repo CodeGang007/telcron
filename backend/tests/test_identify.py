@@ -1,5 +1,7 @@
 """Scanning a barcode: the registry first, then the public product database, then a passport."""
 
+import uuid
+
 import pytest
 from helpers import API, verified_user
 from sqlalchemy import select
@@ -110,10 +112,13 @@ async def test_an_unknown_product_is_identified_from_a_photo_and_confirmed(clien
     monkeypatch.setattr(upcitemdb, "lookup", nobody)
     monkeypatch.setattr(openfacts, "lookup", nobody)
     seen = {}
+    # DEF-122: a brand of this test's own. test_research.py confirms a "Lumina LF-30" desk fan into
+    # the shared database, and run after it this product was found, not new.
+    brand = f"Breezo{uuid.uuid4().hex[:4]}"
 
     async def reads(data_urls, hints=None):
         seen["url"], seen["count"] = data_urls[0], len(data_urls)
-        return {"brand": "Lumina", "name": "Lumina Desk Fan 30cm", "model": "LF-30",
+        return {"brand": brand, "name": f"{brand} Desk Fan 30cm", "model": "LF-30",
                 "category": "appliances", "confidence": 0.7}
     monkeypatch.setattr(vision, "read_photo", reads)
     barcode = "8907770000006"
@@ -125,17 +130,17 @@ async def test_an_unknown_product_is_identified_from_a_photo_and_confirmed(clien
     _, _, member = await verified_user(client)
     suggestion = (await client.post(f"{API}/identify/photo", headers=member, json=photo)).json()
     got = (suggestion["brand"], suggestion["model"], suggestion["category"])
-    assert got == ("Lumina", "LF-30", "appliances")
+    assert got == (brand, "LF-30", "appliances")
     assert seen["url"].startswith("data:image/jpeg") and seen["count"] == 2  # both sides read
     # A suggestion is not a product: nothing was added yet.
     assert (await client.post(f"{API}/identify", json={"barcode": barcode})).status_code == 404
 
     # The member corrects the name and confirms.
     r = await client.post(f"{API}/identify/confirm", headers=member, json={
-        "name": "Lumina Desk Fan 30 cm", "brand": "Lumina", "model": "LF-30", "category": "appliances",
+        "name": f"{brand} Desk Fan 30 cm", "brand": brand, "model": "LF-30", "category": "appliances",
         "barcode": barcode, "request_id": suggestion["request_id"]})
     body = r.json()
-    assert r.status_code == 200 and body["new"] is True and body["name"] == "Lumina Desk Fan 30 cm"
+    assert r.status_code == 200 and body["new"] is True and body["name"] == f"{brand} Desk Fan 30 cm"
     passport = (await client.get(f"{API}/products/{body['slug']}/passport")).json()
     assert passport["version"] == 1
     # The barcode now finds it straight away, and confirming again does not add a second product.
@@ -144,8 +149,10 @@ async def test_an_unknown_product_is_identified_from_a_photo_and_confirmed(clien
     again = await client.post(f"{API}/identify/confirm", headers=member, json={
         "name": "Another name", "category": "appliances", "barcode": barcode})
     assert (again.json()["slug"], again.json()["new"]) == (found["slug"], False)
+    # This test's own request: other tests leave photo requests in the shared database (DEF-122).
     row = (await db.execute(select(IdentificationRequest).where(
-        IdentificationRequest.extracted["from_photo"].astext == "true"))).scalars().first()
+        IdentificationRequest.id == uuid.UUID(suggestion["request_id"])))).scalar_one()
+    assert row.extracted["from_photo"] is True
     assert row.status == "identified" and row.extracted["model"] == "LF-30"
 
 

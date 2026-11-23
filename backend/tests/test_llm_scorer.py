@@ -1,6 +1,7 @@
 """The model scorer: what it sends, what it accepts, and what happens when the model fails."""
 
 import json
+import uuid
 
 import httpx
 import pytest
@@ -56,9 +57,15 @@ async def test_a_screening_uses_the_model_and_records_the_call(client, db, monke
     monkeypatch.setattr(llm, "complete", fake)
     monkeypatch.setattr(llm, "get_settings", lambda: type("S", (), {"llm_model": "test-model"})())
     _, _, member = await verified_user(client)
-    slug = "aquablend-900"
-    await client.post(f"{API}/products/{slug}/reviews", headers=member, json={
+    # DEF-122: a product of this test's own. A fire review on the demo AquaBlend blender left it
+    # no longer verified, and test_assistant.py, run after this, found no verified blenders.
+    slug = (await client.post(f"{API}/identify/confirm", headers=member, json={
+        "name": f"Whirlo Blender L{uuid.uuid4().hex[:4]}", "brand": "Whirlo",
+        "category": "blenders"})).json()["slug"]
+    _, _, reviewer = await verified_user(client)
+    r = await client.post(f"{API}/products/{slug}/reviews", headers=reviewer, json={
         "rating": 1, "body": "It overheated and the motor caught fire on the counter."})
+    assert r.status_code == 201, r.text
     pid = await product_id(db, slug)
     await screen_product(db, pid, "rescreen", scorer=llm.FallbackScorer(llm.LlmScorer()))
     await db.commit()
