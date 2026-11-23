@@ -8,7 +8,7 @@ Wallet saves and in-app alerts only; Medium/High results do not open review task
 
 ## Work orders
 
-- **WO-033 · Wallet labels, watches, email alerts** (`community-rewards-engineer, frontend-engineer`): Labels on wallet items; watch a product without owning it; the extra-watches redemption raises the limit; a passport change sends an email (D15) and an in-app alert, once.
+- **WO-033 · Wallet labels, watches, email alerts** (`community-rewards-engineer, frontend-engineer`): Labels on wallet items; watch a product without owning it; the extra-watches redemption raises the limit; a passport change sends an email (D15) and an in-app alert, once. **Must also re-activate the `watchlist_3` store item** (`is_active = true`, a new data migration), which WO-059 took off sale on 2026-11-23 (D13 amendment, DEF-117), and only once a member's watch limit actually reads the `watchlist_slots` entitlement; re-add it to CT-004's store and test that a purchase raises the limit.
 - **WO-034 · Medium/High to review; High blocked** (`data-ai-engineer`): Every Medium or High result opens a review task; High is marked blocked until reviewed and an admin is alerted (tech doc §7.4); tests for both.
 - **WO-035 · AI log with cost, AI cache** (`data-ai-engineer`): Every AI call (scoring, vision, Rekognition, research, assistant, embedder) writes `ai_invocations` with model, prompt version, tokens, latency and cost; results cached 24 h per product and model version.
 - **WO-036 · Business accounts schema** (`database-engineer`): Per D6: accounts, API keys (hashed), webhooks and deliveries — spec first, migration, drift, tests.

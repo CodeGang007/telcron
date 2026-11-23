@@ -85,6 +85,7 @@ assistant (WO-015), the redesign.
 | D11 | **Decided 2026-11-21:** promote phases 2–3 to migrations in W2 | W2 | — |
 | D12 | If W7 slips: what leaves the release (business API conflicts with M4) | W6 | M4 |
 | D13 | **Decided 2026-11-21:** switch off the four phase-two items, refund any stuck redemptions; the printable hazard report stays | W2 | — |
+| D13 amendment | **Decided 2026-11-23** (DEF-117, option (a)): "Watchlist alerts for 3 products" (`watchlist_3`) also goes off sale until watches exist; every fulfilled `watchlist_3` redemption is refunded through a `coin_*` function and its entitlement revoked. The store sells only the printable hazard report in W3–W4. WO-033 (W5) re-activates the item once watches read the entitlement (WO-059, CT-004) | W2 | WO-033 |
 | D14 | The schema author's review of the backend's use of the schema | W3 | Confidence in WO-011 |
 | D15 | Production email sender (Gmail SMTP vs SES) for codes and alerts | W4 | W5 email alerts |
 | D16 | **Decided 2026-11-21:** phone-ready web app only; native apps are phase two (Telcron's written OK to be recorded) | W2 | — |
