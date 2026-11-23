@@ -55,8 +55,8 @@ export function Gate({ children }: { children: ReactNode }) {
     );
   if (me.verification_level < 1)
     return (
-      <EmptyState icon={MailCheck} title="Confirm your email and phone first">
-        Verified members can save products, contribute and earn TelCoins.
+      <EmptyState icon={MailCheck} title="Confirm your email first">
+        Enter the six-digit code we emailed you. Verified members can save products, contribute and earn TelCoins.
       </EmptyState>
     );
   return <>{children}</>;
