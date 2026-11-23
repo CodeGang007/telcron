@@ -128,7 +128,7 @@ export function SignUp() {
     setBusy(true);
     setError(null);
     try {
-      setRegistered(await post<Registered>('/auth/register', { ...form, phone_e164: form.phone_e164.trim() || null }));
+      setRegistered(await post<Registered>('/auth/register', { ...form, phone_e164: form.phone_e164.replace(/\s+/g, '') || null }));
     } catch (err) {
       setError(explain(err));
     } finally {
@@ -167,7 +167,7 @@ export function SignUp() {
         <form onSubmit={register} className="space-y-5">
           <Field label="Name" required minLength={2} maxLength={80} autoComplete="name" value={form.display_name} onChange={set('display_name')} />
           <Field label="Email" type="email" required autoComplete="email" value={form.email} onChange={set('email')} />
-          <Field label="Mobile number (optional)" type="tel" pattern="\+[1-9][0-9]{7,14}" placeholder="+919876543210" hint="With country code. Not verified yet; phone checks come later." autoComplete="tel" value={form.phone_e164} onChange={set('phone_e164')} />
+          <Field label="Mobile number (optional)" type="tel" pattern="\+[1-9]( ?[0-9]){7,14}" placeholder="+1 555 010 0123" hint="With country code. Not verified yet; phone checks come later." autoComplete="tel" value={form.phone_e164} onChange={set('phone_e164')} />
           <Field label="Password" type="password" required minLength={10} hint="At least 10 characters." autoComplete="new-password" value={form.password} onChange={set('password')} />
           {error && <Notice tone="error">{error}</Notice>}
           <button className="btn w-full !py-3.5" disabled={busy}>{busy ? 'Creating…' : 'Create account'}</button>

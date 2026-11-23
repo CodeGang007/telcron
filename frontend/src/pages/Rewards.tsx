@@ -41,7 +41,8 @@ type Overview = {
   streak_days: number;
   rank: number | null;
   ranked: number;
-  ways_to_earn: { code: string; amount: number; icon: string; label: string; capped: boolean }[];
+  // `available` (CT-003 §D): false for an earn nobody can perform yet; absent on an older API.
+  ways_to_earn: { code: string; amount: number; icon: string; label: string; capped: boolean; available?: boolean }[];
   badges: { code: string; name: string; earned_at: string | null }[];
   store: { code: string; name: string; cost: number; kind: string; needs_product: boolean }[];
 };
@@ -58,7 +59,7 @@ const ICONS: Record<string, LucideIcon> = {
 const LEVEL_ICON: LucideIcon[] = [Star, Medal, Award, Gem, Crown];
 const BADGE_ICON: Record<string, LucideIcon> = { inspector: Medal, analyst: Award, expert: Gem, master: Crown, beta_tester: Sparkles, identity_verified: IdCard };
 const RULES: Record<string, string> = {
-  level1_verified: 'Reached Level 1', level2_verified: 'Reached Level 2', review: 'Review',
+  level1_verified: 'Verified your email', level2_verified: 'Verified your identity', review: 'Review',
   first_reviewer: 'First review of a product', photo: 'Photo', hazard_flag_confirmed: 'Hazard flag confirmed',
   fact_verification: 'Fact verified', login_streak: 'Daily sign-in', login_streak_7plus: 'Sign-in streak', referral: 'Referral',
 };
@@ -79,6 +80,16 @@ function LevelRing({ pct, children }: { pct: number; children: React.ReactNode }
       <div className="absolute inset-0 grid place-items-center">{children}</div>
     </div>
   );
+}
+
+/** The streak box agrees with the earn cards: both read the amounts from `ways_to_earn` (DEF-118). */
+function streakText(o: Overview) {
+  const amount = (code: string) => o.ways_to_earn.find((w) => w.code === code)?.amount;
+  const daily = amount('login_streak');
+  const later = amount('login_streak_7plus');
+  if (daily === undefined || later === undefined) return 'Sign in each day to keep it going';
+  if (o.streak_days >= 7) return `+${later} a day while your streak lasts`;
+  return `+${daily} a day, +${later} a day from day 7`;
 }
 
 function Hero({ o }: { o: Overview }) {
@@ -109,7 +120,7 @@ function Hero({ o }: { o: Overview }) {
             <div className="glass rounded-2xl p-4">
               <p className="flex items-center gap-2 text-xs text-white/60"><Flame className="size-4 text-flame" />Sign-in streak</p>
               <p className="mt-1 font-display text-2xl font-bold">{o.streak_days} {o.streak_days === 1 ? 'day' : 'days'}</p>
-              <p className="text-xs text-white/50">{o.streak_days >= 7 ? 'Double coins every day' : `${7 - o.streak_days} more for double coins`}</p>
+              <p className="text-xs text-white/50">{streakText(o)}</p>
             </div>
             <div className="glass rounded-2xl p-4">
               <p className="flex items-center gap-2 text-xs text-white/60"><Trophy className="size-4 text-gold" />This month</p>
@@ -123,7 +134,7 @@ function Hero({ o }: { o: Overview }) {
             <div>
               <Icon className="mx-auto size-8 text-gold" />
               <p className="mt-1 font-display text-lg font-bold">{current.title}</p>
-              <p className="text-[11px] text-white/60">Level {o.level}</p>
+              <p className="text-[11px] text-white/60">Your reward level</p>
             </div>
           </LevelRing>
           <p className="mt-4 max-w-[14rem] text-sm text-white/70">
@@ -233,13 +244,17 @@ function RewardsBody() {
         <motion.ul variants={stagger.container} initial="hidden" whileInView="show" viewport={{ once: true }} className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {o.ways_to_earn.map((w) => {
             const Icon = ICONS[w.icon] ?? Coins;
+            // Not something a member can do yet: no amount is promised (DEF-118).
+            const soon = w.available === false;
             return (
-              <motion.li key={w.code} variants={stagger.item} className="card card-hover !p-5">
-                <div className="flex items-center justify-between">
-                  <span className="grid size-10 place-items-center rounded-xl bg-brand-tint text-brand-ink"><Icon className="size-5" /></span>
-                  <span className="font-display text-lg font-extrabold text-gold-deep">+{w.amount}</span>
+              <motion.li key={w.code} variants={stagger.item} className={soon ? 'card !p-5 border-dashed bg-panel/50' : 'card card-hover !p-5'}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`grid size-10 place-items-center rounded-xl ${soon ? 'bg-neutral-tint text-muted' : 'bg-brand-tint text-brand-ink'}`}><Icon className="size-5" /></span>
+                  {soon
+                    ? <span className="chip bg-neutral-tint text-muted">Coming soon</span>
+                    : <span className="font-display text-lg font-extrabold text-gold-deep">+{w.amount}</span>}
                 </div>
-                <p className="mt-3 text-sm font-medium leading-snug">{w.label}</p>
+                <p className={`mt-3 text-sm font-medium leading-snug ${soon ? 'text-muted' : ''}`}>{w.label}</p>
               </motion.li>
             );
           })}
@@ -249,7 +264,7 @@ function RewardsBody() {
 
       <section className="mt-14 grid gap-8 lg:grid-cols-2">
         <div>
-          <h2 className="font-display text-2xl font-bold">Levels</h2>
+          <h2 className="font-display text-2xl font-bold">Reward levels</h2>
           <ol className="mt-5 space-y-3">
             {o.levels.map((l, i) => {
               const Icon = LEVEL_ICON[i % LEVEL_ICON.length] ?? Star;
@@ -260,7 +275,7 @@ function RewardsBody() {
                   <span className={`grid size-11 place-items-center rounded-xl ${reached ? 'bg-gradient-to-br from-gold-mid to-gold-deep text-white' : 'bg-neutral-tint text-muted'}`}><Icon className="size-5" /></span>
                   <div className="flex-1">
                     <p className="font-semibold">{l.title} {l.level === o.level && <span className="chip ml-1 bg-gold !py-0 text-white">you</span>}</p>
-                    <p className="text-xs text-muted">{l.min.toLocaleString()} coins earned{l.bonus_pct > 0 ? ` · +${l.bonus_pct}% on every earn` : ''}</p>
+                    <p className="text-xs text-muted">From {l.min.toLocaleString()} coins earned in total{l.bonus_pct > 0 ? ` · +${l.bonus_pct}% on every earn` : ''}</p>
                   </div>
                   {reached ? <Check className="size-5 text-ok" /> : <Lock className="size-4 text-muted" />}
                 </motion.li>
