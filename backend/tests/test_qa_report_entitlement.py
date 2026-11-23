@@ -5,7 +5,7 @@ a redemption left `processing` opens nothing; the public reads still need no acc
 import uuid
 
 from helpers import API, verified_user
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.models import Redemption, User
 from app.modules.rewards import service as rewards
@@ -74,12 +74,20 @@ async def test_visitor_and_bad_token_are_401_and_public_reads_stay_open(client):
 
 async def test_another_item_redeemed_for_the_product_does_not_open_the_report(client, db):
     """Matching is on fulfilment_type = 'pdf_report' (CT-002): a watchlist redemption that names the
-    product (the API accepts a product on any item) opens nothing."""
-    user_id, headers = await member_with_coins(client, db)
-    r = await client.post(f"{API}/redemptions", headers=headers, json={
-        "item_code": "watchlist_3", "product": X, "request_id": uuid.uuid4().hex})
-    assert r.status_code == 201 and r.json()["status"] == "fulfilled", r.text
-    row = await db.get(Redemption, uuid.UUID(r.json()["id"]))
-    assert row.product_id is not None  # the product is recorded on the watchlist redemption
-    r = await client.get(f"{API}/products/{X}/report", headers=headers)
-    assert r.status_code == 403 and r.json() == {"detail": "report_not_redeemed"}
+    product (the API accepts a product on any item) opens nothing. watchlist_3 is off sale until
+    WO-033 (DEF-117), so it is put on sale for this test only and taken off again."""
+    await db.execute(text("update redemption_items set is_active = true where code = 'watchlist_3'"))
+    await db.commit()
+    try:
+        user_id, headers = await member_with_coins(client, db)
+        r = await client.post(f"{API}/redemptions", headers=headers, json={
+            "item_code": "watchlist_3", "product": X, "request_id": uuid.uuid4().hex})
+        assert r.status_code == 201 and r.json()["status"] == "fulfilled", r.text
+        row = await db.get(Redemption, uuid.UUID(r.json()["id"]))
+        assert row.product_id is not None  # the product is recorded on the watchlist redemption
+        r = await client.get(f"{API}/products/{X}/report", headers=headers)
+        assert r.status_code == 403 and r.json() == {"detail": "report_not_redeemed"}
+    finally:
+        await db.execute(text(
+            "update redemption_items set is_active = false where code = 'watchlist_3'"))
+        await db.commit()

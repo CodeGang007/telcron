@@ -101,9 +101,10 @@ async def award_level_badges(db: AsyncSession, user_id: uuid.UUID, level: int) -
 
 
 REFUND = text("select coin_refund_redemption(cast(:redemption as uuid), cast(:reason as text))")
-# Phase one fulfils two kinds, watchlist_slots and pdf_report (tech doc §2.2, §9.4, D13). The database
-# keeps every other item off sale; should one come back on sale before its fulfilment is built, it is
-# refunded, not left waiting.
+# On sale today: only the printable hazard report, pdf_report (tech doc §9.4, D13). The watchlist item
+# (watchlist_slots) is off sale until watches are built (DEF-117, WO-059, D13 amendment; WO-033 puts it
+# back); its fulfilment below stays for WO-033. Every other item is off sale; should one come back on
+# sale before its fulfilment is built, it is refunded, not left waiting.
 
 
 async def redeem(db: AsyncSession, user_id: uuid.UUID, item_code: str, key: str,
@@ -120,6 +121,8 @@ async def redeem(db: AsyncSession, user_id: uuid.UUID, item_code: str, key: str,
     item = await db.get(RedemptionItem, item_code)
     if item is None:
         raise HTTPException(http.HTTP_404_NOT_FOUND, "item_not_found")
+    if not item.is_active:  # CT-004: refused before any spend; no redemption row, no ledger entry
+        raise HTTPException(http.HTTP_409_CONFLICT, "item_not_on_sale")
     if item.fulfilment_type == "pdf_report" and product_id is None:
         raise HTTPException(http.HTTP_422_UNPROCESSABLE_ENTITY, "product_required")
     try:
@@ -127,12 +130,13 @@ async def redeem(db: AsyncSession, user_id: uuid.UUID, item_code: str, key: str,
             redemption_id = await db.scalar(REDEEM, {"user": user_id, "item": item_code,
                                                      "key": key, "product": product_id})
     except DBAPIError as exc:
-        # TC011 is both coin_spend's "insufficient" and coin_redeem's "unknown or inactive item":
-        # the database decides what is on sale, so anything else under TC011 is off sale.
+        # TC011 is both coin_spend's "insufficient" and coin_redeem's "unknown or inactive item".
+        # The item was read above, so anything else under TC011 is the database's backstop: the item
+        # went off sale since (a race). The database decides what is on sale (CT-004).
         if "insufficient confirmed TelCoins" in str(exc):
             raise HTTPException(http.HTTP_409_CONFLICT, "not_enough_coins") from exc
         if getattr(exc.orig, "sqlstate", None) == "TC011":
-            raise HTTPException(http.HTTP_404_NOT_FOUND, "item_not_found") from exc
+            raise HTTPException(http.HTTP_409_CONFLICT, "item_not_on_sale") from exc
         raise
     redemption = await db.get(Redemption, redemption_id)
     if redemption.status == "processing":
