@@ -42,12 +42,17 @@ export function Verdict({ pass, recalls }: { pass: Passport; recalls: Passport['
   const near = recalls.find((r) => r.verdict === 'near_match');
   const level = hazardLevel(pass);
   const noRecall = `No recall notice matched it ${recallAsOf(pass)}.`;
+  // A recall or certificate headline never hides reported hazards (DEF-123): it gains a second sentence.
+  const alsoHazard = level === 'serious'
+    ? ' Sources also describe a high hazard on at least one dimension: open the hazard scores below to see the evidence.'
+    : level === 'some' ? ' Sources also describe some hazards: open the hazard scores below to see what they say.' : '';
+  const andHazards = level === 'none' ? '' : level === 'serious' ? ', and serious hazards are reported' : ', and hazards are reported';
   const [tone, title, text] = match
     ? ['danger', 'This product is recalled', `${sentence(match.hazard, 'An official recall notice names this product.')} Stop using it and follow the notice's remedy.`]
     : near
-      ? ['danger', 'Official recall notices may cover this product', `${sentence(near.hazard, 'A recall names this brand and a product like it.')} Check the notices below against your model and serial number.`]
+      ? ['danger', `Official recall notices may cover this product${andHazards}`, `${sentence(near.hazard, 'A recall names this brand and a product like it.')} Check the notices below against your model and serial number.${alsoHazard}`]
       : pass.status_badge === 'certification_issue'
-        ? ['warn', 'A certificate problem was found', 'One of its certificates has expired or been revoked. See the details below.']
+        ? ['warn', `A certificate problem was found${andHazards}`, `One of its certificates has expired or been revoked. See the details below.${alsoHazard}`]
         : level === 'serious'
           ? ['warn', 'Serious hazards are reported', `${noRecall} But sources describe a high hazard on at least one dimension: open the hazard scores below to see the evidence.`]
           : level === 'some'
