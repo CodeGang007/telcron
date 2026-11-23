@@ -113,7 +113,7 @@ export function Research({ slug, name, onRated }: { slug: string; name: string; 
           <h2 id="research" className="flex items-center gap-2 font-display text-xl font-bold"><Landmark className="size-5 text-brand-ink" />{ran?.webAnswered ? 'What official sources and the web say' : 'What official sources say'}</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
             {ran && ran.answered.length > 0
-              ? `Last search asked ${list(ran.answered)}. `
+              ? `At the last search, ${list(ran.answered)} answered. `
               : !ran && 'Telcron asks official recall registries such as US CPSC, US FDA and UK Product Safety, and reads public pages about the product. '}
             {ran?.webMissing && 'Web and owner-forum search (Reddit, X, YouTube, reviews) is not available yet, so none of those were searched. '}
             Every line links to the page it comes from; a claim the page does not make is thrown away.
@@ -190,7 +190,7 @@ export function Research({ slug, name, onRated }: { slug: string; name: string; 
         </p>
       )}
       {!busy && !data.unread && ran && ran.failed.length > 0 && (
-        <p className="mt-3 text-xs text-muted">Failed last time: {list(ran.failed)}. They are asked again on the next search.</p>
+        <p className="mt-3 text-xs text-muted">Failed at the last search: {list(ran.failed)}. Asked again on the next search.</p>
       )}
       {!busy && !data.unread && !ran && (data.stats?.errors?.filter((e) => !e.startsWith('reader')).length ?? 0) > 0 && (
         <p className="mt-3 text-xs text-muted">Some sources did not answer last time: {(data.stats?.errors ?? []).filter((e) => !e.startsWith('reader')).map((e) => e.split(':')[0]).join(', ')}.</p>
