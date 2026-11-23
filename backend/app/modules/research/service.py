@@ -278,8 +278,11 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
     label = name if not brand or name.lower().startswith(brand.lower()) else f"{brand} {name}"
     if product.model_number and product.model_number.lower() not in label.lower():
         label = f"{label} {product.model_number}"
+    # `sources`: each source this run asked, and how it went (CT-003 §B): "answered" (even with
+    # nothing found), "failed", or "not_configured" (no provider set up, so nothing was asked).
+    sources: dict[str, str] = {}
     stats: dict[str, Any] = {"cpsc_notices": 0, "cpsc_new": 0, "pages": 0, "findings": 0,
-                             "errors": []}
+                             "errors": [], "sources": sources}
 
     reread = job.params.get("reread")
     # 1. Official recalls, imported as recalls: the screening decides whether one is this product's.
@@ -303,8 +306,12 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
                 for other in affected:  # products elsewhere in the registry this notice names
                     if other != product.id:
                         emit(db, "product", other, "RecallImported", {"product_id": str(other)})
+            # Only a brand search imported in full counts: the screening dates its "no recall
+            # found" from the runs where CPSC answered (DEF-113).
+            sources["cpsc"] = "answered"
         except Exception as exc:  # the source is down: say so, carry on with the rest
             stats["errors"].append(f"cpsc: {type(exc).__name__}: {exc}"[:200])
+            sources["cpsc"] = "failed"
 
     # 2. Official registries (UK OPSS, openFDA), the open web and the regulators' own sites:
     #    pages, then what each says about safety.
@@ -318,11 +325,17 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
         await _progress(product.id, "Searching the web, regulators, owner reports and reviews", 25)
         try:
             hits += await web.search(label, category)
+            sources["web"] = "answered"
         except web.ResearchUnavailable as exc:
             stats["errors"].append(f"web: {exc}"[:200])
+            sources["web"] = ("not_configured" if isinstance(exc, web.NotConfigured)
+                              else "failed")
         official, failed = await registries.search(f"{brand or ''} {name}".strip()[:120], category)
         hits = official + hits  # official registries first: the reader keeps the first of a URL
         stats["errors"] += failed
+        down = {_code(error) for error in failed}
+        for code in registries.called(category):
+            sources[code] = "failed" if code in down else "answered"
     known = {web.same_page(u) for u in await _known_urls(db, product.id)}
     hits = [h for h in dict((web.same_page(h.url), h) for h in hits).values()
             if web.same_page(h.url) not in known]
@@ -340,6 +353,7 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
     except web.ResearchUnavailable as exc:
         findings = []
         stats["errors"].append(f"reader: {exc}"[:200])
+        sources["reader"] = "not_configured" if isinstance(exc, web.NotConfigured) else "failed"
     # Kept, so a later run reads them without searching again.
     stats["unread_pages"] = [{"title": h.title, "url": h.url, "snippet": h.snippet[:700],
                               "source": h.source} for h in unread]
@@ -347,6 +361,11 @@ async def research(db: AsyncSession, job: IngestionJob) -> dict[str, Any]:
         stats["errors"].append(f"reader: {read_audit['failed_batches']} of "
                                f"{-(-len(hits) // web.BATCH)} reading calls failed")
     stats["unread"] = len(unread)
+    # The model was asked only when a page was left to read once injected and off-topic pages
+    # were dropped; a batch that failed leaves pages unread, so the reader did not answer.
+    to_read = len(hits) - read_audit.get("injected", 0) - read_audit.get("off_topic", 0)
+    if "reader" not in sources and (to_read > 0 or read_audit.get("failed_batches")):
+        sources["reader"] = "failed" if read_audit.get("failed_batches") else "answered"
     stats["reader"] = read_audit  # what was dropped and why, so an empty result can be explained
     stats["official_recalls"] = 0
     for finding in findings:
@@ -392,20 +411,33 @@ async def run(job_id: uuid.UUID) -> dict[str, Any]:
 
 
 ERROR_SOURCE = re.compile(r"[a-z][a-z0-9_]{0,40}")
+SOURCE_OUTCOMES = ("answered", "failed", "not_configured")
+
+
+def _code(error: Any) -> str:
+    """The code of the source an error names ("cpsc: ..." -> "cpsc"); "other" if it names none."""
+    head = str(error).split(":", 1)[0].strip()
+    return head if ERROR_SOURCE.fullmatch(head) else "other"
 
 
 def _public_stats(stats: dict[str, Any] | None) -> dict[str, Any] | None:
     """A run's stats as a page may see them: each error reduced to the code of the source that
-    failed ("cpsc", "web", "reader", "uk_opss" ...), never the provider's own text (DEF-049)."""
+    failed ("cpsc", "web", "reader", "uk_opss" ...), never the provider's own text (DEF-049).
+    `sources` passes with codes checked the same way and only the three known outcomes; a run
+    recorded before CT-003 has none, and gets none."""
     if stats is None:
         return None
     codes = []
     for error in stats.get("errors") or []:
-        head = str(error).split(":", 1)[0].strip()
-        code = head if ERROR_SOURCE.fullmatch(head) else "other"
+        code = _code(error)
         if code not in codes:
             codes.append(code)
-    return {**stats, "errors": codes}
+    public = {**stats, "errors": codes}
+    if "sources" in stats:
+        given = stats["sources"] if isinstance(stats["sources"], dict) else {}
+        public["sources"] = {str(code): outcome for code, outcome in given.items()
+                             if ERROR_SOURCE.fullmatch(str(code)) and outcome in SOURCE_OUTCOMES}
+    return public
 
 
 async def summary(db: AsyncSession, product: Product, signed_in: bool = False) -> dict[str, Any]:

@@ -102,6 +102,11 @@ class ResearchUnavailable(Exception):
     pass
 
 
+class NotConfigured(ResearchUnavailable):
+    """The provider is not set up (no key): nothing was asked of it. Recorded as
+    `not_configured`, not as a failure (CT-003 §B)."""
+
+
 STOP = set("""the a an and or of to in on for with by from this that these those is are was were be
 been it its as at not no any has have had will would can may might should product products
 """.split())
@@ -354,7 +359,7 @@ async def search(label: str, category: str | None = None) -> list[Hit]:
             return await _browse(f"{label} recall safety warning and owner reviews")
     except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
         raise ResearchUnavailable(f"{type(exc).__name__}: {exc}"[:300]) from exc
-    raise ResearchUnavailable("no search provider configured")
+    raise NotConfigured("no search provider configured")
 
 
 BATCH = 8          # results per reading call: one call with ~30 results broke the free plan's
@@ -401,7 +406,7 @@ async def read(product: str, hits: list[Hit], audit: dict[str, int] | None = Non
         return []
     s = get_settings()
     if not s.llm_api_key:
-        raise ResearchUnavailable("no model configured")
+        raise NotConfigured("no model configured")
     out: list[Finding] = []
     last_error = None
     total = -(-len(hits) // BATCH)

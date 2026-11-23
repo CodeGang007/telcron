@@ -56,13 +56,19 @@ async def _fda(kind: str, words: str, limit: int) -> list[Hit]:
     return hits
 
 
+def called(category: str | None) -> list[str]:
+    """The codes of the registries `search` asks for this category, in the order it asks them."""
+    return ["uk_opss"] + [f"openfda_{k}" for k in FDA_KINDS.get(category or "", ())]
+
+
 async def search(words: str, category: str | None, limit: int = 5) -> tuple[list[Hit], list[str]]:
-    """Hits from every registry that covers this kind of product, and the errors of any that
-    failed (a registry being down is reported, not fatal)."""
+    """Hits from every registry that covers this kind of product (`called`), and the errors of
+    any that failed, each starting with that registry's code (a registry being down is reported,
+    not fatal)."""
     hits: list[Hit] = []
     errors: list[str] = []
-    calls = [("uk_opss", _uk(words, limit))]
-    calls += [(f"openfda_{k}", _fda(k, words, limit)) for k in FDA_KINDS.get(category or "", ())]
+    calls = [(code, _uk(words, limit) if code == "uk_opss"
+              else _fda(code.removeprefix("openfda_"), words, limit)) for code in called(category)]
     for name, call in calls:
         try:
             hits += await call

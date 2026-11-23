@@ -29,8 +29,16 @@ async def _screened_corpus_date(db, pid) -> datetime:
         Screening.id == passport.screening_id))
 
 
+async def _forget_earlier_imports(db) -> None:
+    """Jobs other tests left (a research run whose CPSC answered counts) stop counting, inside
+    this transaction only."""
+    await db.execute(update(IngestionJob).where(
+        IngestionJob.data_source_code.in_(("cpsc", "web_search"))).values(status="failed"))
+
+
 async def test_a_screening_records_the_newest_successful_cpsc_import(db):
     pid = await product_id(db, SLUG)
+    await _forget_earlier_imports(db)
     now = datetime.now(UTC)
     imported = _job("cpsc", "partial", now - timedelta(seconds=40))
     db.add_all([
@@ -58,9 +66,7 @@ async def test_a_screening_records_the_newest_successful_cpsc_import(db):
 
 async def test_with_no_recall_import_the_screening_falls_back_to_its_own_time(db):
     pid = await product_id(db, SLUG)
-    # Every job that could count is made not to, inside this transaction only.
-    await db.execute(update(IngestionJob).where(
-        IngestionJob.data_source_code.in_(("cpsc", "web_search"))).values(status="failed"))
+    await _forget_earlier_imports(db)
     try:
         before = datetime.now(UTC)
         corpus = await _screened_corpus_date(db, pid)
