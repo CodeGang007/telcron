@@ -3,7 +3,8 @@
   "private": true,
   "version": "0.1.0",
   "scripts": {
-    "journey": "playwright test journey",
+    "journey": "bash ./disposable-journey.sh",
+    "journey:here": "playwright test journey",
     "smoke": "playwright test smoke",
     "hosted": "playwright test hosted"
   },

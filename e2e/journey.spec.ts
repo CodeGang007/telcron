@@ -1,11 +1,26 @@
 // The member's journey, through the real web app, API, database, queues and Worker.
-// Needs a local stack with the demo data (`make app-db`, `make dev`), DEV_EXPOSE_CODES=true, a short
-// COIN_CONFIRM_DELAY_SECONDS and SEED_ADMIN_PASSWORD. It creates new members on every run.
-import { expect, test } from '@playwright/test';
+// It writes: new members, reviews and a hazard report on demo products, a new product. So locally
+// `npm run journey` runs it on a disposable stack (disposable-journey.sh) and never on the shared
+// database (DEF-121). `npm run journey:here` (or CI, or BASE_URL) runs it against a stack that is
+// already up: it needs the demo data, DEV_EXPOSE_CODES=true, a short COIN_CONFIRM_DELAY_SECONDS and
+// SEED_ADMIN_PASSWORD, and should only ever point at a throwaway database.
+import { expect, type Locator, test } from '@playwright/test';
 import { ADMIN_EMAIL, newMember, passport, passportEvidence, passportVersion, setting, signIn, signOut } from './support';
 
 const FRIDGE = '/products/northwind-chillmate-31';
 const CHARGER = '/products/contoso-fastcharge-65w';
+// The report gate sends the member to the store with the product already chosen (DEF-119).
+const STORE_FOR_CHARGER = '/rewards?product=contoso-fastcharge-65w';
+
+/** Picks a star rating in the radio group named "Rating" (DEF-116). A person clicks the star, which is
+    the radio's label; the native radio itself is visually hidden. */
+async function rate(form: Locator, stars: number): Promise<void> {
+  const group = form.getByRole('radiogroup', { name: 'Rating' });
+  const name = `${stars} out of 5`;
+  // `has` is matched inside each label, so it starts from the page, not from the form.
+  await group.locator('label', { has: form.page().getByRole('radio', { name }) }).click();
+  await expect(group.getByRole('radio', { name })).toBeChecked();
+}
 
 test('a visitor searches and reads a passport without an account', async ({ page }) => {
   await page.goto('/');
@@ -50,10 +65,14 @@ test('a member signs up, saves a product, reviews it and is paid', async ({ page
   const before = await passportVersion(page);
   await page.getByRole('button', { name: 'Save to wallet' }).click();
   await expect(page.getByText('Saved to your Digital Wallet')).toBeVisible();
-  await page
-    .getByRole('form', { name: 'Write a review' })
-    .locator('textarea')
+  // The form has no rating until one is picked, and will not post without one (DEF-116).
+  const review = page.getByRole('form', { name: 'Write a review' });
+  await review.locator('textarea')
     .fill('The compressor started to overheat and there was smoke and a burning smell after a week.');
+  await page.getByRole('button', { name: 'Post review' }).click();
+  await expect(review.getByRole('alert')).toContainText('Choose a rating');
+  // A complaint carries a low rating.
+  await rate(review, 2);
   await page.getByRole('button', { name: 'Post review' }).click();
   await expect(page.getByText('10 TelCoins are pending while we check it.')).toBeVisible();
 
@@ -98,25 +117,31 @@ test('a member redeems the printable hazard report, and only they can open it', 
   // Before redeeming, the member meets the unlock card that points at the coin store (CT-002: 403).
   await page.goto(report);
   await expect(page.getByRole('heading', { name: 'Redeem for 50 TelCoins to unlock' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Open the coin store' })).toHaveAttribute('href', '/rewards');
+  await expect(page.getByRole('link', { name: 'Open the coin store' })).toHaveAttribute('href', STORE_FOR_CHARGER);
   await expect(page.getByRole('link', { name: 'See the free passport' })).toHaveAttribute('href', CHARGER);
   await expect(page.locator('article')).toHaveCount(0);
 
   // The store sells it under an honest name, and it unlocks once the sign-up coins are confirmed.
   const item = page.locator('li.card').filter({ hasText: 'Full hazard report' });
   await expect
-    .poll(async () => { await page.goto('/rewards'); await item.waitFor(); return item.getByRole('button', { name: 'Redeem', exact: true }).count(); },
+    .poll(async () => { await page.goto(STORE_FOR_CHARGER); await item.waitFor(); return item.getByRole('button', { name: 'Redeem', exact: true }).count(); },
       { timeout: 90_000, intervals: [3_000] })
     .toBe(1);
   await expect(item).toContainText('Full hazard report (printable)');
   await expect(item).not.toContainText('PDF');
+  // Sent from the gate, the store has already chosen the product (DEF-119).
+  await expect(item.getByLabel('For')).toHaveValue(slug);
   await item.getByLabel('For').selectOption(slug);
   await item.getByRole('button', { name: 'Redeem', exact: true }).click();
   await expect(page.getByText('Full hazard report (printable) is yours')).toBeVisible();
 
   // Opened from the toast, the report reads only the gated endpoint: no public product or passport read.
+  // Counted from the moment the report page is the document: the store before it reads the product
+  // it pre-selects (DEF-119), which is not the report's doing.
   const productReads: string[] = [];
-  page.on('request', (r) => { if (/\/api\/v1\/products\//.test(r.url())) productReads.push(new URL(r.url()).pathname); });
+  let onReport = false;
+  page.on('framenavigated', (f) => { if (f === page.mainFrame()) onReport = new URL(f.url()).pathname === report; });
+  page.on('request', (r) => { if (onReport && /\/api\/v1\/products\//.test(r.url())) productReads.push(new URL(r.url()).pathname); });
   await page.getByRole('button', { name: 'Open', exact: true }).click();
   await page.waitForURL(`**${report}`);
   const article = page.locator('article');
@@ -144,7 +169,7 @@ test('a member redeems the printable hazard report, and only they can open it', 
   await newMember(other, 'Not A Buyer');
   await other.goto(report);
   await expect(other.getByRole('heading', { name: 'Redeem for 50 TelCoins to unlock' })).toBeVisible();
-  await expect(other.getByRole('link', { name: 'Open the coin store' })).toHaveAttribute('href', '/rewards');
+  await expect(other.getByRole('link', { name: 'Open the coin store' })).toHaveAttribute('href', STORE_FOR_CHARGER);
   await expect(other.locator('article')).toHaveCount(0);
   await other.context().close();
 });
