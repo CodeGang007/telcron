@@ -121,6 +121,8 @@ export function Product() {
     ? pass.recall_matches.filter((r, i, all) => r.verdict !== 'rejected' && all.findIndex((o) => noticeKey(o.title) === noticeKey(r.title)) === i)
     : [];
   const stub = pass?.hazard?.model_code.startsWith('stub');
+  const recalled = recalls.some((r) => r.verdict === 'match');
+  const mayBeRecalled = recalls.some((r) => r.verdict === 'near_match');
 
   const save = async () => {
     try {
@@ -148,8 +150,15 @@ export function Product() {
             <h1 className="mt-1 max-w-2xl font-display text-3xl font-extrabold tracking-tight sm:text-4xl">{p.name}</h1>
             <p className="mt-2 text-muted">{[p.brand, p.model_number].filter(Boolean).join(' · ')}</p>
             {p.demo && <p className="chip mt-3 bg-warn-tint text-warn">Demo product: fictional, for trying Telcron out</p>}
-            {!p.demo && <details className="group mt-3">
+            {/* A recalled product is not offered for sale; a possible recall is warned about first (DEF-114).
+                Held back until the passport has loaded, so the menu never flashes on a recalled product. */}
+            {!p.demo && !passport.loading && !recalled && <details className="group mt-3">
               <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 text-xs font-medium text-muted hover:text-ink">Where to buy<span className="transition group-open:rotate-180">▾</span></summary>
+              {mayBeRecalled && (
+                <p role="note" className="mt-2 flex max-w-md items-start gap-2 rounded-xl border border-danger/30 bg-danger-tint px-3 py-2 text-xs text-danger">
+                  <AlertOctagon className="mt-0.5 size-3.5 shrink-0" />An official recall notice may cover this product. Check the recall notices below against your model before you buy.
+                </p>
+              )}
               <div className="mt-2"><StoreLinks product={p} /></div>
             </details>}
           </div>
