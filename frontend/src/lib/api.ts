@@ -125,6 +125,7 @@ export const MESSAGES: Record<string, string> = {
   rate_limited: 'Too many tries from here. Wait a few minutes, then try again.',
   item_not_available: 'That reward is not available right now. Your TelCoins were returned; choose another.',
   item_not_found: 'That reward is no longer offered. Reload the page to see what is.',
+  item_not_on_sale: 'That reward is not on sale right now. Reload the page to see what is.',
   product_required: 'This reward is for one product. Choose one from your wallet first.',
   research_user_daily_limit: 'You have started today\'s share of web searches. You can ask again tomorrow.',
   listing_not_found: 'That listing has changed since it was shown. Reload the page and try again.',

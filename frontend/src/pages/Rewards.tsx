@@ -254,7 +254,7 @@ function RewardsBody() {
       <section className="mt-14">
         <h2 id="store" className="flex scroll-mt-24 items-center gap-2 font-display text-2xl font-bold"><ShoppingBag className="size-6 text-action" />Spend your TelCoins</h2>
         <p className="mt-1 text-sm text-muted">Only confirmed coins can be spent.</p>
-        <div className="mt-5"><CoinStore items={o.store} confirmed={o.balance.confirmed} product={product} onBought={() => { void overview.reload(); void history.reload(); coinsChanged(); }} /></div>
+        <div className="mt-5"><CoinStore items={o.store} confirmed={o.balance.confirmed} product={product} onBought={() => { void overview.reload(); void history.reload(); coinsChanged(); }} onStale={() => void overview.reload()} /></div>
       </section>
 
       <Contributions />

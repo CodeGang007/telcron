@@ -3,7 +3,7 @@ import { Coins, FileText, Flame, Lock, ShieldAlert, ShoppingBag, Sparkles, type 
 import { motion } from 'motion/react';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { api, explain, post } from '../lib/api';
+import { api, ApiError, explain, post } from '../lib/api';
 import { tokenHex } from '../lib/tokens';
 import { useLoad } from '../lib/useLoad';
 import { stagger } from './ui';
@@ -16,7 +16,13 @@ const STORE_ICON: Record<string, LucideIcon> = { pdf_report: FileText, watchlist
 /** The coin store. A product item can be bought for the product the member came from
     (`/rewards?product=<slug>`, DEF-119) as well as any product in their wallet: `POST /redemptions`
     accepts any product (CT-002). */
-export function CoinStore({ items, confirmed, product, onBought }: { items: StoreItem[]; confirmed: number; product: string | null; onBought: () => void }) {
+// The store no longer holds this item (taken off sale or withdrawn, CT-004): the list on screen is stale.
+const STALE_ITEM = new Set(['item_not_on_sale', 'item_not_found']);
+
+// One or two items must not sit in a three-column grid with empty cells beside them.
+const GRID: Record<number, string> = { 1: 'grid gap-4 sm:max-w-sm', 2: 'grid gap-4 sm:grid-cols-2 lg:max-w-3xl' };
+
+export function CoinStore({ items, confirmed, product, onBought, onStale }: { items: StoreItem[]; confirmed: number; product: string | null; onBought: () => void; onStale: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const owned = useLoad(() => api<Choice[]>('/wallet/items'), []);
   // The product the member came from, by name, when it is not already in their wallet.
@@ -36,22 +42,30 @@ export function CoinStore({ items, confirmed, product, onBought }: { items: Stor
       const r = await post<{ report: string | null }>('/redemptions', { item_code: item.code, product: slug ?? null, request_id: crypto.randomUUID() });
       const colors = tokenHex('gold', 'brand-bright', 'action', 'ok');
       void confetti({ particleCount: 140, spread: 80, origin: { y: 0.7 }, ...(colors.length ? { colors } : {}) });
-      toast.success(`${item.name} is yours`, { description: r.report ? 'Your report is ready.' : 'It is active on your account now.', action: r.report ? { label: 'Open', onClick: () => { window.location.href = r.report!; } } : undefined });
+      toast.success(`${item.name} is yours`, r.report ? { description: 'Your report is ready.', action: { label: 'Open', onClick: () => { window.location.href = r.report!; } } } : undefined);
       onBought();
     } catch (e) {
       toast.error(explain(e));
+      if (e instanceof ApiError && STALE_ITEM.has(e.code)) onStale();
     } finally {
       setBusy(null);
     }
   };
 
   const loadingChoices = owned.loading || asked.loading;
+  if (items.length === 0)
+    return (
+      <div className="card text-center text-sm text-muted">
+        <ShoppingBag className="mx-auto mb-2 size-8 text-action" />
+        Nothing is on sale right now. Keep earning: your confirmed TelCoins stay on your account until something is.
+      </div>
+    );
   return (
     <>
       {product && asked.error && !asked.loading && (
         <p role="alert" className="mb-4 text-sm text-warn">We could not find the product you came from. Pick one from your wallet, or open the product again and use its report link.</p>
       )}
-      <motion.ul variants={stagger.container} initial="hidden" whileInView="show" viewport={{ once: true }} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <motion.ul variants={stagger.container} initial="hidden" whileInView="show" viewport={{ once: true }} className={GRID[items.length] ?? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3'}>
         {items.map((item) => {
           const Icon = STORE_ICON[item.kind] ?? ShoppingBag;
           const affordable = confirmed >= item.cost;
