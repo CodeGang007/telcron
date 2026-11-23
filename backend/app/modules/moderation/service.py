@@ -15,7 +15,9 @@ from app.core.events import audit, emit
 from app.domain import trust
 from app.models import (
     FraudHold,
+    HazardDimension,
     HazardFlag,
+    Passport,
     Product,
     ProductFactReport,
     ReviewTask,
@@ -53,7 +55,46 @@ async def _product_summary(db: AsyncSession, product_id: uuid.UUID) -> dict[str,
     return {"slug": row.public_slug, "name": row.canonical_name}
 
 
-async def describe(db: AsyncSession, task: ReviewTask, viewer: User) -> dict[str, Any]:
+MISSING_EVIDENCE = "hazard_insufficient_data"
+
+
+def _uuid_or_none(value: Any) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(str(value)) if value else None
+    except ValueError:
+        return None
+
+
+class _MissingEvidence:
+    """Dimension names and passport versions for a batch of missing-evidence tasks, read in two
+    queries whatever the batch size, so the queue costs the same for 1 task as for 100 (DEF-120)."""
+
+    def __init__(self, names: dict[str, str], versions: dict[uuid.UUID, int]) -> None:
+        self.names, self.versions = names, versions
+
+    @classmethod
+    async def load(cls, db: AsyncSession, tasks: list[ReviewTask]) -> "_MissingEvidence":
+        mine = [t for t in tasks if t.task_type == MISSING_EVIDENCE]
+        codes = {c for t in mine for c in (t.payload.get("missing_dimensions") or [])}
+        passports = {p for t in mine if (p := _uuid_or_none(t.payload.get("passport_id")))}
+        names = dict((await db.execute(select(HazardDimension.code, HazardDimension.name)
+                                       .where(HazardDimension.code.in_(codes)))).all()
+                     ) if codes else {}
+        versions = dict((await db.execute(select(Passport.id, Passport.version)
+                                          .where(Passport.id.in_(passports)))).all()
+                        ) if passports else {}
+        return cls(names, versions)
+
+    def subject(self, task: ReviewTask) -> dict[str, Any]:
+        """CT-003 C. A task opened before DEF-032 has no `missing_dimensions` in its payload: []."""
+        passport = _uuid_or_none(task.payload.get("passport_id"))
+        return {"missing_dimensions": [{"code": c, "name": self.names.get(c, c)}
+                                       for c in task.payload.get("missing_dimensions") or []],
+                "passport_version": self.versions.get(passport) if passport else None}
+
+
+async def describe(db: AsyncSession, task: ReviewTask, viewer: User,
+                   missing: _MissingEvidence | None = None) -> dict[str, Any]:
     """A task with enough of its subject for a reviewer to decide without leaving the queue.
     `mine` says the viewer has a stake in it (DEF-101), so the queue offers no decision that can only
     be refused as `own_item`. The owner is read off the subject row loaded here, by the same column
@@ -82,6 +123,9 @@ async def describe(db: AsyncSession, task: ReviewTask, viewer: User) -> dict[str
                    "status": hold.status, "member": member.display_name}
     elif task.payload.get("product_id"):
         subject = {"product": await _product_summary(db, uuid.UUID(task.payload["product_id"]))}
+    if task.task_type == MISSING_EVIDENCE:
+        missing = missing or await _MissingEvidence.load(db, [task])
+        subject |= missing.subject(task)
     if task.task_type in SUBJECT_OWNER:
         owner = getattr(row, SUBJECT_OWNER[task.task_type][1].key) if row is not None else None
     else:
@@ -95,7 +139,8 @@ async def list_tasks(db: AsyncSession, viewer: User, limit: int) -> list[dict[st
     tasks = (await db.execute(select(ReviewTask).where(ReviewTask.status.in_(OPEN))
                               .order_by(ReviewTask.priority, ReviewTask.created_at)
                               .limit(limit))).scalars().all()
-    return [await describe(db, t, viewer) for t in tasks]
+    missing = await _MissingEvidence.load(db, list(tasks))
+    return [await describe(db, t, viewer, missing) for t in tasks]
 
 
 # The member a task's subject belongs to: the reporter of a flag or correction, the holder of a
