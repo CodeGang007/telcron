@@ -32,7 +32,7 @@ const STEPS = [
 export function Home() {
   const { me } = useAuth();
   const stats = useLoad(() => api<Stats>('/stats'), []);
-  const recent = useLoad(() => api<ProductSummary[]>('/products?limit=6'), []);
+  const recent = useLoad(() => api<ProductSummary[]>('/products?limit=6&screened=true'), []);
   const recalls = useLoad(() => api<RecallLite[]>('/recalls?limit=4'), []);
 
   return (
@@ -160,6 +160,14 @@ export function Home() {
         <div className="mt-10">
           {recent.loading ? (
             <CardSkeletons count={3} />
+          ) : recent.error && !recent.data ? (
+            <p role="alert" className="rounded-2xl bg-panel px-5 py-4 text-sm text-muted">
+              Recently screened products could not be loaded. <button className="font-semibold text-action underline" onClick={() => void recent.reload()}>Try again</button>
+            </p>
+          ) : !recent.data?.length ? (
+            <p className="rounded-2xl bg-panel px-5 py-4 text-sm text-muted">
+              No product has been screened yet. <Link to="/search" className="font-semibold text-action hover:underline">Search for one</Link> to start its passport.
+            </p>
           ) : (
             <motion.div variants={stagger.container} initial="hidden" whileInView="show" viewport={{ once: true }} className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {recent.data?.map((p) => <ProductCard key={p.id} product={p} />)}
