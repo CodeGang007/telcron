@@ -7,7 +7,7 @@ import { Alternatives, StoreLinks } from '../components/Alternatives';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { Assistant } from '../components/Assistant';
 import { Research } from '../components/Research';
-import { Verdict, recallAsOf } from '../components/Verdict';
+import { RECALL_VERDICT, Verdict, recallAsOf, shownRecalls } from '../components/Verdict';
 import { ContributeTabs, ReviewList } from '../components/Reviews';
 import { CategoryTile, EmptyState, Skeleton, StatusBadge, TrustRing, scoreTone } from '../components/ui';
 import { ApiError, api, apiUrl, explain, post, type Dimension, type Passport, type ProductDetail, type Review } from '../lib/api';
@@ -15,7 +15,6 @@ import { useAuth } from '../lib/auth';
 import { useLoad } from '../lib/useLoad';
 import { usePaged } from '../lib/usePaged';
 
-const VERDICT: Record<string, string> = { match: 'Matches this product', near_match: 'May match this product' };
 const CERT: Record<string, string> = { valid: 'bg-ok-tint text-ok', expired: 'bg-danger-tint text-danger', revoked: 'bg-danger-tint text-danger', not_checked: 'bg-neutral-tint text-muted' };
 
 /** "Samsung Recalls X | CPSC.gov" -> "Samsung Recalls X": the site name is shown with the link. */
@@ -115,11 +114,7 @@ export function Product() {
     );
   const p = product.data;
   const pass = passport.data;
-  // One card per notice, however many addresses or copies it was found under.
-  const noticeKey = (t: string) => t.toLowerCase().replace(/\s*\|.*$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
-  const recalls = pass
-    ? pass.recall_matches.filter((r, i, all) => r.verdict !== 'rejected' && all.findIndex((o) => noticeKey(o.title) === noticeKey(r.title)) === i)
-    : [];
+  const recalls = shownRecalls(pass);
   const stub = pass?.hazard?.model_code.startsWith('stub');
   const recalled = recalls.some((r) => r.verdict === 'match');
   const mayBeRecalled = recalls.some((r) => r.verdict === 'near_match');
@@ -221,7 +216,7 @@ export function Product() {
               {recalls.map((r) => (
                 <motion.div key={r.recall_id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="relative overflow-hidden rounded-2xl border border-danger/30 bg-danger-tint p-5">
                   <span className="absolute -right-6 -top-6 size-24 rounded-full bg-danger/10" />
-                  <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-danger"><AlertOctagon className="size-4" />Recall · {VERDICT[r.verdict] ?? r.verdict}</p>
+                  <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-danger"><AlertOctagon className="size-4" />Recall · {RECALL_VERDICT[r.verdict] ?? r.verdict}</p>
                   <p className="mt-2 font-semibold">{cleanTitle(r.title)}</p>
                   {r.hazard && <p className="mt-2 text-sm">{r.hazard}</p>}
                   {r.remedy && <p className="mt-2 text-sm"><span className="font-semibold">What to do:</span> {r.remedy}</p>}

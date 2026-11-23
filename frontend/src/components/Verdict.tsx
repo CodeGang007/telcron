@@ -21,6 +21,18 @@ export function hazardLevel(pass: Passport): 'serious' | 'some' | 'none' {
   return 'none';
 }
 
+/** How each shown recall verdict reads on the passport and the report. */
+export const RECALL_VERDICT: Record<string, string> = { match: 'Matches this product', near_match: 'May match this product' };
+
+/** The recall matches a reader is shown: rejected verdicts are dropped and each notice appears once,
+    however many addresses or copies it was found under. The passport page and the report use this
+    one set (DEF-113). */
+export function shownRecalls(pass: Pick<Passport, 'recall_matches'> | null | undefined): Passport['recall_matches'] {
+  if (!pass) return [];
+  const noticeKey = (t: string) => t.toLowerCase().replace(/\s*\|.*$/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  return pass.recall_matches.filter((r, i, all) => r.verdict !== 'rejected' && all.findIndex((o) => noticeKey(o.title) === noticeKey(r.title)) === i);
+}
+
 const sentence = (t: string | null | undefined, fallback: string) => (t ? (/[.!?]$/.test(t.trim()) ? t.trim() : `${t.trim()}.`) : fallback);
 
 /** One sentence on what the passport means for someone holding this product. It never says "checks

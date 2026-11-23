@@ -1,6 +1,7 @@
 import { AlertOctagon, LockKeyhole, Printer } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { LogoMark } from '../components/Logo';
+import { RECALL_VERDICT, recallAsOf, shownRecalls } from '../components/Verdict';
 import { EmptyState, Notice, Skeleton } from '../components/ui';
 import { ApiError, api, type ProductReport } from '../lib/api';
 import { useLoad } from '../lib/useLoad';
@@ -68,6 +69,7 @@ export function Report() {
   if ('locked' in report.data) return <Unlock slug={slug} who={report.data.locked} />;
   const { product: p, passport: pass } = report.data;
   if (!pass) return <div className="container-page py-12 text-muted">This product has no passport yet.</div>;
+  const recalls = shownRecalls(pass);
   return (
     <div className="container-page max-w-3xl py-12 print:max-w-none print:py-0">
       <div className="mb-8 flex flex-wrap items-center justify-between gap-3 print:hidden">
@@ -89,19 +91,19 @@ export function Report() {
           <div><dt className="text-muted">Passport</dt><dd className="font-semibold">Version {pass.version}</dd></div>
           <div><dt className="text-muted">Issued</dt><dd className="font-semibold">{new Date(pass.verified_at).toLocaleDateString()}</dd></div>
         </dl>
-        {pass.recall_matches.length > 0 && (
-          <section className="mt-8">
-            <h2 className="font-display text-lg font-bold">Recalls</h2>
-            {pass.recall_matches.map((r) => (
-              <div key={r.recall_id} className="mt-3 rounded-xl border border-danger/30 p-4 text-sm">
-                <p className="font-semibold">{r.title}</p>
-                {r.hazard && <p className="mt-1">{r.hazard}</p>}
-                {r.remedy && <p className="mt-1 text-muted">What to do: {r.remedy}</p>}
-                {r.url && <p className="mt-1 break-all text-xs text-muted">{r.url}</p>}
-              </div>
-            ))}
-          </section>
-        )}
+        <section className="mt-8">
+          <h2 className="font-display text-lg font-bold">Recalls</h2>
+          {recalls.length === 0 && <p className="mt-2 text-sm text-muted">No recall notice matched it {recallAsOf(pass)}.</p>}
+          {recalls.map((r) => (
+            <div key={r.recall_id} className="mt-3 rounded-xl border border-danger/30 p-4 text-sm">
+              <p className="text-xs font-bold uppercase tracking-wider text-danger">{RECALL_VERDICT[r.verdict] ?? r.verdict}</p>
+              <p className="mt-1 font-semibold">{r.title}</p>
+              {r.hazard && <p className="mt-1">{r.hazard}</p>}
+              {r.remedy && <p className="mt-1 text-muted">What to do: {r.remedy}</p>}
+              {r.url && <p className="mt-1 break-all text-xs text-muted">{r.url}</p>}
+            </div>
+          ))}
+        </section>
         {pass.hazard && (
           <section className="mt-8">
             <h2 className="font-display text-lg font-bold">Hazard assessment · {pass.hazard.label ?? 'not enough evidence'}</h2>
