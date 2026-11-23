@@ -117,18 +117,23 @@ export function ReviewList({ reviews }: { reviews: Paged }) {
   );
 }
 
+/** No rating until the member picks one (DEF-116): a default would post a 5-star complaint. Native
+    radios give the group its keyboard behaviour; each is a 44 px target on a phone. */
 function ReviewForm({ slug, onDone }: { slug: string; onDone: () => void }) {
-  const [rating, setRating] = useState(5);
+  const [rating, setRating] = useState(0);
   const [hover, setHover] = useState(0);
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
+  const [missing, setMissing] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!rating) { setMissing(true); return; }
     setBusy(true);
     try {
       const r = await post<{ coins_pending: number }>(`/products/${slug}/reviews`, { rating, body });
       toast.success('Review posted', { description: `${r.coins_pending} TelCoins are pending while we check it.` });
       setBody('');
+      setRating(0);
       coinsChanged();
       onDone();
     } catch (err) {
@@ -140,14 +145,18 @@ function ReviewForm({ slug, onDone }: { slug: string; onDone: () => void }) {
   return (
     <form onSubmit={submit} className="space-y-4" aria-label="Write a review">
       <div>
-        <p className="text-sm font-medium">Your rating</p>
-        <div className="mt-1 flex gap-1" onMouseLeave={() => setHover(0)}>
+        <p id="rating-label" className="text-sm font-medium">Rating</p>
+        <div role="radiogroup" aria-labelledby="rating-label" aria-describedby={missing ? 'rating-missing' : undefined}
+          className="mt-1 flex gap-1" onMouseLeave={() => setHover(0)}>
           {[1, 2, 3, 4, 5].map((n) => (
-            <button type="button" key={n} aria-label={`${n} out of 5`} onMouseEnter={() => setHover(n)} onClick={() => setRating(n)} className="transition hover:scale-110">
-              <Star className={`size-7 ${(hover || rating) >= n ? 'fill-gold text-gold' : 'text-line'}`} />
-            </button>
+            <label key={n} className="grid size-11 cursor-pointer place-items-center" onMouseEnter={() => setHover(n)}>
+              <input type="radio" name="rating" value={n} aria-label={`${n} out of 5`} checked={rating === n}
+                onChange={() => { setRating(n); setMissing(false); }} className="peer sr-only" />
+              <Star aria-hidden className={`size-8 rounded-md transition hover:scale-110 peer-focus-visible:ring-2 peer-focus-visible:ring-action ${(hover || rating) >= n ? 'fill-gold text-gold' : 'text-line'}`} />
+            </label>
           ))}
         </div>
+        {missing && <p id="rating-missing" role="alert" className="mt-1 text-sm text-danger">Choose a rating from 1 to 5 stars, then post your review.</p>}
       </div>
       <label className="block text-sm font-medium">
         Your experience (at least 20 characters)

@@ -141,9 +141,9 @@ export function Notice({ tone = 'info', children }: { tone?: 'info' | 'error' | 
 
 export function Stars({ rating }: { rating: number }) {
   return (
-    <span aria-label={`${rating} out of 5`} className="tracking-tight text-gold">
-      {'★'.repeat(rating)}
-      <span className="text-line">{'★'.repeat(5 - rating)}</span>
+    <span role="img" aria-label={`${rating} out of 5`} className="tracking-tight text-gold">
+      <span aria-hidden>{'★'.repeat(rating)}</span>
+      <span aria-hidden className="text-line">{'★'.repeat(5 - rating)}</span>
     </span>
   );
 }
